@@ -1,0 +1,132 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  background: #fafafa;
+  color: #222;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #ccc;
+  background: #f0f0f0;
+}
+
+.toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar input[type='number'] {
+  width: 4.5em;
+}
+
+.separator {
+  width: 1px;
+  height: 20px;
+  background: #ccc;
+  margin: 0 4px;
+}
+
+.canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background: #fff;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.island-rect,
+.part {
+  cursor: move;
+}
+
+.part {
+  transition: opacity 0.1s;
+}
+
+.lead-end {
+  cursor: crosshair;
+}
+
+.net-label {
+  font-size: 1.3px;
+  font-weight: 600;
+  fill: #4a2300;
+  pointer-events: none;
+}
+
+.part-ref {
+  font-size: 1.2px;
+  font-weight: 600;
+  fill: #fff;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.part-value {
+  font-size: 1px;
+  fill: #333;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.statusbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 4px 8px;
+  border-top: 1px solid #ccc;
+  background: #f0f0f0;
+  font-size: 12px;
+}
+
+.statusbar .warn {
+  color: #b07800;
+}
+
+.statusbar .error {
+  color: #d01010;
+  font-weight: 600;
+}
+
+.statusbar .selection {
+  color: #1a5fcf;
+}
+
+.statusbar .hint {
+  margin-left: auto;
+  color: #777;
+}
+
+.statusbar .agent {
+  color: #999;
+}
+
+.statusbar .agent.connected {
+  color: #2e9e44;
+  font-weight: 600;
+}

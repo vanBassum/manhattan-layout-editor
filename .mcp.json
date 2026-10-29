@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "manhattan": {
+      "command": "node",
+      "args": ["mcp/server.mjs"]
+    }
+  }
+}
