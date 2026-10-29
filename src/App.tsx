@@ -432,7 +432,7 @@ export function App() {
           <Section title="Layers">
             <LayerToggles layers={layers} onChange={setLayers} />
           </Section>
-          <Section title={`Components (${builtNetlist.components.length})`}>
+          <Section title={`Components (${builtNetlist.components.length})`} fill>
             <ComponentList
               netlist={builtNetlist}
               selection={selection}

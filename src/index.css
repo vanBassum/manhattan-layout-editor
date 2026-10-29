@@ -164,19 +164,58 @@ input:focus-visible {
   border-radius: var(--radius);
 }
 
-.section > summary {
+.section-title {
+  display: block;
+  width: 100%;
   padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
   font-weight: 600;
+  text-align: left;
   cursor: pointer;
   user-select: none;
 }
 
-.section[open] > summary {
+.section-title::before {
+  content: '▸';
+  display: inline-block;
+  width: 1em;
+  color: var(--text-muted);
+}
+
+.section.open > .section-title {
   border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.section.open > .section-title::before {
+  content: '▾';
 }
 
 .section-body {
   padding: 8px 10px;
+}
+
+/* A filling section takes the remaining sidebar height; only its list scrolls. */
+.section.fill.open {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 220px;
+}
+
+.section.fill > .section-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.section.fill .component-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 .muted {
@@ -665,7 +704,9 @@ label.pill select {
 
 /* AI help popup. */
 .ai-dialog {
-  max-width: 560px;
+  width: min(760px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100vh - 32px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;

@@ -34,12 +34,23 @@ export function Icon({ name }: { name: IconName }) {
   )
 }
 
-export function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
+interface SectionProps {
+  title: ReactNode
+  /** Grow to fill the remaining sidebar height (for long lists). */
+  fill?: boolean
+  children: ReactNode
+}
+
+// Not <details>: it cannot reliably act as a flex container, which a filling section needs.
+export function Section({ title, fill = false, children }: SectionProps) {
+  const [open, setOpen] = useState(true)
   return (
-    <details className="section" open>
-      <summary>{title}</summary>
-      <div className="section-body">{children}</div>
-    </details>
+    <section className={['section', open && 'open', fill && 'fill'].filter(Boolean).join(' ')}>
+      <button className="section-title" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {title}
+      </button>
+      {open && <div className="section-body">{children}</div>}
+    </section>
   )
 }
 
