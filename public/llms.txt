@@ -18,7 +18,8 @@ Safari is not supported for this connection.
 ## Tools
 
 get_layout, screenshot, move_component, set_lead_end, reset_leads, set_island, move_island,
-batch (several edits as one undo step), set_resistor_footprint, run_optimizer, undo, redo.
+batch (several edits as one undo step), set_resistor_footprint, set_footprint (any footprint
+for chosen parts, or null for the netlist footprint), run_optimizer, undo, redo.
 All coordinates are millimetres, y points down. The netlist is fixed; only geometry changes.
 Every edit returns the remaining problems (open/shorted pins, nets too close, split nets).
 

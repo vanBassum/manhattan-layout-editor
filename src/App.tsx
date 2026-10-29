@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
-import { applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setIsland, setLeadEnd } from './agentCommands'
+import { applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setFootprint, setIsland, setLeadEnd } from './agentCommands'
 import { Canvas, type LayerName, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { downloadText, exportSvg } from './exportSvg'
+import { FootprintDialog } from './FootprintDialog'
 import { boundsOf } from './geometry'
 import {
   analyzeLeads,
+  changeFootprints,
   chooseResistors,
   createLayout,
   findSpacingViolations,
   findSplitNets,
-  isPlainResistor,
   keepFootprintChoices,
   withFootprintChoices,
-  type ResistorChoice,
 } from './layout'
 import { parseNetlist } from './netlist'
 import { findStrategy, STRATEGIES } from './optimize'
@@ -108,6 +108,8 @@ export function App() {
   const redoStack = useRef<Layout[]>([])
   const [agentConnected, setAgentConnected] = useState(false)
   const [showAiHelp, setShowAiHelp] = useState(false)
+  /** Parts checked when the footprint dialog opened; null while it is closed. */
+  const [footprintDialogRefs, setFootprintDialogRefs] = useState<string[] | null>(null)
   const [layers, setLayersState] = useState<Layers>(loadLayers)
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => withFootprintChoices(netlist, layout.placements), [netlist, layout.placements])
@@ -186,6 +188,8 @@ export function App() {
         }
         return applyAgentEdit(chooseResistors(projectRef.current.netlist, current.layout, args.footprint))
       }
+      case 'set_footprint':
+        return applyAgentEdit(setFootprint(current, projectRef.current.netlist, args))
       case 'undo':
         undo()
         return { problems: findProblems(asBuilt(projectRef.current)) }
@@ -363,16 +367,11 @@ export function App() {
     setFitRequest((n) => n + 1)
   }
 
-  const convertibleResistors = useMemo(
-    () => new Set(netlist.components.filter(isPlainResistor).map((c) => c.ref)),
-    [netlist],
-  )
-  // Footprint choices only ever come from the resistor conversion.
-  const resistorsAsSmd = new Set(layout.placements.filter((p) => p.footprint).map((p) => p.ref))
+  const openFootprintDialog = () => setFootprintDialogRefs(selectedRefs(selection))
 
-  const convertResistors = (refs: ReadonlySet<string>, choice: ResistorChoice) => {
+  const applyFootprint = (refs: ReadonlySet<string>, footprint: string | undefined) => {
     rememberLayout()
-    setLayout((l) => chooseResistors(netlist, l, choice, refs))
+    setLayout((l) => changeFootprints(netlist, l, refs, footprint))
   }
 
   const optimize = () => {
@@ -398,6 +397,8 @@ export function App() {
   const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {})
   shortcuts.current = (e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
+    // An open dialog handles its own keys (Escape closes it); the canvas shortcuts stay out of the way.
+    if (e.target instanceof Element && e.target.closest('dialog')) return
     const command = e.ctrlKey || e.metaKey
     if (command && (e.key === 'z' || e.key === 'Z')) {
       e.preventDefault()
@@ -465,10 +466,8 @@ export function App() {
               netlist={builtNetlist}
               selection={selection}
               onSelect={setSelection}
-              convertible={convertibleResistors}
-              convertedToSmd={resistorsAsSmd}
               refsWithIssues={pinCounts.refsWithIssues}
-              onConvert={convertResistors}
+              onChangeFootprint={openFootprintDialog}
             />
           </Section>
         </aside>
@@ -563,6 +562,11 @@ export function App() {
         <aside className="sidebar">
           <Section title="Selection">
             <SelectionDetails netlist={builtNetlist} selection={selection} />
+            <div className="action-list selection-actions">
+              <button onClick={openFootprintDialog} disabled={refsToEdit.length === 0} title="Choose another footprint for the selected parts">
+                <Icon name="convert" />Change footprint…
+              </button>
+            </div>
           </Section>
           <Section title="Board settings">
             <div className="settings">
@@ -645,6 +649,16 @@ export function App() {
         <span className="hint">V select / H pan · Shift+click adds · Ctrl+A all · M move part / body only · middle-drag pans · wheel zooms · drag a lead end to bend it · R / Shift+R rotate 90° / 15° · Ctrl+Z undo · Del remove rect · F fit</span>
       </footer>
       {showAiHelp && <AiHelpDialog agentConnected={agentConnected} onClose={() => setShowAiHelp(false)} />}
+      {footprintDialogRefs && (
+        <FootprintDialog
+          built={builtNetlist}
+          imported={netlist}
+          initialRefs={footprintDialogRefs}
+          isolation={settings.isolation}
+          onApply={applyFootprint}
+          onClose={() => setFootprintDialogRefs(null)}
+        />
+      )}
     </div>
   )
 }

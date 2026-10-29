@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LayerName, Layers, LayerView } from './Canvas'
-import { componentGeometry, type ResistorChoice } from './layout'
+import { componentGeometry } from './layout'
 import { selectedRefs, toggleSelected } from './selection'
 import type { NetComponent, Netlist, Selection } from './types'
 
@@ -106,24 +106,11 @@ export function LayerToggles({ layers, onChange }: { layers: Layers; onChange: (
   )
 }
 
-const RESISTOR_TARGETS: { choice: ResistorChoice; label: string }[] = [
-  { choice: '1206', label: '1206 SMD' },
-  { choice: 'through-hole', label: 'Through-hole' },
-]
-
-interface Conversion {
-  choice: ResistorChoice
-  refs: Set<string>
-}
-
 interface ComponentListProps {
   netlist: Netlist
   selection: Selection
   onSelect: (selection: Selection) => void
-  /** Plain resistors the conversion may change, and which of those are built as 1206 now. */
-  convertible: ReadonlySet<string>
-  convertedToSmd: ReadonlySet<string>
-  onConvert: (refs: ReadonlySet<string>, choice: ResistorChoice) => void
+  onChangeFootprint: () => void
   /** Parts with open or shorted pins. */
   refsWithIssues: ReadonlySet<string>
 }
@@ -146,37 +133,16 @@ function packageLabel(component: NetComponent): string {
 const refPrefix = (ref: string) => ref.match(/^[A-Za-z]+/)?.[0].toUpperCase() ?? '?'
 
 export function ComponentList(props: ComponentListProps) {
-  const { netlist, selection, onSelect, convertible, convertedToSmd, onConvert, refsWithIssues } = props
+  const { netlist, selection, onSelect, onChangeFootprint, refsWithIssues } = props
   const highlighted = new Set(selectedRefs(selection))
   const [query, setQuery] = useState('')
   const [onlyIssues, setOnlyIssues] = useState(false)
-  const [conversion, setConversion] = useState<Conversion | null>(null)
   const needle = query.trim().toLowerCase()
   const shown = netlist.components.filter(
     (c) =>
       (!onlyIssues || refsWithIssues.has(c.ref)) &&
       [c.ref, c.value, c.footprint].some((text) => text.toLowerCase().includes(needle)),
   )
-
-  // Preselect only the resistors the chosen target would actually change.
-  const startConversion = (choice: ResistorChoice) =>
-    setConversion({ choice, refs: new Set([...convertible].filter((ref) => convertedToSmd.has(ref) !== (choice === '1206'))) })
-
-  const toggleRef = (ref: string) => {
-    if (!conversion) return
-    const refs = new Set(conversion.refs)
-    if (refs.has(ref)) refs.delete(ref)
-    else refs.add(ref)
-    setConversion({ ...conversion, refs })
-  }
-
-  const applyConversion = () => {
-    if (!conversion) return
-    onConvert(conversion.refs, conversion.choice)
-    setConversion(null)
-  }
-
-  const targetLabel = conversion?.choice === '1206' ? '1206' : 'THT'
 
   return (
     <>
@@ -191,53 +157,22 @@ export function ComponentList(props: ComponentListProps) {
         <button className={onlyIssues ? 'active' : ''} onClick={() => setOnlyIssues(true)} title="Parts with open or shorted pins">
           Issues ({refsWithIssues.size})
         </button>
-        {convertible.size > 0 && !conversion && (
-          <button className="convert-start" onClick={() => startConversion('1206')} title="Choose a footprint for the plain resistors">
-            <Icon name="convert" />Convert
-          </button>
-        )}
+        <button
+          className="change-footprint"
+          onClick={onChangeFootprint}
+          disabled={netlist.components.length === 0}
+          title="Choose another footprint for groups of parts"
+        >
+          <Icon name="convert" />Change footprint…
+        </button>
       </div>
-      {conversion && (
-        <div className="conversion">
-          <div className="conversion-target">
-            <span>Resistors to</span>
-            <div className="segmented">
-              {RESISTOR_TARGETS.map(({ choice, label }) => (
-                <button key={choice} className={conversion.choice === choice ? 'active' : ''} onClick={() => startConversion(choice)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <p className="muted">
-            {conversion.refs.size} of {convertible.size} checked. Their bent leads are reset.
-          </p>
-          <div className="conversion-actions">
-            <button className="primary" disabled={conversion.refs.size === 0} onClick={applyConversion}>Apply</button>
-            <button onClick={() => setConversion(null)}>Cancel</button>
-          </div>
-        </div>
-      )}
       <ul className="component-list">
         {shown.map((c) => {
-          if (conversion && convertible.has(c.ref)) {
-            const checked = conversion.refs.has(c.ref)
-            return (
-              <li key={c.ref}>
-                <label className={`component-row${checked ? ' checked' : ''}`} title={c.footprint || undefined}>
-                  <input type="checkbox" checked={checked} onChange={() => toggleRef(c.ref)} />
-                  <span className="ref">{c.ref}</span>
-                  <span className="value">{c.value}</span>
-                  <span className="package">{checked ? `→ ${targetLabel}` : packageLabel(c)}</span>
-                </label>
-              </li>
-            )
-          }
           const selected = highlighted.has(c.ref)
           const issue = refsWithIssues.has(c.ref)
           const item = { kind: 'part', ref: c.ref } as const
           return (
-            <li key={c.ref} className={conversion ? 'unaffected' : ''}>
+            <li key={c.ref}>
               <button
                 className={`component-row${selected ? ' selected' : ''}${issue ? ' issue' : ''}`}
                 onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey ? toggleSelected(selection, item) : item)}

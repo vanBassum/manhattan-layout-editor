@@ -139,7 +139,7 @@ const BODY_FILLS: Record<Geometry['shape'], string> = {
   row: '#3c6ea8',
 }
 
-function BodyShape({ geometry, stroke, strokeWidth }: { geometry: Geometry; stroke: string; strokeWidth: number }) {
+export function BodyShape({ geometry, stroke, strokeWidth }: { geometry: Geometry; stroke: string; strokeWidth: number }) {
   const { x, y, w, h } = geometry.body
   const style = { fill: BODY_FILLS[geometry.shape], fillOpacity: 0.85, stroke, strokeWidth }
   switch (geometry.shape) {

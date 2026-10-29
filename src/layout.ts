@@ -1,4 +1,5 @@
 import { boundsOf, inflate, nearestPointOnRects, rectContains, rectsOverlap, rotatePoint } from './geometry'
+import { footprintPinCount } from './footprints'
 import { isRealNet } from './netlist'
 import type { Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
 
@@ -257,8 +258,10 @@ export function createLayout(netlist: Netlist, previous?: Layout): Layout {
   const keptPlacements = (previous?.placements ?? []).flatMap((p) => {
     const component = components.get(p.ref)
     if (!component) return []
-    // The only footprint choice is "plain resistors as 1206"; a part that stopped being one loses it.
-    return p.footprint && !isPlainResistor(component) ? [{ ...p, footprint: undefined }] : [p]
+    // A footprint choice survives a re-import unless the part's pin count changed so it no longer
+    // fits. Only library footprints have a known pin count; other names are kept unchecked.
+    const chosenPins = p.footprint ? footprintPinCount(p.footprint) : undefined
+    return chosenPins !== undefined && chosenPins !== component.pins.length ? [{ ...p, footprint: undefined }] : [p]
   })
   const keptBounds = boundsOf(keptIslands.flatMap((i) => i.rects))
   const originY = keptBounds ? keptBounds.y + keptBounds.h + 10 : 0
@@ -314,28 +317,32 @@ export function keepFootprintChoices(layout: Layout, from: Layout): Layout {
   return { ...layout, placements: layout.placements.map((p) => ({ ...p, footprint: chosen.get(p.ref) })) }
 }
 
-export type ResistorChoice = 'through-hole' | '1206'
-
-const SMD_RESISTOR_FOOTPRINT = 'R1206'
-
-/** R1, R2, ... with an axial footprint. Trimmers (RV) and loads (RL) are left alone. */
-export const isPlainResistor = (c: NetComponent) => /^R\d+$/i.test(c.ref) && /AXIAL/i.test(c.footprint)
-
 /**
- * Builds plain resistors through-hole (as in the netlist) or as a 1206 chip bridging the isolation
- * gap it lies across: all of them, or only those in `refs`. `imported` must be the netlist as
- * imported, without choices applied. Bent leads are reset: a chip has none, and a through-hole
- * part gets its default bend back.
+ * Builds the parts in `refs` with `footprint`, or with their netlist footprint again when it is
+ * undefined. `imported` must be the netlist as imported, without choices applied: choosing a part's
+ * own netlist footprint is stored as no choice. Bent leads are reset, since they fitted the old shape.
  */
-export function chooseResistors(imported: Netlist, layout: Layout, choice: ResistorChoice, refs?: ReadonlySet<string>): Layout {
-  const resistors = new Set(
-    imported.components.filter((c) => isPlainResistor(c) && (!refs || refs.has(c.ref))).map((c) => c.ref),
-  )
-  const footprint = choice === '1206' ? SMD_RESISTOR_FOOTPRINT : undefined
+export function changeFootprints(imported: Netlist, layout: Layout, refs: ReadonlySet<string>, footprint: string | undefined): Layout {
+  const netlistFootprints = new Map(imported.components.map((c) => [c.ref, c.footprint]))
   return {
     ...layout,
-    placements: layout.placements.map((p) => (resistors.has(p.ref) ? { ...p, footprint, leads: undefined } : p)),
+    placements: layout.placements.map((p) => {
+      if (!refs.has(p.ref)) return p
+      const choice = footprint === netlistFootprints.get(p.ref) ? undefined : footprint
+      return { ...p, footprint: choice, leads: undefined }
+    }),
   }
+}
+
+export type ResistorChoice = 'through-hole' | '1206'
+
+/** R1, R2, ... with an axial footprint. Trimmers (RV) and loads (RL) are left alone. */
+const isPlainResistor = (c: NetComponent) => /^R\d+$/i.test(c.ref) && /AXIAL/i.test(c.footprint)
+
+/** Builds every plain resistor through-hole (as in the netlist) or as a 1206 chip bridging the isolation gap. */
+export function chooseResistors(imported: Netlist, layout: Layout, choice: ResistorChoice): Layout {
+  const resistors = new Set(imported.components.filter(isPlainResistor).map((c) => c.ref))
+  return changeFootprints(imported, layout, resistors, choice === '1206' ? 'R1206' : undefined)
 }
 
 /** Nets whose island consists of separate pieces of copper; those need a wire jumper. */

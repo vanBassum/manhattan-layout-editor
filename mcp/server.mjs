@@ -182,6 +182,20 @@ forward(
   { footprint: z.enum(['through-hole', '1206']) },
 )
 
+forward(
+  'set_footprint',
+  'Builds the given components with another footprint, e.g. "R1206", "R0805", "R0603", "C1206", "C0805", ' +
+    '"R_AXIAL-0.3", "R_AXIAL-0.4", "DO-35_BD1.9-L3.8-P7.62", "DO-41_BD2.7-L5.2-P10.16", "SOD-123_L2.7-W1.6", ' +
+    '"CAP-TH_L5.5-W2.5-P5.00", "CAP-TH_BD5.0-P2.00", "CAP-TH_BD6.3-P2.50", "TO-92-3_L4.9-W3.7-P2.54-L", ' +
+    '"TO-126-3_L7.6-W2.7-P2.30-L" or "SOT-23-3_L2.9-W1.3". Shape and size are read from the name, so other ' +
+    'EasyEDA/KiCad-style names work too. null puts the netlist footprint back. A known footprint whose pin count ' +
+    'differs from a component is refused. Nets do not change; bent leads of those components are reset. Can be undone.',
+  {
+    refs: z.array(z.string()).min(1).describe('component references, e.g. ["R1", "R2"]'),
+    footprint: z.string().min(1).nullable().describe('footprint name, or null for the netlist footprint'),
+  },
+)
+
 forward('undo', 'Undoes the last layout change (the same history as Ctrl+Z in the editor).')
 forward('redo', 'Redoes the last undone layout change.')
 

@@ -1,9 +1,10 @@
 // Layout inspection and edits as used by the AI agent bridge. Pure functions: they read a project
 // and return a description or a new layout; App applies the layout (with undo).
 
+import { footprintPinCount } from './footprints'
 import { boundsOf } from './geometry'
-import { analyzeLeads, bodyBounds, componentGeometry, findSpacingViolations, findSplitNets, toLocal, toWorld } from './layout'
-import type { Island, Layout, NetComponent, Placement, Point, Project, Rect } from './types'
+import { analyzeLeads, bodyBounds, changeFootprints, componentGeometry, findSpacingViolations, findSplitNets, toLocal, toWorld } from './layout'
+import type { Island, Layout, NetComponent, Netlist, Placement, Point, Project, Rect } from './types'
 
 const round = (v: number) => Math.round(v * 100) / 100
 const roundPoint = (p: Point) => ({ x: round(p.x), y: round(p.y) })
@@ -177,6 +178,27 @@ export function moveIsland(project: Project, args: Args): Layout {
   const dx = numberArg(args, 'dx')
   const dy = numberArg(args, 'dy')
   return replaceIsland(project.layout, { ...island, rects: island.rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy })) })
+}
+
+/**
+ * Builds the given parts with `footprint`, or with their netlist footprint again when it is null.
+ * `imported` is the netlist without footprint choices. Library footprints must match each part's pin
+ * count; other footprint names cannot be checked and are accepted as given.
+ */
+export function setFootprint(project: Project, imported: Netlist, args: Args): Layout {
+  const refs = args.refs
+  if (!Array.isArray(refs) || refs.length === 0 || refs.some((ref) => typeof ref !== 'string')) {
+    throw new Error('"refs" must be a non-empty array of component references')
+  }
+  const footprint = args.footprint === null ? undefined : stringArg(args, 'footprint')
+  const pins = footprint === undefined ? undefined : footprintPinCount(footprint)
+  for (const ref of refs as string[]) {
+    const { component } = requireComponent(project, ref)
+    if (pins !== undefined && pins !== component.pins.length) {
+      throw new Error(`${footprint} has ${pins} pins but ${ref} has ${component.pins.length}; nothing was changed`)
+    }
+  }
+  return changeFootprints(imported, project.layout, new Set(refs as string[]), footprint)
 }
 
 const BATCH_EDITS: Record<string, (project: Project, args: Args) => Layout> = {
