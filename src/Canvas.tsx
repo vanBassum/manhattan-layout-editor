@@ -30,6 +30,22 @@ const PIN_COLORS: Record<PinStatus, string> = {
   unused: '#888888',
 }
 
+/** View-only visibility flags; hidden layers stay in the DOM so the agent screenshot can still show them. */
+export interface Layers {
+  islands: boolean
+  parts: boolean
+  netLabels: boolean
+  leads: boolean
+  grid: boolean
+}
+
+function layerClasses(layers: Layers): string {
+  const hidden = Object.entries(layers)
+    .filter(([, visible]) => !visible)
+    .map(([layer]) => `hide-${layer}`)
+  return ['canvas', ...hidden].join(' ')
+}
+
 interface Props {
   netlist: Netlist
   layout: Layout
@@ -42,6 +58,7 @@ interface Props {
   /** Nets drawn with a red outline: too close to another net, or split into separate pieces. */
   problemNets: Set<string>
   fitRequest: number
+  layers: Layers
 }
 
 function resizeRect(r: Rect, handle: Handle, dx: number, dy: number): Rect {
@@ -126,7 +143,7 @@ function updateIsland(layout: Layout, net: string, rects: Rect[]): Layout {
 }
 
 export function Canvas(props: Props) {
-  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, problemNets, fitRequest } = props
+  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, problemNets, fitRequest, layers } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const dragChangedRef = useRef(false)
@@ -314,7 +331,7 @@ export function Canvas(props: Props) {
   return (
     <svg
       ref={svgRef}
-      className="canvas"
+      className={layerClasses(layers)}
       onPointerDown={onBackgroundPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -326,13 +343,13 @@ export function Canvas(props: Props) {
         </pattern>
       </defs>
       <g transform={`translate(${view.ox} ${view.oy}) scale(${view.scale})`}>
-        {view.scale > 3 && <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-minor)" />}
+        {view.scale > 3 && <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-minor)" className="grid" />}
 
         {planesFirst(layout.islands).map((island) => {
           const violating = problemNets.has(island.net)
           const selected = selectedIsland?.net === island.net
           return (
-            <g key={island.net}>
+            <g key={island.net} className="island">
               {island.rects.map((r, k) => (
                 <rect
                   key={k}
@@ -367,6 +384,7 @@ export function Canvas(props: Props) {
             return (
               <line
                 key={`${component.ref}.${k}`}
+                className="ratsnest"
                 x1={lead.end.x}
                 y1={lead.end.y}
                 x2={target.x}
@@ -398,6 +416,7 @@ export function Canvas(props: Props) {
               {leads.map((lead, k) => (
                 <line
                   key={k}
+                  className="lead"
                   x1={lead.anchor.x}
                   y1={lead.anchor.y}
                   x2={lead.end.x}

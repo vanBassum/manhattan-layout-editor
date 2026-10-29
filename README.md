@@ -17,4 +17,6 @@ pnpm dev
 
 ## AI agent (MCP)
 
-`mcp/server.mjs` lets Claude Code inspect and edit the layout open at http://localhost:5173 (registered in `.mcp.json`). Only works with a local dev server, not the Pages site.
+Without cloning: `claude mcp add manhattan -- npx -y github:vanBassum/manhattan-layout-editor`, then open the live site. Agents given only the site link find this in [`llms.txt`](https://vanbassum.github.io/manhattan-layout-editor/llms.txt).
+
+`mcp/server.mjs` lets Claude Code inspect and edit the layout open in your browser (registered in `.mcp.json`). Run Claude Code in this repo, then open the live site or `pnpm dev`; the status bar shows **Agent connected**. Other origins: set `MANHATTAN_ALLOWED_ORIGINS`.

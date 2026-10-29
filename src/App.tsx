@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
 import { applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setIsland, setLeadEnd } from './agentCommands'
-import { Canvas } from './Canvas'
+import { Canvas, type Layers } from './Canvas'
 import { downloadText, exportSvg } from './exportSvg'
+import { boundsOf } from './geometry'
 import {
   analyzeLeads,
   chooseResistors,
@@ -17,6 +18,7 @@ import {
 } from './layout'
 import { parseNetlist } from './netlist'
 import { findStrategy, STRATEGIES } from './optimize'
+import { ComponentList, Icon, LayerToggles, Section, SelectionDetails, Validation } from './panels'
 import { SAMPLE_NAME, SAMPLE_NETLIST } from './sample'
 import { canvasToPng } from './screenshot'
 import type { Layout, Project, Selection, Settings } from './types'
@@ -26,6 +28,18 @@ const STORAGE_KEY = 'manhattan-layout-editor/project-v3'
 const DEFAULT_SETTINGS: Settings = { snap: 0.5, isolation: 0.4, strategy: STRATEGIES[0].id, clearance: 3, maxLead: 10 }
 const UNDO_LIMIT = 100
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
+// Layer visibility is a per-browser view preference, deliberately not part of the project.
+const LAYERS_KEY = 'manhattan-layout-editor/layers'
+const ALL_LAYERS: Layers = { islands: true, parts: true, netLabels: true, leads: true, grid: true }
+
+function loadLayers(): Layers {
+  try {
+    const stored = localStorage.getItem(LAYERS_KEY)
+    return stored ? { ...ALL_LAYERS, ...JSON.parse(stored) } : ALL_LAYERS
+  } catch {
+    return ALL_LAYERS
+  }
+}
 
 function projectFromNetlist(name: string, text: string, previous?: Project): Project {
   const netlist = parseNetlist(text)
@@ -69,6 +83,7 @@ export function App() {
   const undoStack = useRef<Layout[]>([])
   const redoStack = useRef<Layout[]>([])
   const [agentConnected, setAgentConnected] = useState(false)
+  const [layers, setLayersState] = useState<Layers>(loadLayers)
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => withFootprintChoices(netlist, layout.placements), [netlist, layout.placements])
 
@@ -191,6 +206,15 @@ export function App() {
     return () => clearTimeout(timer)
   }, [project])
 
+  const setLayers = (next: Layers) => {
+    setLayersState(next)
+    try {
+      localStorage.setItem(LAYERS_KEY, JSON.stringify(next))
+    } catch {
+      // Storage disabled; the toggle still works for this session.
+    }
+  }
+
   const setLayout = (update: (layout: Layout) => Layout) =>
     setProject((p) => ({ ...p, layout: update(p.layout) }))
 
@@ -217,6 +241,8 @@ export function App() {
     }
     return counts
   }, [builtNetlist, layout])
+
+  const boardSize = useMemo(() => boundsOf(layout.islands.flatMap((i) => i.rects)), [layout.islands])
 
   const loadNetlist = (name: string, text: string, keepLayout: boolean) => {
     try {
@@ -346,112 +372,175 @@ export function App() {
 
   return (
     <div className="app">
-      <div className="toolbar">
-        <button onClick={() => fileInputRef.current!.click()}>Import netlist…</button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".tel,.enet,.json,.net,.txt"
-          hidden
-          onChange={(e) => onFileChosen(e.target.files?.[0])}
-        />
-        <button onClick={() => loadNetlist(SAMPLE_NAME, SAMPLE_NETLIST, false)}>Load sample</button>
-        <button onClick={resetToGrid}>Reset to grid</button>
-        <span className="separator" />
-        <button onClick={() => setFitRequest((n) => n + 1)} title="F">Fit</button>
-        <button onClick={undo} title="Ctrl+Z">Undo</button>
-        <button onClick={redo} title="Ctrl+Y or Ctrl+Shift+Z">Redo</button>
-        <span className="separator" />
-        <button onClick={() => rotateSelected(90)} disabled={selection?.kind !== 'part'} title="R = 90°, Shift+R = 15°">Rotate</button>
-        <button onClick={resetLeads} disabled={selection?.kind !== 'part'} title="Straighten the selected part's leads">
-          Reset leads
-        </button>
-        <button onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
-          Add rect
-        </button>
-        <button onClick={removeRect} disabled={!canRemoveRect} title="Del">Remove rect</button>
-        <span className="separator" />
-        <label title="Build plain resistors (R1, R2, …) through-hole as in the netlist, or as 1206 chips across an isolation gap">
-          Resistors
-          <select
-            value={resistorChoice(layout)}
-            disabled={!hasPlainResistors(netlist)}
-            onChange={(e) => setResistorChoice(e.target.value as ResistorChoice)}
-          >
-            <option value="through-hole">Through-hole</option>
-            <option value="1206">1206 SMD</option>
-          </select>
-        </label>
-        <span className="separator" />
-        <label>
-          Snap
-          <select value={settings.snap} onChange={(e) => setSettings({ snap: Number(e.target.value) })}>
-            {SNAP_OPTIONS.map((s) => (
-              <option key={s} value={s}>{s === 0 ? 'off' : `${s} mm`}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Isolation
-          <input
-            type="number"
-            min={0.05}
-            step={0.05}
-            value={settings.isolation}
-            onChange={(e) => setSettings({ isolation: Math.max(0.05, Number(e.target.value) || 0.05) })}
-          />
-          mm
-        </label>
-        <span className="separator" />
-        <label title="Free space the optimizer keeps around each component, for soldering and probing">
-          Clearance
-          <input
-            type="number"
-            min={0}
-            step={0.5}
-            value={settings.clearance}
-            onChange={(e) => setSettings({ clearance: Math.max(0, Number(e.target.value) || 0) })}
-          />
-          mm
-        </label>
-        <label title="Longest lead the optimizer bends without a heavy penalty">
-          Max lead
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={settings.maxLead}
-            onChange={(e) => setSettings({ maxLead: Math.max(1, Number(e.target.value) || 1) })}
-          />
-          mm
-        </label>
-        <select
-          value={settings.strategy}
-          onChange={(e) => setSettings({ strategy: e.target.value })}
-          title={findStrategy(settings.strategy).description}
-        >
-          {STRATEGIES.map((s) => (
-            <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
-          ))}
-        </select>
-        <button onClick={optimize} title={findStrategy(settings.strategy).description}>Optimize</button>
-        <span className="separator" />
-        <button onClick={exportLayout}>Export SVG</button>
+      <header className="header">
+        <div className="brand">
+          <span className="brand-icon"><Icon name="app" /></span>
+          Manhattan Layout Editor
+        </div>
+        <div className="project-tab" title={project.name}>{project.name}</div>
+        <div className="header-actions">
+          <button className="icon-button" onClick={undo} title="Undo (Ctrl+Z)" aria-label="Undo"><Icon name="undo" /></button>
+          <button className="icon-button" onClick={redo} title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo"><Icon name="redo" /></button>
+        </div>
+      </header>
+
+      <div className="workspace">
+        <aside className="sidebar">
+          <Section title="File">
+            <div className="action-list">
+              <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".tel,.enet,.json,.net,.txt"
+                hidden
+                onChange={(e) => onFileChosen(e.target.files?.[0])}
+              />
+              <button onClick={() => loadNetlist(SAMPLE_NAME, SAMPLE_NETLIST, false)}><Icon name="sample" />Load sample</button>
+              <button onClick={resetToGrid}><Icon name="grid" />Reset to grid</button>
+              <button onClick={exportLayout}><Icon name="export" />Export SVG</button>
+            </div>
+          </Section>
+          <Section title="Layers">
+            <LayerToggles layers={layers} onChange={setLayers} />
+          </Section>
+          <Section title={`Components (${builtNetlist.components.length})`}>
+            <ComponentList netlist={builtNetlist} selection={selection} onSelect={setSelection} />
+          </Section>
+        </aside>
+
+        <main className="canvas-area">
+          <div className="canvas-toolbar">
+            <button className="pill" onClick={() => setFitRequest((n) => n + 1)} title="F"><Icon name="fit" />Fit</button>
+            <span className="separator" />
+            <button className="pill" onClick={() => rotateSelected(90)} disabled={selection?.kind !== 'part'} title="R = 90°, Shift+R = 15°">
+              <Icon name="rotate" />Rotate
+            </button>
+            <button className="pill" onClick={resetLeads} disabled={selection?.kind !== 'part'} title="Straighten the selected part's leads">
+              <Icon name="leads" />Reset leads
+            </button>
+            <span className="separator" />
+            <button className="pill" onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
+              <Icon name="addRect" />Add rect
+            </button>
+            <button className="pill" onClick={removeRect} disabled={!canRemoveRect} title="Del">
+              <Icon name="removeRect" />Remove rect
+            </button>
+            <span className="separator" />
+            <label className="pill" title="Build plain resistors (R1, R2, …) through-hole as in the netlist, or as 1206 chips across an isolation gap">
+              Resistors
+              <select
+                value={resistorChoice(layout)}
+                disabled={!hasPlainResistors(netlist)}
+                onChange={(e) => setResistorChoice(e.target.value as ResistorChoice)}
+              >
+                <option value="through-hole">Through-hole</option>
+                <option value="1206">1206 SMD</option>
+              </select>
+            </label>
+            <span className="separator" />
+            <select
+              className="pill"
+              value={settings.strategy}
+              onChange={(e) => setSettings({ strategy: e.target.value })}
+              title={findStrategy(settings.strategy).description}
+            >
+              {STRATEGIES.map((s) => (
+                <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
+              ))}
+            </select>
+            <button className="pill primary" onClick={optimize} title={findStrategy(settings.strategy).description}>
+              <Icon name="optimize" />Optimize
+            </button>
+          </div>
+          <div className="canvas-frame">
+            <Canvas
+              netlist={builtNetlist}
+              layout={layout}
+              onLayoutChange={setLayout}
+              onBeginEdit={rememberLayout}
+              selection={selection}
+              onSelect={setSelection}
+              snap={settings.snap}
+              problemNets={problemNets}
+              fitRequest={fitRequest}
+              layers={layers}
+            />
+          </div>
+        </main>
+
+        <aside className="sidebar">
+          <Section title="Selection">
+            <SelectionDetails netlist={builtNetlist} selection={selection} />
+          </Section>
+          <Section title="Board settings">
+            <div className="settings">
+              <label>
+                Snap
+                <select value={settings.snap} onChange={(e) => setSettings({ snap: Number(e.target.value) })}>
+                  {SNAP_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{s === 0 ? 'off' : `${s} mm`}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Isolation
+                <span className="unit-input">
+                  <input
+                    type="number"
+                    min={0.05}
+                    step={0.05}
+                    value={settings.isolation}
+                    onChange={(e) => setSettings({ isolation: Math.max(0.05, Number(e.target.value) || 0.05) })}
+                  />
+                  mm
+                </span>
+              </label>
+              <label title="Free space the optimizer keeps around each component, for soldering and probing">
+                Clearance
+                <span className="unit-input">
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={settings.clearance}
+                    onChange={(e) => setSettings({ clearance: Math.max(0, Number(e.target.value) || 0) })}
+                  />
+                  mm
+                </span>
+              </label>
+              <label title="Longest lead the optimizer bends without a heavy penalty">
+                Max lead
+                <span className="unit-input">
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={settings.maxLead}
+                    onChange={(e) => setSettings({ maxLead: Math.max(1, Number(e.target.value) || 1) })}
+                  />
+                  mm
+                </span>
+              </label>
+            </div>
+          </Section>
+          <Section title="Netlist validation">
+            <Validation
+              components={netlist.components.length}
+              nets={netlist.nets.length}
+              openPins={pinCounts.open}
+              shortedPins={pinCounts.short}
+              netsTooClose={spacingViolations.size}
+              netsSplit={splitNets.size}
+            />
+          </Section>
+        </aside>
       </div>
 
-      <Canvas
-        netlist={builtNetlist}
-        layout={layout}
-        onLayoutChange={setLayout}
-        onBeginEdit={rememberLayout}
-        selection={selection}
-        onSelect={setSelection}
-        snap={settings.snap}
-        problemNets={problemNets}
-        fitRequest={fitRequest}
-      />
-
-      <div className="statusbar">
+      <footer className="statusbar">
+        <span className={agentConnected ? 'agent connected' : 'agent'} title="AI agent bridge (mcp/server.mjs)">
+          {agentConnected ? 'Agent connected' : 'No agent'}
+        </span>
         {error ? (
           <span className="error">{error}</span>
         ) : (
@@ -459,36 +548,11 @@ export function App() {
             <span>{project.name}</span>
             <span>{netlist.nets.length} nets</span>
             <span>{netlist.components.length} parts</span>
-            <span className={pinCounts.open ? 'warn' : ''}>{pinCounts.open} open pins</span>
-            <span className={pinCounts.short ? 'error' : ''}>{pinCounts.short} shorted pins</span>
-            <span className={spacingViolations.size ? 'error' : ''}>{spacingViolations.size} nets too close</span>
-            <span className={splitNets.size ? 'error' : ''} title="Islands in separate pieces need a wire jumper">
-              {splitNets.size} nets split
-            </span>
-            <SelectionInfo project={project} selection={selection} />
+            {boardSize && <span>Board {boardSize.w.toFixed(1)} × {boardSize.h.toFixed(1)} mm</span>}
           </>
         )}
-        <span className={agentConnected ? 'agent connected' : 'agent'} title="AI agent bridge (mcp/server.mjs)">
-          {agentConnected ? 'Agent connected' : 'No agent'}
-        </span>
         <span className="hint">Drag empty space to pan · wheel zooms · drag a lead end to bend it · R / Shift+R rotate 90° / 15° · Ctrl+Z undo · Del remove rect · F fit</span>
-      </div>
+      </footer>
     </div>
   )
-}
-
-function SelectionInfo({ project, selection }: { project: Project; selection: Selection }) {
-  if (selection?.kind === 'island') {
-    const pins = project.netlist.components.flatMap((c) =>
-      c.pins.filter((p) => p.net === selection.net).map((p) => `${c.ref}.${p.number}`),
-    )
-    return <span className="selection">Net {selection.net}: {pins.join(' ')}</span>
-  }
-  if (selection?.kind === 'part') {
-    const component = project.netlist.components.find((c) => c.ref === selection.ref)
-    if (!component) return null
-    const pins = component.pins.map((p) => `${p.number}:${p.net || '–'}`).join(' ')
-    return <span className="selection">{component.ref} {component.value} — {pins}</span>
-  }
-  return null
 }

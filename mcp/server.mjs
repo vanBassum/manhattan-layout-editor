@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // MCP server that lets an AI agent inspect and edit the layout open in the browser editor.
 //
 // Claude Code starts this over stdio (see .mcp.json). The editor page connects to the WebSocket
@@ -12,6 +13,14 @@ import { WebSocketServer } from 'ws'
 import { z } from 'zod'
 
 const BRIDGE_PORT = Number(process.env.MANHATTAN_BRIDGE_PORT ?? 5174)
+// Pages that may act as the editor: the local dev server, plus the published GitHub Pages site.
+// MANHATTAN_ALLOWED_ORIGINS (comma separated) replaces the published-site entry.
+const ALLOWED_ORIGINS = (process.env.MANHATTAN_ALLOWED_ORIGINS ?? 'https://vanbassum.github.io')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+const isAllowedOrigin = (origin) =>
+  !origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || ALLOWED_ORIGINS.includes(origin)
 const REQUEST_TIMEOUT_MS = 30_000
 const log = (...args) => console.error('[manhattan-mcp]', ...args)
 
@@ -27,8 +36,8 @@ const pending = new Map()
 const bridge = new WebSocketServer({
   host: '127.0.0.1',
   port: BRIDGE_PORT,
-  // Only pages served from this machine may act as the editor.
-  verifyClient: ({ origin }) => !origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin),
+  // Only known pages may act as the editor: a page that connects gets to answer the agent's tool calls.
+  verifyClient: ({ origin }) => isAllowedOrigin(origin),
 })
 
 bridge.on('connection', (socket) => {

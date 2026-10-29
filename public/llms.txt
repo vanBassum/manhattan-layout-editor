@@ -1,0 +1,25 @@
+# Manhattan Layout Editor — instructions for AI agents
+
+This site is a browser editor for Manhattan-style (laser-cut island / dead-bug) circuit boards.
+An AI agent can inspect and edit the layout open in the user's browser through a local MCP server.
+
+## Setup (no clone needed)
+
+Register the MCP server, then ask the user to open or reload this site:
+
+- Claude Code: `claude mcp add manhattan -- npx -y github:vanBassum/manhattan-layout-editor`
+- Other MCP clients (JSON config):
+  `{"mcpServers": {"manhattan": {"command": "npx", "args": ["-y", "github:vanBassum/manhattan-layout-editor"]}}}`
+
+Requires Node.js 18+. The server listens on ws://127.0.0.1:5174; the page connects to it and the
+status bar shows "Agent connected". Chrome may ask the user to allow local network access.
+Safari is not supported for this connection.
+
+## Tools
+
+get_layout, screenshot, move_component, set_lead_end, reset_leads, set_island, move_island,
+batch (several edits as one undo step), set_resistor_footprint, run_optimizer, undo, redo.
+All coordinates are millimetres, y points down. The netlist is fixed; only geometry changes.
+Every edit returns the remaining problems (open/shorted pins, nets too close, split nets).
+
+Source: https://github.com/vanBassum/manhattan-layout-editor
