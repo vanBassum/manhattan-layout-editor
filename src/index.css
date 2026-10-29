@@ -519,9 +519,9 @@ label.pill select {
 }
 
 /* Per-layer opacity comes from --opacity-<layer> on the svg (set by the Layers panel). */
+/* The grid is drawn in the SVG (.grid), so it pans and zooms with the board. */
 .canvas {
-  /* Hard stop just past the dot radius: a crisp dot instead of a blurry fade. */
-  background-image: radial-gradient(circle, rgb(150 158 168 / var(--opacity-grid, 1)) 1.1px, transparent 1.3px);
+  background-image: none;
 }
 
 .canvas .grid { opacity: var(--opacity-grid, 1); }

@@ -52,22 +52,13 @@ function layerClasses(layers: Layers): string {
   return ['canvas', ...classes].join(' ')
 }
 
-const GRID_PITCH_MM = 2.54
-const MIN_DOT_SPACING_PX = 12
+/** Fine grid pitches in mm; every fifth line is solid. */
+const GRID_PITCHES_MM = [1, 5, 25, 125]
+const MIN_GRID_SPACING_PX = 8
 
-/**
- * Places the background dots on the board's 2.54 mm grid, so they pan and zoom with the layout.
- * Zoomed out, the pitch doubles until the dots are far enough apart to stay readable.
- */
-function gridDots(view: View): CSSProperties {
-  let pitch = GRID_PITCH_MM
-  while (pitch * view.scale < MIN_DOT_SPACING_PX) pitch *= 2
-  const spacing = pitch * view.scale
-  // Each dot sits in the middle of its background tile, so shift the tiles by half a tile.
-  return {
-    backgroundSize: `${spacing}px ${spacing}px`,
-    backgroundPosition: `${view.ox - spacing / 2}px ${view.oy - spacing / 2}px`,
-  }
+/** Finest pitch whose lines stay far enough apart to read at this zoom. */
+function gridPitch(scale: number): number {
+  return GRID_PITCHES_MM.find((pitch) => pitch * scale >= MIN_GRID_SPACING_PX) ?? GRID_PITCHES_MM[GRID_PITCHES_MM.length - 1]
 }
 
 /** CSS variables --opacity-<layer>, read by the stylesheet. */
@@ -348,6 +339,7 @@ export function Canvas(props: Props) {
 
   // Sizes that should stay constant on screen, expressed in mm.
   const px = 1 / view.scale
+  const pitch = gridPitch(view.scale)
   const visible = {
     x: -view.ox / view.scale,
     y: -view.oy / view.scale,
@@ -361,19 +353,31 @@ export function Canvas(props: Props) {
     <svg
       ref={svgRef}
       className={layerClasses(layers)}
-      style={{ ...layerOpacities(layers), ...gridDots(view) }}
+      style={layerOpacities(layers)}
       onPointerDown={onBackgroundPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onContextMenu={(e) => e.preventDefault()}
     >
       <defs>
-        <pattern id="grid-minor" width={2.54} height={2.54} patternUnits="userSpaceOnUse">
-          <path d="M 2.54 0 L 0 0 0 2.54" fill="none" stroke="#e4e4e4" strokeWidth={px} />
+        <pattern id="grid-minor" width={pitch} height={pitch} patternUnits="userSpaceOnUse">
+          <path
+            d={`M ${pitch} 0 L 0 0 0 ${pitch}`}
+            fill="none"
+            stroke="#d0d4d9"
+            strokeWidth={px}
+            strokeDasharray={`${2 * px} ${3 * px}`}
+          />
+        </pattern>
+        <pattern id="grid-major" width={5 * pitch} height={5 * pitch} patternUnits="userSpaceOnUse">
+          <path d={`M ${5 * pitch} 0 L 0 0 0 ${5 * pitch}`} fill="none" stroke="#c4c9cf" strokeWidth={px} />
         </pattern>
       </defs>
       <g transform={`translate(${view.ox} ${view.oy}) scale(${view.scale})`}>
-        {view.scale > 3 && <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-minor)" className="grid" />}
+        <g className="grid">
+          <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-minor)" />
+          <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-major)" />
+        </g>
 
         {planesFirst(layout.islands).map((island) => {
           const violating = problemNets.has(island.net)

@@ -26,7 +26,7 @@ export async function canvasToPng(svg: SVGSVGElement, bounds: Rect): Promise<str
   const content = copy.querySelector(':scope > g')!
   content.removeAttribute('transform')
   // The grid only covers the on-screen area, and hover fading should not end up in the picture.
-  copy.querySelector('rect[fill="url(#grid-minor)"]')?.remove()
+  copy.querySelector('.grid')?.remove()
   copy.querySelectorAll('[opacity]').forEach((element) => element.removeAttribute('opacity'))
 
   const background = document.createElementNS(SVG_NS, 'rect')
