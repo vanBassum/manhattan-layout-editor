@@ -83,7 +83,7 @@ input:focus-visible {
 
 .app {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
 }
 
@@ -488,73 +488,56 @@ input:focus-visible {
   min-height: 0;
 }
 
-.canvas-toolbar {
+/* Tool bar: icon above a one-word label, like a navigation rail. */
+.tool-rail {
   display: flex;
   flex-wrap: wrap;
-  row-gap: 6px;
-  padding: 6px 0;
+  gap: 4px;
+  padding: 6px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 
-.tool-group {
+.rail-group {
+  display: flex;
+  gap: 2px;
+}
+
+.rail-group + .rail-group {
+  border-left: 1px solid var(--border);
+  padding-left: 4px;
+}
+
+.rail-button {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 0 12px;
-}
-
-.tool-group + .tool-group {
-  border-left: 1px solid var(--border);
-}
-
-.tool-group-label {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.tool-group-buttons {
-  display: flex;
   align-items: center;
-  gap: 4px;
-}
-
-.tool {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-}
-
-.tool.active,
-.tool.active:hover:not(:disabled) {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-/* Two mutually exclusive choices drawn as one control. */
-.segmented {
-  display: inline-flex;
-  padding: 2px;
-  border: 1px solid var(--border);
+  gap: 3px;
+  min-width: 56px;
+  padding: 6px 6px 5px;
+  border: none;
   border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.rail-button .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.rail-button:hover:not(:disabled) {
   background: var(--panel-muted);
 }
 
-.segmented button {
-  padding: 4px 10px;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  color: var(--text-muted);
-}
-
-.segmented button.active,
-.segmented button.active:hover {
-  background: var(--accent);
-  color: #fff;
+.rail-button.active,
+.rail-button.active:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .separator {
@@ -668,39 +651,50 @@ input:focus-visible {
 
 /* Status bar */
 
-.statusbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-  padding: 4px 12px;
-  border-top: 1px solid var(--border);
-  background: var(--panel);
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.statusbar .hint {
-  margin-left: auto;
-}
-
-.statusbar .agent::before {
-  content: '';
-  display: inline-block;
+/* Agent connection state, drawn as a dot on the AI button. */
+.agent-dot {
   width: 8px;
   height: 8px;
-  margin-right: 6px;
   border-radius: 50%;
   background: #b0b6bd;
 }
 
-.statusbar .agent.connected {
-  color: var(--ok);
-  font-weight: 600;
+.agent-dot.connected {
+  background: var(--ok);
 }
 
-.statusbar .agent.connected::before {
-  background: var(--ok);
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.board-size {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.shortcuts {
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.shortcuts th,
+.shortcuts td {
+  padding: 4px 16px 4px 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.shortcuts th {
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* Layer rows: name plus a three-way visible / faded / hidden switch. */

@@ -22,12 +22,12 @@ const ICON_PATHS = {
   removeRect: 'M4 6h12v12H4z M16 12h6',
   select: 'M6 3l13 8-6 1.5L10 19z',
   pan: 'M12 3v18 M3 12h18 M9 6l3-3 3 3 M9 18l3 3 3-3 M6 9l-3 3 3 3 M18 9l3 3-3 3',
-  movePart: 'M8 8h8v8H8z M4 12h4 M16 12h4',
   moveBody: 'M9 9h6v6H9z M3 12h2 M19 12h2 M5 10v4 M19 10v4',
   optimize: 'M13 3L5 14h6l-1 7 8-11h-6z',
   search: 'M10 4a6 6 0 1 1 0 12a6 6 0 1 1 0-12 M15 15l5 5',
   convert: 'M4 8h14l-3-3 M20 16H6l3 3',
   plus: 'M12 5v14 M5 12h14',
+  help: 'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18 M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6 M12 17.5v.01',
   eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z M12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6',
   eyeOff: 'M2 12s3.5-7 10-7c2 0 3.7.7 5.1 1.6 M22 12s-3.5 7-10 7c-2 0-3.7-.7-5.1-1.6 M3 3l18 18',
   ai: 'M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z',
@@ -193,16 +193,6 @@ export function ComponentList(props: ComponentListProps) {
         {shown.length === 0 && <li className="muted">{onlyIssues ? 'No issues' : 'No matches'}</li>}
       </ul>
     </>
-  )
-}
-
-/** A captioned cluster of toolbar buttons. */
-export function ToolGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="tool-group" role="group" aria-label={label}>
-      <span className="tool-group-label">{label}</span>
-      <div className="tool-group-buttons">{children}</div>
-    </div>
   )
 }
 
@@ -418,6 +408,45 @@ function CopyLine({ text }: { text: string }) {
   )
 }
 
+const SHORTCUTS: [string, string][] = [
+  ['V / H', 'Select / pan tool'],
+  ['Click, Shift+click', 'Select, add to selection'],
+  ['Drag empty space', 'Marquee select (Shift adds)'],
+  ['Ctrl+A', 'Select all'],
+  ['M', 'Anchor leads on/off: dragging a part leaves its lead ends in place'],
+  ['Shift+drag part', 'Take the leads along while anchored'],
+  ['Drag a lead end', 'Bend the lead'],
+  ['Space / Shift+Space', 'Rotate 90° / 15°'],
+  ['Del', 'Remove the selected rectangle'],
+  ['Ctrl+Z / Ctrl+Y', 'Undo / redo'],
+  ['Middle-drag, wheel', 'Pan, zoom'],
+  ['F', 'Fit the board in view'],
+]
+
+export function HelpDialog({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => dialogRef.current?.showModal(), [])
+
+  return (
+    <dialog ref={dialogRef} className="ai-dialog" onClose={onClose}>
+      <header>
+        <h2><Icon name="help" />Shortcuts</h2>
+        <button className="icon-button" onClick={() => dialogRef.current?.close()} aria-label="Close">✕</button>
+      </header>
+      <table className="shortcuts">
+        <tbody>
+          {SHORTCUTS.map(([keys, action]) => (
+            <tr key={keys}>
+              <th>{keys}</th>
+              <td>{action}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </dialog>
+  )
+}
+
 export function AiHelpDialog({ agentConnected, onClose }: { agentConnected: boolean; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   // A modal <dialog> gives Escape-to-close, a backdrop and focus trapping for free.
@@ -443,7 +472,7 @@ export function AiHelpDialog({ agentConnected, onClose }: { agentConnected: bool
           <span className="muted">Other clients, JSON config:</span>
           <CopyLine text={MCP_JSON_CONFIG} />
         </li>
-        <li>Keep this page open. The status bar shows <b>Agent connected</b> once the assistant runs.</li>
+        <li>Keep this page open. The AI button gets a green dot once the assistant runs.</li>
         <li>
           Ask it, for example:
           <CopyLine text={EXAMPLE_PROMPT} />

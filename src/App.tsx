@@ -18,7 +18,7 @@ import {
 } from './layout'
 import { parseNetlist } from './netlist'
 import { findStrategy, STRATEGIES } from './optimize'
-import { AiHelpDialog, ComponentList, Icon, LayerToggles, Section, SelectionDetails, ToolGroup, Validation } from './panels'
+import { AiHelpDialog, ComponentList, HelpDialog, Icon, LayerToggles, Section, SelectionDetails, Validation } from './panels'
 import {
   DEFAULT_SETTINGS,
   emptyProject,
@@ -145,6 +145,7 @@ export function App() {
   const parkedHistory = useRef(new Map<string, History>())
   const [agentConnected, setAgentConnected] = useState(false)
   const [showAiHelp, setShowAiHelp] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   /** Parts checked when the footprint dialog opened; null while it is closed. */
   const [footprintDialogRefs, setFootprintDialogRefs] = useState<string[] | null>(null)
   const [layers, setLayersState] = useState<Layers>(loadLayers)
@@ -548,8 +549,11 @@ export function App() {
       e.preventDefault()
       selectAll()
     } else if (command) return
-    else if (e.key === 'r' || e.key === 'R') rotateSelected(e.shiftKey ? 15 : 90)
-    else if (e.key === 'Delete' || e.key === 'Backspace') removeRect()
+    else if (e.key === ' ') {
+      // Also stops a focused button from being clicked by the same key press.
+      e.preventDefault()
+      if (!e.repeat) rotateSelected(e.shiftKey ? 15 : 90)
+    } else if (e.key === 'Delete' || e.key === 'Backspace') removeRect()
     else if (e.key === 'Escape') setSelection(null)
     else if (e.key === 'f' || e.key === 'F') setFitRequest((n) => n + 1)
     else if (e.key === 'v' || e.key === 'V') setTool('select')
@@ -610,8 +614,16 @@ export function App() {
           <button className="header-button" onClick={optimize} title={findStrategy(settings.strategy).description}>
             <Icon name="optimize" />Optimize
           </button>
-          <button className="header-button" onClick={() => setShowAiHelp(true)} title="Let an AI assistant edit this layout (MCP)">
+          <button
+            className="header-button"
+            onClick={() => setShowAiHelp(true)}
+            title={agentConnected ? 'AI agent connected (MCP)' : 'Let an AI assistant edit this layout (MCP)'}
+          >
             <Icon name="ai" />AI
+            <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
+          </button>
+          <button className="icon-button" onClick={() => setShowHelp(true)} title="Keyboard and mouse shortcuts" aria-label="Help">
+            <Icon name="help" />
           </button>
         </div>
       </header>
@@ -650,109 +662,6 @@ export function App() {
           </Section>
           <Section title="Layers">
             <LayerToggles layers={layers} onChange={setLayers} />
-          </Section>
-          <Section title={`Components (${builtNetlist.components.length})`} fill>
-            <ComponentList
-              netlist={builtNetlist}
-              selection={selection}
-              onSelect={setSelection}
-              refsWithIssues={pinCounts.refsWithIssues}
-              onChangeFootprint={openFootprintDialog}
-            />
-          </Section>
-        </aside>
-
-        <main className="canvas-area">
-          <div className="canvas-toolbar">
-            <ToolGroup label="View">
-              <button
-                className={tool === 'select' ? 'tool active' : 'tool'}
-                onClick={() => setTool('select')}
-                aria-pressed={tool === 'select'}
-                title="Select (V): drag empty space to select, Shift+drag adds"
-              >
-                <Icon name="select" />Select
-              </button>
-              <button
-                className={tool === 'pan' ? 'tool active' : 'tool'}
-                onClick={() => setTool('pan')}
-                aria-pressed={tool === 'pan'}
-                title="Pan (H): drag empty space to move the view; middle mouse always pans"
-              >
-                <Icon name="pan" />Pan
-              </button>
-              <button className="tool" onClick={() => setFitRequest((n) => n + 1)} title="Fit the board in view (F)">
-                <Icon name="fit" />Fit
-              </button>
-            </ToolGroup>
-            <ToolGroup label="Component">
-              <button className="tool" onClick={() => rotateSelected(90)} disabled={refsToEdit.length === 0} title="R = 90°, Shift+R = 15°">
-                <Icon name="rotate" />Rotate
-              </button>
-              <button className="tool" onClick={resetLeads} disabled={refsToEdit.length === 0} title="Straighten the selected parts' leads">
-                <Icon name="leads" />Reset leads
-              </button>
-              <button className="tool" onClick={openFootprintDialog} disabled={refsToEdit.length === 0} title="Choose another footprint for the selected parts">
-                <Icon name="convert" />Footprint…
-              </button>
-            </ToolGroup>
-            <ToolGroup label="Move mode (M)">
-              <div className="segmented">
-                <button
-                  className={moveMode === 'part' ? 'active' : ''}
-                  onClick={() => setMoveMode('part')}
-                  aria-pressed={moveMode === 'part'}
-                  title="Dragging a part takes its bent leads along"
-                >
-                  With leads
-                </button>
-                <button
-                  className={moveMode === 'body' ? 'active' : ''}
-                  onClick={() => setMoveMode('body')}
-                  aria-pressed={moveMode === 'body'}
-                  title="Dragging a part moves its body; lead ends stay where they are soldered. Shift+drag takes the leads along."
-                >
-                  Keep connections
-                </button>
-              </div>
-            </ToolGroup>
-            <ToolGroup label="Copper">
-              <button className="tool" onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
-                <Icon name="addRect" />Add rect
-              </button>
-              <button className="tool" onClick={removeRect} disabled={!canRemoveRect} title="Remove the selected rectangle (Del)">
-                <Icon name="removeRect" />Remove rect
-              </button>
-            </ToolGroup>
-          </div>
-          <div className="canvas-frame">
-            <Canvas
-              netlist={builtNetlist}
-              layout={layout}
-              onLayoutChange={setLayout}
-              onBeginEdit={rememberLayout}
-              selection={selection}
-              onSelect={setSelection}
-              snap={settings.snap}
-              isolation={settings.isolation}
-              problemNets={problemNets}
-              fitRequest={fitRequest}
-              layers={layers}
-              tool={tool}
-              moveMode={moveMode}
-            />
-          </div>
-        </main>
-
-        <aside className="sidebar">
-          <Section title="Selection">
-            <SelectionDetails
-              netlist={builtNetlist}
-              layout={layout}
-              selection={selection}
-              onPlacementChange={changePlacement}
-              onChangeFootprint={openFootprintDialog}
-            />
           </Section>
           <Section title="Board settings">
             <div className="settings">
@@ -803,6 +712,9 @@ export function App() {
                   mm
                 </span>
               </label>
+              {boardSize && (
+                <p className="board-size">Board {boardSize.w.toFixed(1)} × {boardSize.h.toFixed(1)} mm</p>
+              )}
             </div>
           </Section>
           <Section title="Netlist validation">
@@ -816,24 +728,109 @@ export function App() {
             />
           </Section>
         </aside>
+
+        <main className="canvas-area">
+          <nav className="tool-rail" aria-label="Tools">
+            <div className="rail-group" role="group" aria-label="View">
+              <button
+                className={tool === 'select' ? 'rail-button active' : 'rail-button'}
+                onClick={() => setTool('select')}
+                aria-pressed={tool === 'select'}
+                title="Select (V): drag empty space to select, Shift+drag adds"
+              >
+                <Icon name="select" />Select
+              </button>
+              <button
+                className={tool === 'pan' ? 'rail-button active' : 'rail-button'}
+                onClick={() => setTool('pan')}
+                aria-pressed={tool === 'pan'}
+                title="Pan (H): drag empty space to move the view; middle mouse always pans"
+              >
+                <Icon name="pan" />Pan
+              </button>
+              <button className="rail-button" onClick={() => setFitRequest((n) => n + 1)} title="Fit the board in view (F)">
+                <Icon name="fit" />Fit
+              </button>
+            </div>
+            <div className="rail-group" role="group" aria-label="Component">
+              <button
+                className={moveMode === 'body' ? 'rail-button active' : 'rail-button'}
+                onClick={() => setMoveMode(moveMode === 'body' ? 'part' : 'body')}
+                aria-pressed={moveMode === 'body'}
+                title={
+                  'Anchor leads (M). On: dragging a part moves only its body, lead ends stay where they are soldered. ' +
+                  'Off: the leads move along. Shift+drag always takes the leads along.'
+                }
+              >
+                <Icon name="moveBody" />Anchor
+              </button>
+              <button className="rail-button" onClick={() => rotateSelected(90)} disabled={refsToEdit.length === 0} title="Rotate: Space = 90°, Shift+Space = 15°">
+                <Icon name="rotate" />Rotate
+              </button>
+              <button className="rail-button" onClick={resetLeads} disabled={refsToEdit.length === 0} title="Straighten the selected parts' leads">
+                <Icon name="leads" />Leads
+              </button>
+              <button className="rail-button" onClick={openFootprintDialog} disabled={refsToEdit.length === 0} title="Choose another footprint for the selected parts">
+                <Icon name="convert" />Footprint
+              </button>
+            </div>
+            <div className="rail-group" role="group" aria-label="Copper">
+              <button className="rail-button" onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
+                <Icon name="addRect" />Add rect
+              </button>
+              <button className="rail-button" onClick={removeRect} disabled={!canRemoveRect} title="Remove the selected rectangle (Del)">
+                <Icon name="removeRect" />Del rect
+              </button>
+            </div>
+          </nav>
+          {error && (
+            <div className="error-banner" role="alert">
+              {error}
+              <button className="icon-button" onClick={() => setError('')} aria-label="Dismiss">✕</button>
+            </div>
+          )}
+          <div className="canvas-frame">
+            <Canvas
+              netlist={builtNetlist}
+              layout={layout}
+              onLayoutChange={setLayout}
+              onBeginEdit={rememberLayout}
+              selection={selection}
+              onSelect={setSelection}
+              snap={settings.snap}
+              isolation={settings.isolation}
+              problemNets={problemNets}
+              fitRequest={fitRequest}
+              layers={layers}
+              tool={tool}
+              moveMode={moveMode}
+            />
+          </div>
+        </main>
+
+        <aside className="sidebar">
+          <Section title="Selection">
+            <SelectionDetails
+              netlist={builtNetlist}
+              layout={layout}
+              selection={selection}
+              onPlacementChange={changePlacement}
+              onChangeFootprint={openFootprintDialog}
+            />
+          </Section>
+          <Section title={`Components (${builtNetlist.components.length})`} fill>
+            <ComponentList
+              netlist={builtNetlist}
+              selection={selection}
+              onSelect={setSelection}
+              refsWithIssues={pinCounts.refsWithIssues}
+              onChangeFootprint={openFootprintDialog}
+            />
+          </Section>
+        </aside>
       </div>
 
-      <footer className="statusbar">
-        <span className={agentConnected ? 'agent connected' : 'agent'} title="AI agent bridge (mcp/server.mjs)">
-          {agentConnected ? 'Agent connected' : 'No agent'}
-        </span>
-        {error ? (
-          <span className="error">{error}</span>
-        ) : (
-          <>
-            <span>{project.name}</span>
-            <span>{netlist.nets.length} nets</span>
-            <span>{netlist.components.length} parts</span>
-            {boardSize && <span>Board {boardSize.w.toFixed(1)} × {boardSize.h.toFixed(1)} mm</span>}
-          </>
-        )}
-        <span className="hint">V select / H pan · Shift+click adds · Ctrl+A all · M move part / body only · Shift+drag takes leads along · middle-drag pans · wheel zooms · drag a lead end to bend it · R / Shift+R rotate 90° / 15° · Ctrl+Z undo · Del remove rect · F fit</span>
-      </footer>
+      {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
       {showAiHelp && <AiHelpDialog agentConnected={agentConnected} onClose={() => setShowAiHelp(false)} />}
       {footprintDialogRefs && (
         <FootprintDialog
