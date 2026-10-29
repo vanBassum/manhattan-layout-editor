@@ -52,6 +52,24 @@ function layerClasses(layers: Layers): string {
   return ['canvas', ...classes].join(' ')
 }
 
+const GRID_PITCH_MM = 2.54
+const MIN_DOT_SPACING_PX = 12
+
+/**
+ * Places the background dots on the board's 2.54 mm grid, so they pan and zoom with the layout.
+ * Zoomed out, the pitch doubles until the dots are far enough apart to stay readable.
+ */
+function gridDots(view: View): CSSProperties {
+  let pitch = GRID_PITCH_MM
+  while (pitch * view.scale < MIN_DOT_SPACING_PX) pitch *= 2
+  const spacing = pitch * view.scale
+  // Each dot sits in the middle of its background tile, so shift the tiles by half a tile.
+  return {
+    backgroundSize: `${spacing}px ${spacing}px`,
+    backgroundPosition: `${view.ox - spacing / 2}px ${view.oy - spacing / 2}px`,
+  }
+}
+
 /** CSS variables --opacity-<layer>, read by the stylesheet. */
 function layerOpacities(layers: Layers): CSSProperties {
   return Object.fromEntries(Object.entries(layers).map(([layer, view]) => [`--opacity-${layer}`, view.opacity]))
@@ -343,7 +361,7 @@ export function Canvas(props: Props) {
     <svg
       ref={svgRef}
       className={layerClasses(layers)}
-      style={layerOpacities(layers)}
+      style={{ ...layerOpacities(layers), ...gridDots(view) }}
       onPointerDown={onBackgroundPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
