@@ -518,18 +518,24 @@ label.pill select {
   display: none;
 }
 
-/* A faded layer stays visible for reference but lets clicks through to the layers you are editing. */
-.canvas.fade-grid {
-  background-image: radial-gradient(#eef0f3 1px, transparent 1px);
+/* Per-layer opacity comes from --opacity-<layer> on the svg (set by the Layers panel). */
+.canvas {
+  background-image: radial-gradient(rgb(212 216 222 / var(--opacity-grid, 1)) 1px, transparent 1px);
 }
 
-.canvas.fade-grid .grid,
-.canvas.fade-islands .island,
-.canvas.fade-parts .part,
-.canvas.fade-netLabels .net-label,
-.canvas.fade-leads .lead,
-.canvas.fade-leads .ratsnest {
-  opacity: 0.15;
+.canvas .grid { opacity: var(--opacity-grid, 1); }
+.canvas .island { opacity: var(--opacity-islands, 1); }
+.canvas .net-label { opacity: var(--opacity-netLabels, 1); }
+.canvas .lead { opacity: var(--opacity-leads, 1); }
+/* Parts and ratsnest lines also fade on hover through their opacity attribute, so Canvas multiplies the layer opacity in there. */
+
+/* A strongly faded layer stays visible for reference but lets clicks through to the layers you are editing. */
+.canvas.dim-grid .grid,
+.canvas.dim-islands .island,
+.canvas.dim-parts .part,
+.canvas.dim-netLabels .net-label,
+.canvas.dim-leads .lead,
+.canvas.dim-leads .ratsnest {
   pointer-events: none;
 }
 
@@ -753,3 +759,115 @@ label.pill select {
   overflow-x: auto;
   white-space: nowrap;
 }
+
+/* Layer rows: visibility toggle, colour swatch, name and opacity slider. */
+.layer-row {
+  display: grid;
+  grid-template-columns: auto 12px 1fr 72px;
+  align-items: center;
+  gap: 8px;
+}
+
+.layer-row.hidden .layer-name,
+.layer-row.hidden .swatch {
+  opacity: 0.4;
+}
+
+.layer-row .eye {
+  padding: 2px;
+  color: var(--accent);
+}
+
+.layer-row.hidden .eye {
+  color: var(--text-muted);
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.layer-row input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* Component list: filter tabs and compact one-line rows. */
+.list-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.list-tabs button {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.list-tabs button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.list-tabs .convert-start {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  margin: 0 0 0 auto;
+}
+
+.component-list .component-row {
+  display: grid;
+  grid-template-columns: 22px 3em minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 6px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.component-list .component-row.selected,
+.component-list .component-row.checked {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.component-list .component-row.issue .ref {
+  color: #c92a2a;
+}
+
+.component-list .package {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.kind-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 2px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: #868e96;
+}
+
+.kind-badge.kind-R { background: #a0662f; }
+.kind-badge.kind-C { background: #3b5bdb; }
+.kind-badge.kind-Q { background: #343a40; }
+.kind-badge.kind-D { background: #e8590c; }
+.kind-badge.kind-U { background: #2b8a3e; }

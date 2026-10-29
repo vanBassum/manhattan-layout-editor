@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { LayerMode, Layers } from './Canvas'
-import type { ResistorChoice } from './layout'
-import type { Netlist, Selection } from './types'
+import type { LayerName, Layers, LayerView } from './Canvas'
+import { componentGeometry, type ResistorChoice } from './layout'
+import type { NetComponent, Netlist, Selection } from './types'
 
 const ICON_PATHS = {
   app: 'M4 4h6v6H4z M14 14h6v6h-6z M10 7h4v10 M7 10v7h7',
@@ -21,6 +21,8 @@ const ICON_PATHS = {
   search: 'M10 4a6 6 0 1 1 0 12a6 6 0 1 1 0-12 M15 15l5 5',
   convert: 'M4 8h14l-3-3 M20 16H6l3 3',
   plus: 'M12 5v14 M5 12h14',
+  eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z M12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6',
+  eyeOff: 'M2 12s3.5-7 10-7c2 0 3.7.7 5.1 1.6 M22 12s-3.5 7-10 7c-2 0-3.7-.7-5.1-1.6 M3 3l18 18',
   ai: 'M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z',
 }
 
@@ -54,42 +56,47 @@ export function Section({ title, fill = false, children }: SectionProps) {
   )
 }
 
-const LAYER_LABELS: Record<keyof Layers, string> = {
-  islands: 'Copper islands',
-  parts: 'Components',
-  netLabels: 'Net labels',
-  leads: 'Leads / ratsnest',
-  grid: 'Grid',
+const LAYER_INFO: Record<LayerName, { label: string; swatch: string }> = {
+  islands: { label: 'Copper islands', swatch: '#d9904f' },
+  parts: { label: 'Components', swatch: '#4a4a4a' },
+  netLabels: { label: 'Net labels', swatch: '#5a3b1c' },
+  leads: { label: 'Leads / ratsnest', swatch: '#2f9e44' },
+  grid: { label: 'Grid', swatch: '#c7cdd4' },
 }
 
-const LAYER_MODES: { mode: LayerMode; symbol: string; label: string }[] = [
-  { mode: 'on', symbol: '●', label: 'Visible' },
-  { mode: 'faded', symbol: '◐', label: 'Faded (not clickable)' },
-  { mode: 'off', symbol: '○', label: 'Hidden' },
-]
-
 export function LayerToggles({ layers, onChange }: { layers: Layers; onChange: (layers: Layers) => void }) {
+  const update = (layer: LayerName, change: Partial<LayerView>) => onChange({ ...layers, [layer]: { ...layers[layer], ...change } })
   return (
     <div className="layer-list">
-      {(Object.keys(LAYER_LABELS) as (keyof Layers)[]).map((layer) => (
-        <div key={layer} className="layer-row">
-          <span className={layers[layer] === 'on' ? '' : 'muted'}>{LAYER_LABELS[layer]}</span>
-          <div className="segmented" role="radiogroup" aria-label={LAYER_LABELS[layer]}>
-            {LAYER_MODES.map(({ mode, symbol, label }) => (
-              <button
-                key={mode}
-                role="radio"
-                aria-checked={layers[layer] === mode}
-                className={layers[layer] === mode ? 'active' : ''}
-                onClick={() => onChange({ ...layers, [layer]: mode })}
-                title={label}
-              >
-                {symbol}
-              </button>
-            ))}
+      {(Object.keys(LAYER_INFO) as LayerName[]).map((layer) => {
+        const { label, swatch } = LAYER_INFO[layer]
+        const view = layers[layer]
+        return (
+          <div key={layer} className={view.visible ? 'layer-row' : 'layer-row hidden'}>
+            <button
+              className="icon-button eye"
+              onClick={() => update(layer, { visible: !view.visible })}
+              title={view.visible ? 'Hide layer' : 'Show layer'}
+              aria-pressed={view.visible}
+            >
+              <Icon name={view.visible ? 'eye' : 'eyeOff'} />
+            </button>
+            <span className="swatch" style={{ background: swatch }} />
+            <span className="layer-name">{label}</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={Math.round(view.opacity * 100)}
+              disabled={!view.visible}
+              onChange={(e) => update(layer, { opacity: Number(e.target.value) / 100 })}
+              title={`Opacity ${Math.round(view.opacity * 100)}% (below 50% the layer ignores clicks)`}
+              aria-label={`${label} opacity`}
+            />
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -112,14 +119,37 @@ interface ComponentListProps {
   convertible: ReadonlySet<string>
   convertedToSmd: ReadonlySet<string>
   onConvert: (refs: ReadonlySet<string>, choice: ResistorChoice) => void
+  /** Parts with open or shorted pins. */
+  refsWithIssues: ReadonlySet<string>
 }
 
-export function ComponentList({ netlist, selection, onSelect, convertible, convertedToSmd, onConvert }: ComponentListProps) {
+/** Short package description for the component list, e.g. "TO-92", "1206" or "Radial". */
+function packageLabel(component: NetComponent): string {
+  const chip = component.footprint.match(/(0201|0402|0603|0805|1206|1210|2512)/)?.[1]
+  switch (componentGeometry(component).shape) {
+    case 'smd': return chip ?? 'SMD'
+    case 'to92': return 'TO-92'
+    case 'to126': return 'TO-126'
+    case 'trimmer': return 'Trimmer'
+    case 'radial': return 'Radial'
+    case 'axial': return 'Axial'
+    case 'dip': return 'DIP'
+    default: return component.footprint || '–'
+  }
+}
+
+const refPrefix = (ref: string) => ref.match(/^[A-Za-z]+/)?.[0].toUpperCase() ?? '?'
+
+export function ComponentList(props: ComponentListProps) {
+  const { netlist, selection, onSelect, convertible, convertedToSmd, onConvert, refsWithIssues } = props
   const [query, setQuery] = useState('')
+  const [onlyIssues, setOnlyIssues] = useState(false)
   const [conversion, setConversion] = useState<Conversion | null>(null)
   const needle = query.trim().toLowerCase()
-  const shown = netlist.components.filter((c) =>
-    [c.ref, c.value, c.footprint].some((text) => text.toLowerCase().includes(needle)),
+  const shown = netlist.components.filter(
+    (c) =>
+      (!onlyIssues || refsWithIssues.has(c.ref)) &&
+      [c.ref, c.value, c.footprint].some((text) => text.toLowerCase().includes(needle)),
   )
 
   // Preselect only the resistors the chosen target would actually change.
@@ -140,7 +170,7 @@ export function ComponentList({ netlist, selection, onSelect, convertible, conve
     setConversion(null)
   }
 
-  const targetLabel = RESISTOR_TARGETS.find((t) => t.choice === conversion?.choice)?.label
+  const targetLabel = conversion?.choice === '1206' ? '1206' : 'THT'
 
   return (
     <>
@@ -148,11 +178,19 @@ export function ComponentList({ netlist, selection, onSelect, convertible, conve
         <Icon name="search" />
         <input type="search" placeholder="Search components" value={query} onChange={(e) => setQuery(e.target.value)} />
       </label>
-      {convertible.size > 0 && !conversion && (
-        <button className="convert-start" onClick={() => startConversion('1206')} title="Choose a footprint for the plain resistors">
-          <Icon name="convert" />Convert resistors…
+      <div className="list-tabs">
+        <button className={onlyIssues ? '' : 'active'} onClick={() => setOnlyIssues(false)}>
+          All ({netlist.components.length})
         </button>
-      )}
+        <button className={onlyIssues ? 'active' : ''} onClick={() => setOnlyIssues(true)} title="Parts with open or shorted pins">
+          Issues ({refsWithIssues.size})
+        </button>
+        {convertible.size > 0 && !conversion && (
+          <button className="convert-start" onClick={() => startConversion('1206')} title="Choose a footprint for the plain resistors">
+            <Icon name="convert" />Convert
+          </button>
+        )}
+      </div>
       {conversion && (
         <div className="conversion">
           <div className="conversion-target">
@@ -176,35 +214,39 @@ export function ComponentList({ netlist, selection, onSelect, convertible, conve
       )}
       <ul className="component-list">
         {shown.map((c) => {
-          const selected = selection?.kind === 'part' && selection.ref === c.ref
           if (conversion && convertible.has(c.ref)) {
             const checked = conversion.refs.has(c.ref)
             return (
               <li key={c.ref}>
-                <label className={`convert-row${checked ? ' checked' : ''}`}>
+                <label className={`component-row${checked ? ' checked' : ''}`} title={c.footprint || undefined}>
                   <input type="checkbox" checked={checked} onChange={() => toggleRef(c.ref)} />
                   <span className="ref">{c.ref}</span>
                   <span className="value">{c.value}</span>
-                  <span className="footprint">{checked ? `${c.footprint} → ${targetLabel}` : c.footprint}</span>
+                  <span className="package">{checked ? `→ ${targetLabel}` : packageLabel(c)}</span>
                 </label>
               </li>
             )
           }
+          const selected = selection?.kind === 'part' && selection.ref === c.ref
+          const issue = refsWithIssues.has(c.ref)
           return (
             <li key={c.ref} className={conversion ? 'unaffected' : ''}>
               <button
-                className={selected ? 'selected' : ''}
+                className={`component-row${selected ? ' selected' : ''}${issue ? ' issue' : ''}`}
                 onClick={() => onSelect({ kind: 'part', ref: c.ref })}
                 title={c.footprint || undefined}
               >
+                <span className={`kind-badge kind-${refPrefix(c.ref).charAt(0)}`} aria-hidden="true">
+                  {refPrefix(c.ref)}
+                </span>
                 <span className="ref">{c.ref}</span>
                 <span className="value">{c.value}</span>
-                <span className="footprint">{c.footprint}</span>
+                <span className="package">{packageLabel(c)}</span>
               </button>
             </li>
           )
         })}
-        {shown.length === 0 && <li className="muted">No matches</li>}
+        {shown.length === 0 && <li className="muted">{onlyIssues ? 'No issues' : 'No matches'}</li>}
       </ul>
     </>
   )

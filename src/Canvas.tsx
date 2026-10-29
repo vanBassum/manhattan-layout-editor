@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, inflate, nearestPointOnRects, outlinePath } from './geometry'
 import { analyzeLeads, bodyBounds, componentGeometry, toLocal, toWorld as toWorldPoint, type Geometry, type PinStatus } from './layout'
 import type { Island, Layout, Netlist, Placement, Point, Rect, Selection } from './types'
@@ -30,25 +30,31 @@ const PIN_COLORS: Record<PinStatus, string> = {
   unused: '#888888',
 }
 
-export type LayerMode = 'on' | 'faded' | 'off'
-
-/** View-only layer modes; faded and hidden layers stay in the DOM so the agent screenshot can still show them. */
-export interface Layers {
-  islands: LayerMode
-  parts: LayerMode
-  netLabels: LayerMode
-  leads: LayerMode
-  grid: LayerMode
+export interface LayerView {
+  visible: boolean
+  /** 0..1 */
+  opacity: number
 }
 
-const LAYER_MODE_CLASS: Record<LayerMode, string | null> = { on: null, faded: 'fade', off: 'hide' }
+export type LayerName = 'islands' | 'parts' | 'netLabels' | 'leads' | 'grid'
+
+/** View-only settings; hidden layers stay in the DOM so the agent screenshot can still show them. */
+export type Layers = Record<LayerName, LayerView>
+
+/** Below this opacity a layer ignores clicks, so you can work on what lies underneath it. */
+const CLICKABLE_OPACITY = 0.5
 
 function layerClasses(layers: Layers): string {
-  const modes = Object.entries(layers).flatMap(([layer, mode]) => {
-    const prefix = LAYER_MODE_CLASS[mode as LayerMode]
-    return prefix ? [`${prefix}-${layer}`] : []
+  const classes = Object.entries(layers).flatMap(([layer, view]) => {
+    if (!view.visible) return [`hide-${layer}`]
+    return view.opacity < CLICKABLE_OPACITY ? [`dim-${layer}`] : []
   })
-  return ['canvas', ...modes].join(' ')
+  return ['canvas', ...classes].join(' ')
+}
+
+/** CSS variables --opacity-<layer>, read by the stylesheet. */
+function layerOpacities(layers: Layers): CSSProperties {
+  return Object.fromEntries(Object.entries(layers).map(([layer, view]) => [`--opacity-${layer}`, view.opacity]))
 }
 
 interface Props {
@@ -337,6 +343,7 @@ export function Canvas(props: Props) {
     <svg
       ref={svgRef}
       className={layerClasses(layers)}
+      style={layerOpacities(layers)}
       onPointerDown={onBackgroundPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -395,7 +402,7 @@ export function Canvas(props: Props) {
                 x2={target.x}
                 y2={target.y}
                 stroke={PIN_COLORS[lead.status]}
-                opacity={partOpacity(component.ref)}
+                opacity={partOpacity(component.ref) * layers.leads.opacity}
                 strokeWidth={1.5 * px}
                 strokeDasharray={`${4 * px} ${3 * px}`}
                 pointerEvents="none"
@@ -413,7 +420,7 @@ export function Canvas(props: Props) {
             <g
               key={component.ref}
               className="part"
-              opacity={partOpacity(component.ref)}
+              opacity={partOpacity(component.ref) * layers.parts.opacity}
               onPointerDown={(e) => onPartPointerDown(e, component.ref, placement)}
               onPointerEnter={() => setHoveredRef(component.ref)}
               onPointerLeave={() => setHoveredRef((ref) => (ref === component.ref ? null : ref))}

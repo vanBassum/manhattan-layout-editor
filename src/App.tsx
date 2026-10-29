@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
 import { applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setIsland, setLeadEnd } from './agentCommands'
-import { Canvas, type Layers } from './Canvas'
+import { Canvas, type LayerName, type Layers, type LayerView } from './Canvas'
 import { downloadText, exportSvg } from './exportSvg'
 import { boundsOf } from './geometry'
 import {
@@ -18,7 +18,6 @@ import {
 import { parseNetlist } from './netlist'
 import { findStrategy, STRATEGIES } from './optimize'
 import { AiHelpDialog, ComponentList, Icon, LayerToggles, Section, SelectionDetails, Validation } from './panels'
-import { SAMPLE_NAME, SAMPLE_NETLIST } from './sample'
 import { canvasToPng } from './screenshot'
 import type { Layout, Project, Selection, Settings } from './types'
 
@@ -29,25 +28,39 @@ const UNDO_LIMIT = 100
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
 const LAYERS_KEY = 'manhattan-layout-editor/layers'
-const ALL_LAYERS: Layers = { islands: 'on', parts: 'on', netLabels: 'on', leads: 'on', grid: 'on' }
+const SHOWN: LayerView = { visible: true, opacity: 1 }
+const ALL_LAYERS: Layers = { islands: SHOWN, parts: SHOWN, netLabels: SHOWN, leads: SHOWN, grid: SHOWN }
+
+/** Reads a stored layer setting, including the older true/false and 'on'/'faded'/'off' forms. */
+function parseLayerView(value: unknown): LayerView {
+  if (value === false || value === 'off') return { visible: false, opacity: 1 }
+  if (value === 'faded') return { visible: true, opacity: 0.15 }
+  if (typeof value === 'object' && value !== null) {
+    const { visible, opacity } = value as Partial<LayerView>
+    return { visible: visible !== false, opacity: typeof opacity === 'number' ? Math.min(1, Math.max(0, opacity)) : 1 }
+  }
+  return SHOWN
+}
 
 function loadLayers(): Layers {
   try {
     const stored = localStorage.getItem(LAYERS_KEY)
     if (!stored) return ALL_LAYERS
-    // Older versions stored true/false per layer.
     const parsed = JSON.parse(stored) as Record<string, unknown>
     const layers = { ...ALL_LAYERS }
-    for (const layer of Object.keys(layers) as (keyof Layers)[]) {
-      const value = parsed[layer]
-      if (value === true || value === false) layers[layer] = value ? 'on' : 'off'
-      else if (value === 'on' || value === 'faded' || value === 'off') layers[layer] = value
-    }
+    for (const layer of Object.keys(layers) as LayerName[]) layers[layer] = parseLayerView(parsed[layer])
     return layers
   } catch {
     return ALL_LAYERS
   }
 }
+
+const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
+  name: 'Untitled',
+  netlist: { components: [], nets: [] },
+  layout: { islands: [], placements: [] },
+  settings,
+})
 
 function projectFromNetlist(name: string, text: string, previous?: Project): Project {
   const netlist = parseNetlist(text)
@@ -77,9 +90,9 @@ function loadProject(): Project {
     const project = stored ? parseStoredProject(stored) : null
     if (project) return project
   } catch {
-    // Corrupt or inaccessible storage: fall back to the sample.
+    // Corrupt or inaccessible storage: start empty.
   }
-  return projectFromNetlist(SAMPLE_NAME, SAMPLE_NETLIST)
+  return emptyProject()
 }
 
 export function App() {
@@ -238,7 +251,7 @@ export function App() {
   const problemNets = useMemo(() => new Set([...spacingViolations, ...splitNets]), [spacingViolations, splitNets])
 
   const pinCounts = useMemo(() => {
-    const counts = { open: 0, short: 0 }
+    const counts = { open: 0, short: 0, refsWithIssues: new Set<string>() }
     const components = new Map(builtNetlist.components.map((c) => [c.ref, c]))
     for (const placement of layout.placements) {
       const component = components.get(placement.ref)
@@ -246,6 +259,7 @@ export function App() {
       for (const lead of analyzeLeads(component, placement, layout.islands)) {
         if (lead.status === 'open') counts.open++
         if (lead.status === 'short') counts.short++
+        if (lead.status === 'open' || lead.status === 'short') counts.refsWithIssues.add(component.ref)
       }
     }
     return counts
@@ -269,7 +283,7 @@ export function App() {
 
   const newProject = () => {
     if (!confirm('Start a new, empty project? The current layout is discarded (it cannot be undone).')) return
-    setProject((p) => ({ name: 'Untitled', netlist: { components: [], nets: [] }, layout: { islands: [], placements: [] }, settings: p.settings }))
+    setProject((p) => emptyProject(p.settings))
     undoStack.current = []
     redoStack.current = []
     setSelection(null)
@@ -424,7 +438,6 @@ export function App() {
                 hidden
                 onChange={(e) => onFileChosen(e.target.files?.[0])}
               />
-              <button onClick={() => loadNetlist(SAMPLE_NAME, SAMPLE_NETLIST, false)}><Icon name="sample" />Load sample</button>
               <button onClick={resetToGrid}><Icon name="grid" />Reset to grid</button>
               <button onClick={exportLayout}><Icon name="export" />Export SVG</button>
             </div>
@@ -439,6 +452,7 @@ export function App() {
               onSelect={setSelection}
               convertible={convertibleResistors}
               convertedToSmd={resistorsAsSmd}
+              refsWithIssues={pinCounts.refsWithIssues}
               onConvert={convertResistors}
             />
           </Section>

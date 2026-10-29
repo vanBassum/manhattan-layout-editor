@@ -22,6 +22,7 @@ export async function canvasToPng(svg: SVGSVGElement, bounds: Rect): Promise<str
   copy.setAttribute('height', String(height))
   // Layer toggles are a view preference; the picture always shows every layer.
   copy.setAttribute('class', 'canvas')
+  copy.removeAttribute('style')
   const content = copy.querySelector(':scope > g')!
   content.removeAttribute('transform')
   // The grid only covers the on-screen area, and hover fading should not end up in the picture.
