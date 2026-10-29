@@ -520,7 +520,8 @@ label.pill select {
 
 /* Per-layer opacity comes from --opacity-<layer> on the svg (set by the Layers panel). */
 .canvas {
-  background-image: radial-gradient(rgb(212 216 222 / var(--opacity-grid, 1)) 1px, transparent 1px);
+  /* Hard stop just past the dot radius: a crisp dot instead of a blurry fade. */
+  background-image: radial-gradient(circle, rgb(150 158 168 / var(--opacity-grid, 1)) 1.1px, transparent 1.3px);
 }
 
 .canvas .grid { opacity: var(--opacity-grid, 1); }
