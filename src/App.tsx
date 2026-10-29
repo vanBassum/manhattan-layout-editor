@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
 import { applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setFootprint, setIsland, setLeadEnd } from './agentCommands'
 import { Canvas, type LayerName, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
+import { exportDxf } from './exportDxf'
 import { downloadText, exportSvg } from './exportSvg'
 import { FootprintDialog } from './FootprintDialog'
 import { boundsOf } from './geometry'
@@ -515,6 +516,8 @@ export function App() {
   const exportLayout = () =>
     downloadText(`${project.name}-isolation.svg`, exportSvg(layout.islands, settings.isolation), 'image/svg+xml')
 
+  const exportLayoutDxf = () => downloadText(`${project.name}-isolation.dxf`, exportDxf(layout.islands, settings.isolation), 'application/dxf')
+
   const saveProject = () => downloadText(`${project.name}.manhattan.json`, projectToFile(project), 'application/json')
 
   const onProjectFileChosen = async (file: File | undefined) => {
@@ -639,7 +642,10 @@ export function App() {
                 onChange={(e) => onFileChosen(e.target.files?.[0])}
               />
               <button onClick={resetToGrid}><Icon name="grid" />Reset to grid</button>
-              <button onClick={exportLayout}><Icon name="export" />Export SVG</button>
+              <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
+              <button onClick={exportLayoutDxf} title="Area to burn as closed contours in mm (board outline + copper as holes), ready to hatch in EzCad">
+                <Icon name="export" />Export DXF
+              </button>
             </div>
           </Section>
           <Section title="Layers">

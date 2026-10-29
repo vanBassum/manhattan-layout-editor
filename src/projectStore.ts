@@ -2,6 +2,7 @@
 // browser tab remembers its own active project in sessionStorage, so two browser tabs can work
 // on different projects without overwriting each other.
 
+import EXAMPLE_PROJECT from './examples/multivibrator.manhattan.json?raw'
 import { migrateGappedIslands } from './migrateIslands'
 import { STRATEGIES } from './optimize'
 import type { Project, Settings } from './types'
@@ -136,7 +137,13 @@ export function rememberActiveTab(id: string) {
   } catch {}
 }
 
-/** The open tabs and the one this browser tab shows; the first run adopts the single-project storage. */
+/** Each copy of the example is a project of its own, so it gets its own guid. */
+const exampleProject = (): Project => ({ ...projectFromFile(EXAMPLE_PROJECT), guid: crypto.randomUUID() })
+
+/**
+ * The open tabs and the one this browser tab shows. The first run adopts the single-project
+ * storage from before tabs, or opens the example project in a browser that has never been here.
+ */
 export function loadTabs(): { tabs: ProjectTab[]; activeId: string } {
   let tabs: ProjectTab[] = []
   try {
@@ -144,7 +151,7 @@ export function loadTabs(): { tabs: ProjectTab[]; activeId: string } {
   } catch {}
   if (tabs.length === 0) {
     const id = newTabId()
-    let project = emptyProject()
+    let project = exampleProject()
     try {
       const legacy = localStorage.getItem(LEGACY_PROJECT_KEY)
       const parsed = legacy ? parseStoredProject(legacy) : null

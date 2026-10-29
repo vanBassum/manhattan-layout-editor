@@ -1,0 +1,453 @@
+{
+  "format": "manhattan-layout-editor",
+  "version": 5,
+  "project": {
+    "guid": "7d3f0a52-4b1e-4c8a-9f6d-2e5b8c1a9d40",
+    "name": "Example: astable multivibrator",
+    "netlist": {
+      "components": [
+        {
+          "ref": "C1",
+          "value": "10uF",
+          "footprint": "CAP-TH_BD5.0-P2.00",
+          "pins": [
+            {
+              "number": "1",
+              "net": "C1"
+            },
+            {
+              "number": "2",
+              "net": "B2"
+            }
+          ]
+        },
+        {
+          "ref": "C2",
+          "value": "10uF",
+          "footprint": "CAP-TH_BD5.0-P2.00",
+          "pins": [
+            {
+              "number": "1",
+              "net": "C2"
+            },
+            {
+              "number": "2",
+              "net": "B1"
+            }
+          ]
+        },
+        {
+          "ref": "D1",
+          "value": "LED",
+          "footprint": "LED-TH_RADIAL_BD5.0-P2.54",
+          "pins": [
+            {
+              "number": "1",
+              "net": "LED1_A"
+            },
+            {
+              "number": "2",
+              "net": "C1"
+            }
+          ]
+        },
+        {
+          "ref": "D2",
+          "value": "LED",
+          "footprint": "LED-TH_RADIAL_BD5.0-P2.54",
+          "pins": [
+            {
+              "number": "1",
+              "net": "LED2_A"
+            },
+            {
+              "number": "2",
+              "net": "C2"
+            }
+          ]
+        },
+        {
+          "ref": "Q1",
+          "value": "BC546",
+          "footprint": "TO-92-3_L4.9-W3.7-P2.54-L",
+          "pins": [
+            {
+              "number": "1",
+              "net": "C1"
+            },
+            {
+              "number": "2",
+              "net": "B1"
+            },
+            {
+              "number": "3",
+              "net": "GND"
+            }
+          ]
+        },
+        {
+          "ref": "Q2",
+          "value": "BC546",
+          "footprint": "TO-92-3_L4.9-W3.7-P2.54-L",
+          "pins": [
+            {
+              "number": "1",
+              "net": "C2"
+            },
+            {
+              "number": "2",
+              "net": "B2"
+            },
+            {
+              "number": "3",
+              "net": "GND"
+            }
+          ]
+        },
+        {
+          "ref": "R1",
+          "value": "1k",
+          "footprint": "R1206",
+          "pins": [
+            {
+              "number": "1",
+              "net": "VCC"
+            },
+            {
+              "number": "2",
+              "net": "LED1_A"
+            }
+          ]
+        },
+        {
+          "ref": "R2",
+          "value": "1k",
+          "footprint": "R1206",
+          "pins": [
+            {
+              "number": "1",
+              "net": "VCC"
+            },
+            {
+              "number": "2",
+              "net": "LED2_A"
+            }
+          ]
+        },
+        {
+          "ref": "R3",
+          "value": "100k",
+          "footprint": "R1206",
+          "pins": [
+            {
+              "number": "1",
+              "net": "VCC"
+            },
+            {
+              "number": "2",
+              "net": "B1"
+            }
+          ]
+        },
+        {
+          "ref": "R4",
+          "value": "100k",
+          "footprint": "R1206",
+          "pins": [
+            {
+              "number": "1",
+              "net": "VCC"
+            },
+            {
+              "number": "2",
+              "net": "B2"
+            }
+          ]
+        }
+      ],
+      "nets": [
+        "B1",
+        "B2",
+        "C1",
+        "C2",
+        "GND",
+        "LED1_A",
+        "LED2_A",
+        "VCC"
+      ]
+    },
+    "layout": {
+      "islands": [
+        {
+          "net": "VCC",
+          "rects": [
+            {
+              "x": 0,
+              "y": 0,
+              "w": 21,
+              "h": 4.5
+            }
+          ]
+        },
+        {
+          "net": "LED1_A",
+          "rects": [
+            {
+              "x": 0,
+              "y": 4.5,
+              "w": 7,
+              "h": 7
+            }
+          ]
+        },
+        {
+          "net": "LED2_A",
+          "rects": [
+            {
+              "x": 14,
+              "y": 4.5,
+              "w": 7,
+              "h": 7
+            }
+          ]
+        },
+        {
+          "net": "C1",
+          "rects": [
+            {
+              "x": 0,
+              "y": 11.5,
+              "w": 7,
+              "h": 13.5
+            }
+          ]
+        },
+        {
+          "net": "C2",
+          "rects": [
+            {
+              "x": 14,
+              "y": 11.5,
+              "w": 7,
+              "h": 13.5
+            }
+          ]
+        },
+        {
+          "net": "B1",
+          "rects": [
+            {
+              "x": 7,
+              "y": 4.5,
+              "w": 3.5,
+              "h": 20.5
+            }
+          ]
+        },
+        {
+          "net": "B2",
+          "rects": [
+            {
+              "x": 10.5,
+              "y": 4.5,
+              "w": 3.5,
+              "h": 20.5
+            }
+          ]
+        },
+        {
+          "net": "GND",
+          "rects": [
+            {
+              "x": 0,
+              "y": 25,
+              "w": 21,
+              "h": 4
+            }
+          ]
+        }
+      ],
+      "placements": [
+        {
+          "ref": "Q1",
+          "x": 7,
+          "y": 24.5,
+          "rotation": 90,
+          "leads": {
+            "1": {
+              "x": -2.54,
+              "y": 0.7
+            },
+            "2": {
+              "x": -0.2,
+              "y": -0.7
+            },
+            "3": {
+              "x": 2.54,
+              "y": 0
+            }
+          }
+        },
+        {
+          "ref": "Q2",
+          "x": 14,
+          "y": 24.5,
+          "rotation": 90,
+          "leads": {
+            "1": {
+              "x": -2.54,
+              "y": -0.7
+            },
+            "2": {
+              "x": -0.2,
+              "y": 0.7
+            },
+            "3": {
+              "x": 2.54,
+              "y": 0
+            }
+          }
+        },
+        {
+          "ref": "C1",
+          "x": 8.75,
+          "y": 14,
+          "rotation": 0,
+          "leads": {
+            "1": {
+              "x": -2.45,
+              "y": 0
+            },
+            "2": {
+              "x": 2.45,
+              "y": 0
+            }
+          }
+        },
+        {
+          "ref": "C2",
+          "x": 12.25,
+          "y": 19,
+          "rotation": 180,
+          "leads": {
+            "1": {
+              "x": -2.45,
+              "y": 0
+            },
+            "2": {
+              "x": 2.45,
+              "y": 0
+            }
+          }
+        },
+        {
+          "ref": "D1",
+          "x": 3.5,
+          "y": 11.5,
+          "rotation": 90,
+          "leads": {
+            "1": {
+              "x": -1.27,
+              "y": 0
+            },
+            "2": {
+              "x": 1.27,
+              "y": 0
+            }
+          }
+        },
+        {
+          "ref": "D2",
+          "x": 17.5,
+          "y": 11.5,
+          "rotation": 90,
+          "leads": {
+            "1": {
+              "x": -1.27,
+              "y": 0
+            },
+            "2": {
+              "x": 1.27,
+              "y": 0
+            }
+          }
+        },
+        {
+          "ref": "R1",
+          "x": 3.5,
+          "y": 4.5,
+          "rotation": 90,
+          "footprint": "RES-TH_BD1.8-L3.3-P7.62-D0.45",
+          "leads": {
+            "1": {
+              "x": -3.8,
+              "y": 0
+            },
+            "2": {
+              "x": 3.8,
+              "y": 0
+            }
+          }
+        },
+        {
+          "ref": "R2",
+          "x": 17.5,
+          "y": 4.5,
+          "rotation": 90,
+          "footprint": "RES-TH_BD1.8-L3.3-P7.62-D0.45",
+          "leads": {
+            "1": {
+              "x": -3.8,
+              "y": 0
+            },
+            "2": {
+              "x": 3.8,
+              "y": 0
+            }
+          }
+        },
+        {
+          "ref": "R3",
+          "x": 8.75,
+          "y": 4.5,
+          "rotation": 90,
+          "footprint": "RES-TH_BD1.8-L3.3-P7.62-D0.45",
+          "leads": {
+            "1": {
+              "x": -3.8,
+              "y": 0
+            },
+            "2": {
+              "x": 3.8,
+              "y": 0
+            }
+          }
+        },
+        {
+          "ref": "R4",
+          "x": 12.25,
+          "y": 4.5,
+          "rotation": 90,
+          "footprint": "RES-TH_BD1.8-L3.3-P7.62-D0.45",
+          "leads": {
+            "1": {
+              "x": -3.8,
+              "y": 0
+            },
+            "2": {
+              "x": 3.8,
+              "y": 0
+            }
+          }
+        }
+      ]
+    },
+    "settings": {
+      "snap": 0.5,
+      "isolation": 0.4,
+      "strategy": "knife",
+      "clearance": 3,
+      "maxLead": 10
+    }
+  }
+}
