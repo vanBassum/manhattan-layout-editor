@@ -8,6 +8,8 @@ const ISLAND_WIDTH = 12
 const ISLAND_HEIGHT = 8
 const ISLAND_SPACING = 4
 const PART_SPACING = 6
+/** Spacing of TO-92 legs where they leave the package (datasheet dimension G). */
+const TO92_LEG_PITCH = 1.27
 /** Automatic leads end this far inside the copper, so there is room for a solder joint. */
 const SOLDER_INSET = 0.5
 
@@ -137,8 +139,10 @@ function leadsFor(shape: Shape, component: NetComponent) {
     }
     case 'to92': {
       // The legs leave the bottom of the package in a row through the centre of its round part,
-      // about 0.4 of the depth behind the flat face (as in KiCad's TO-92_Inline).
-      const leads = rowLeads(pinCount, pitch, length ?? 4.9, width ?? 3.7)
+      // about 0.4 of the depth behind the flat face (as in KiCad's TO-92_Inline). They leave it
+      // 1.27 mm apart; a footprint's larger pitch is where formed legs land, and here every leg
+      // is bent to its own island anyway.
+      const leads = rowLeads(pinCount, TO92_LEG_PITCH, length ?? 4.9, width ?? 3.7)
       return { ...leads, body: { ...leads.body, y: -0.6 * leads.body.h } }
     }
     case 'to126':

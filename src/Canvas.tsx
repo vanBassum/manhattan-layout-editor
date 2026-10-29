@@ -232,9 +232,15 @@ export function BodyShape({ geometry, stroke, strokeWidth }: { geometry: Geometr
           <circle cx={x + w / 2} cy={y + h / 2} r={Math.min(w, h) * 0.3} fill="#fff" fillOpacity={0.5} />
         </>
       )
-    case 'to92':
-      // Seen from above: flat face toward the leads, rounded back.
-      return <path d={`M ${x} ${y + h} L ${x + w} ${y + h} A ${w / 2} ${h} 0 0 0 ${x} ${y + h} Z`} {...style} />
+    case 'to92': {
+      // Seen from above: a circle centred on the legs, cut off by the flat face 0.4 of the depth
+      // in front of them (see the to92 geometry in layout.ts).
+      const cx = x + w / 2
+      const r = Math.min(w / 2, 0.6 * h)
+      const halfChord = Math.sqrt(Math.max(0, r * r - (0.4 * h) ** 2))
+      const flat = y + h
+      return <path d={`M ${cx - halfChord} ${flat} L ${cx + halfChord} ${flat} A ${r} ${r} 0 1 0 ${cx - halfChord} ${flat} Z`} {...style} />
+    }
     case 'dip':
       return (
         <>
