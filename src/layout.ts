@@ -319,20 +319,18 @@ export type ResistorChoice = 'through-hole' | '1206'
 const SMD_RESISTOR_FOOTPRINT = 'R1206'
 
 /** R1, R2, ... with an axial footprint. Trimmers (RV) and loads (RL) are left alone. */
-const isPlainResistor = (c: NetComponent) => /^R\d+$/i.test(c.ref) && /AXIAL/i.test(c.footprint)
-
-export const hasPlainResistors = (netlist: Netlist) => netlist.components.some(isPlainResistor)
-
-export const resistorChoice = (layout: Layout): ResistorChoice =>
-  layout.placements.some((p) => p.footprint === SMD_RESISTOR_FOOTPRINT) ? '1206' : 'through-hole'
+export const isPlainResistor = (c: NetComponent) => /^R\d+$/i.test(c.ref) && /AXIAL/i.test(c.footprint)
 
 /**
- * Builds every plain resistor through-hole (as in the netlist) or as a 1206 chip bridging the
- * isolation gap it lies across. `imported` must be the netlist as imported, without choices applied.
- * Bent leads are reset: a chip has none, and a through-hole part gets its default bend back.
+ * Builds plain resistors through-hole (as in the netlist) or as a 1206 chip bridging the isolation
+ * gap it lies across: all of them, or only those in `refs`. `imported` must be the netlist as
+ * imported, without choices applied. Bent leads are reset: a chip has none, and a through-hole
+ * part gets its default bend back.
  */
-export function chooseResistors(imported: Netlist, layout: Layout, choice: ResistorChoice): Layout {
-  const resistors = new Set(imported.components.filter(isPlainResistor).map((c) => c.ref))
+export function chooseResistors(imported: Netlist, layout: Layout, choice: ResistorChoice, refs?: ReadonlySet<string>): Layout {
+  const resistors = new Set(
+    imported.components.filter((c) => isPlainResistor(c) && (!refs || refs.has(c.ref))).map((c) => c.ref),
+  )
   const footprint = choice === '1206' ? SMD_RESISTOR_FOOTPRINT : undefined
   return {
     ...layout,

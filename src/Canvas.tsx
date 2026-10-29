@@ -30,20 +30,25 @@ const PIN_COLORS: Record<PinStatus, string> = {
   unused: '#888888',
 }
 
-/** View-only visibility flags; hidden layers stay in the DOM so the agent screenshot can still show them. */
+export type LayerMode = 'on' | 'faded' | 'off'
+
+/** View-only layer modes; faded and hidden layers stay in the DOM so the agent screenshot can still show them. */
 export interface Layers {
-  islands: boolean
-  parts: boolean
-  netLabels: boolean
-  leads: boolean
-  grid: boolean
+  islands: LayerMode
+  parts: LayerMode
+  netLabels: LayerMode
+  leads: LayerMode
+  grid: LayerMode
 }
 
+const LAYER_MODE_CLASS: Record<LayerMode, string | null> = { on: null, faded: 'fade', off: 'hide' }
+
 function layerClasses(layers: Layers): string {
-  const hidden = Object.entries(layers)
-    .filter(([, visible]) => !visible)
-    .map(([layer]) => `hide-${layer}`)
-  return ['canvas', ...hidden].join(' ')
+  const modes = Object.entries(layers).flatMap(([layer, mode]) => {
+    const prefix = LAYER_MODE_CLASS[mode as LayerMode]
+    return prefix ? [`${prefix}-${layer}`] : []
+  })
+  return ['canvas', ...modes].join(' ')
 }
 
 interface Props {

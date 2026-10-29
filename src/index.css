@@ -479,6 +479,21 @@ label.pill select {
   display: none;
 }
 
+/* A faded layer stays visible for reference but lets clicks through to the layers you are editing. */
+.canvas.fade-grid {
+  background-image: radial-gradient(#eef0f3 1px, transparent 1px);
+}
+
+.canvas.fade-grid .grid,
+.canvas.fade-islands .island,
+.canvas.fade-parts .part,
+.canvas.fade-netLabels .net-label,
+.canvas.fade-leads .lead,
+.canvas.fade-leads .ratsnest {
+  opacity: 0.15;
+  pointer-events: none;
+}
+
 .island-rect,
 .part {
   cursor: move;
@@ -549,4 +564,151 @@ label.pill select {
 
 .statusbar .agent.connected::before {
   background: var(--ok);
+}
+
+/* Layer rows: name plus a three-way visible / faded / hidden switch. */
+.layer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented button {
+  border: none;
+  border-radius: 0;
+  padding: 2px 8px;
+  background: none;
+  font-size: 12px;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.segmented button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Resistor conversion in the component list. */
+.convert-start {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.conversion {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.conversion p {
+  margin: 0;
+}
+
+.conversion-target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.conversion-target .segmented {
+  background: #fff;
+}
+
+.conversion-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.convert-row {
+  display: grid;
+  grid-template-columns: auto 3.5em 1fr;
+  column-gap: 6px;
+  align-items: center;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.convert-row.checked {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.convert-row .footprint {
+  grid-column: 2 / 4;
+}
+
+.component-list li.unaffected {
+  opacity: 0.45;
+}
+
+/* AI help popup. */
+.ai-dialog {
+  max-width: 560px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+.ai-dialog::backdrop {
+  background: rgba(20, 24, 31, 0.35);
+}
+
+.ai-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-dialog h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 17px;
+}
+
+.ai-dialog ol {
+  display: grid;
+  gap: 10px;
+  padding-left: 20px;
+}
+
+.copy-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.copy-line code {
+  flex: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: #f1f3f5;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: nowrap;
 }

@@ -10,15 +10,14 @@ import {
   createLayout,
   findSpacingViolations,
   findSplitNets,
-  hasPlainResistors,
+  isPlainResistor,
   keepFootprintChoices,
-  resistorChoice,
   withFootprintChoices,
   type ResistorChoice,
 } from './layout'
 import { parseNetlist } from './netlist'
 import { findStrategy, STRATEGIES } from './optimize'
-import { ComponentList, Icon, LayerToggles, Section, SelectionDetails, Validation } from './panels'
+import { AiHelpDialog, ComponentList, Icon, LayerToggles, Section, SelectionDetails, Validation } from './panels'
 import { SAMPLE_NAME, SAMPLE_NETLIST } from './sample'
 import { canvasToPng } from './screenshot'
 import type { Layout, Project, Selection, Settings } from './types'
@@ -30,12 +29,21 @@ const UNDO_LIMIT = 100
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
 const LAYERS_KEY = 'manhattan-layout-editor/layers'
-const ALL_LAYERS: Layers = { islands: true, parts: true, netLabels: true, leads: true, grid: true }
+const ALL_LAYERS: Layers = { islands: 'on', parts: 'on', netLabels: 'on', leads: 'on', grid: 'on' }
 
 function loadLayers(): Layers {
   try {
     const stored = localStorage.getItem(LAYERS_KEY)
-    return stored ? { ...ALL_LAYERS, ...JSON.parse(stored) } : ALL_LAYERS
+    if (!stored) return ALL_LAYERS
+    // Older versions stored true/false per layer.
+    const parsed = JSON.parse(stored) as Record<string, unknown>
+    const layers = { ...ALL_LAYERS }
+    for (const layer of Object.keys(layers) as (keyof Layers)[]) {
+      const value = parsed[layer]
+      if (value === true || value === false) layers[layer] = value ? 'on' : 'off'
+      else if (value === 'on' || value === 'faded' || value === 'off') layers[layer] = value
+    }
+    return layers
   } catch {
     return ALL_LAYERS
   }
@@ -83,6 +91,7 @@ export function App() {
   const undoStack = useRef<Layout[]>([])
   const redoStack = useRef<Layout[]>([])
   const [agentConnected, setAgentConnected] = useState(false)
+  const [showAiHelp, setShowAiHelp] = useState(false)
   const [layers, setLayersState] = useState<Layers>(loadLayers)
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => withFootprintChoices(netlist, layout.placements), [netlist, layout.placements])
@@ -258,6 +267,15 @@ export function App() {
     }
   }
 
+  const newProject = () => {
+    if (!confirm('Start a new, empty project? The current layout is discarded (it cannot be undone).')) return
+    setProject((p) => ({ name: 'Untitled', netlist: { components: [], nets: [] }, layout: { islands: [], placements: [] }, settings: p.settings }))
+    undoStack.current = []
+    redoStack.current = []
+    setSelection(null)
+    setError('')
+  }
+
   const onFileChosen = async (file: File | undefined) => {
     if (!file) return
     const keepLayout = confirm('Keep the current positions of matching nets and components?\n\nOK = keep, Cancel = fresh grid')
@@ -322,9 +340,16 @@ export function App() {
     setFitRequest((n) => n + 1)
   }
 
-  const setResistorChoice = (choice: ResistorChoice) => {
+  const convertibleResistors = useMemo(
+    () => new Set(netlist.components.filter(isPlainResistor).map((c) => c.ref)),
+    [netlist],
+  )
+  // Footprint choices only ever come from the resistor conversion.
+  const resistorsAsSmd = new Set(layout.placements.filter((p) => p.footprint).map((p) => p.ref))
+
+  const convertResistors = (refs: ReadonlySet<string>, choice: ResistorChoice) => {
     rememberLayout()
-    setLayout((l) => chooseResistors(netlist, l, choice))
+    setLayout((l) => chooseResistors(netlist, l, choice, refs))
   }
 
   const optimize = () => {
@@ -378,6 +403,9 @@ export function App() {
           Manhattan Layout Editor
         </div>
         <div className="project-tab" title={project.name}>{project.name}</div>
+        <button className="icon-button" onClick={newProject} title="New empty project" aria-label="New empty project">
+          <Icon name="plus" />
+        </button>
         <div className="header-actions">
           <button className="icon-button" onClick={undo} title="Undo (Ctrl+Z)" aria-label="Undo"><Icon name="undo" /></button>
           <button className="icon-button" onClick={redo} title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo"><Icon name="redo" /></button>
@@ -405,7 +433,14 @@ export function App() {
             <LayerToggles layers={layers} onChange={setLayers} />
           </Section>
           <Section title={`Components (${builtNetlist.components.length})`}>
-            <ComponentList netlist={builtNetlist} selection={selection} onSelect={setSelection} />
+            <ComponentList
+              netlist={builtNetlist}
+              selection={selection}
+              onSelect={setSelection}
+              convertible={convertibleResistors}
+              convertedToSmd={resistorsAsSmd}
+              onConvert={convertResistors}
+            />
           </Section>
         </aside>
 
@@ -427,18 +462,6 @@ export function App() {
               <Icon name="removeRect" />Remove rect
             </button>
             <span className="separator" />
-            <label className="pill" title="Build plain resistors (R1, R2, …) through-hole as in the netlist, or as 1206 chips across an isolation gap">
-              Resistors
-              <select
-                value={resistorChoice(layout)}
-                disabled={!hasPlainResistors(netlist)}
-                onChange={(e) => setResistorChoice(e.target.value as ResistorChoice)}
-              >
-                <option value="through-hole">Through-hole</option>
-                <option value="1206">1206 SMD</option>
-              </select>
-            </label>
-            <span className="separator" />
             <select
               className="pill"
               value={settings.strategy}
@@ -451,6 +474,9 @@ export function App() {
             </select>
             <button className="pill primary" onClick={optimize} title={findStrategy(settings.strategy).description}>
               <Icon name="optimize" />Optimize
+            </button>
+            <button className="pill" onClick={() => setShowAiHelp(true)} title="Let an AI assistant edit this layout (MCP)">
+              <Icon name="ai" />AI
             </button>
           </div>
           <div className="canvas-frame">
@@ -553,6 +579,7 @@ export function App() {
         )}
         <span className="hint">Drag empty space to pan · wheel zooms · drag a lead end to bend it · R / Shift+R rotate 90° / 15° · Ctrl+Z undo · Del remove rect · F fit</span>
       </footer>
+      {showAiHelp && <AiHelpDialog agentConnected={agentConnected} onClose={() => setShowAiHelp(false)} />}
     </div>
   )
 }
