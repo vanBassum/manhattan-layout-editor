@@ -377,6 +377,9 @@ export function Canvas(props: Props) {
         <g className="grid">
           <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-minor)" />
           <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-major)" />
+          {/* Origin axes: x = 0 and y = 0 */}
+          <line x1={visible.x} y1={0} x2={visible.x + visible.w} y2={0} stroke="#8b96a3" strokeWidth={px} />
+          <line x1={0} y1={visible.y} x2={0} y2={visible.y + visible.h} stroke="#8b96a3" strokeWidth={px} />
         </g>
 
         {planesFirst(layout.islands).map((island) => {
@@ -530,6 +533,58 @@ export function Canvas(props: Props) {
           </g>
         ))}
       </g>
+      <Rulers view={view} width={size.width} height={size.height} pitch={pitch} />
     </svg>
+  )
+}
+
+const RULER_PX = 18
+
+/** Tick positions (mm) of one ruler: every grid pitch inside [from, to]. */
+function rulerTicks(from: number, to: number, pitch: number): number[] {
+  const ticks: number[] = []
+  for (let k = Math.ceil(from / pitch); k * pitch <= to; k++) ticks.push(k * pitch)
+  return ticks
+}
+
+/**
+ * Millimetre rulers along the top and left edge, in screen space so they stay put while the
+ * board pans under them. Labels sit on the solid (every fifth) grid lines.
+ */
+function Rulers({ view, width, height, pitch }: { view: View; width: number; height: number; pitch: number }) {
+  const toScreenX = (mm: number) => view.ox + mm * view.scale
+  const toScreenY = (mm: number) => view.oy + mm * view.scale
+  const isMajor = (mm: number) => Math.abs(mm / (5 * pitch) - Math.round(mm / (5 * pitch))) < 1e-6
+  const label = (mm: number) => String(Math.round(mm * 100) / 100)
+  const xTicks = rulerTicks(-view.ox / view.scale, (width - view.ox) / view.scale, pitch)
+  const yTicks = rulerTicks(-view.oy / view.scale, (height - view.oy) / view.scale, pitch)
+  return (
+    <g className="ruler" pointerEvents="none">
+      <rect x={0} y={0} width={width} height={RULER_PX} />
+      <rect x={0} y={0} width={RULER_PX} height={height} />
+      {xTicks.map((mm) => {
+        const x = toScreenX(mm)
+        if (x < RULER_PX) return null
+        return (
+          <g key={`x${mm}`}>
+            <line x1={x} y1={RULER_PX} x2={x} y2={RULER_PX - (isMajor(mm) ? 8 : 4)} />
+            {isMajor(mm) && <text x={x + 2} y={9}>{label(mm)}</text>}
+          </g>
+        )
+      })}
+      {yTicks.map((mm) => {
+        const y = toScreenY(mm)
+        if (y < RULER_PX) return null
+        return (
+          <g key={`y${mm}`}>
+            <line x1={RULER_PX} y1={y} x2={RULER_PX - (isMajor(mm) ? 8 : 4)} y2={y} />
+            {isMajor(mm) && (
+              <text x={9} y={y + 2} transform={`rotate(-90 9 ${y + 2})`}>{label(mm)}</text>
+            )}
+          </g>
+        )
+      })}
+      <text x={3} y={12} className="ruler-unit">mm</text>
+    </g>
   )
 }

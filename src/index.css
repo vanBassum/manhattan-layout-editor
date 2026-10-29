@@ -872,3 +872,24 @@ label.pill select {
 .kind-badge.kind-Q { background: #343a40; }
 .kind-badge.kind-D { background: #e8590c; }
 .kind-badge.kind-U { background: #2b8a3e; }
+
+/* Screen-space mm rulers along the top and left canvas edge. */
+.ruler rect {
+  fill: rgba(255, 255, 255, 0.92);
+}
+
+.ruler line {
+  stroke: #8b96a3;
+  stroke-width: 1;
+}
+
+.ruler text {
+  fill: #6b7580;
+  font-size: 9px;
+  font-family: inherit;
+}
+
+.ruler .ruler-unit {
+  font-size: 8px;
+  font-weight: 600;
+}
