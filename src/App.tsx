@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
 import { applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setIsland, setLeadEnd } from './agentCommands'
-import { Canvas, type LayerName, type Layers, type LayerView } from './Canvas'
+import { Canvas, type LayerName, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { downloadText, exportSvg } from './exportSvg'
 import { boundsOf } from './geometry'
 import {
@@ -19,6 +19,7 @@ import { parseNetlist } from './netlist'
 import { findStrategy, STRATEGIES } from './optimize'
 import { AiHelpDialog, ComponentList, Icon, LayerToggles, Section, SelectionDetails, Validation } from './panels'
 import { canvasToPng } from './screenshot'
+import { selectedRefs, selectionOf } from './selection'
 import type { Layout, Project, Selection, Settings } from './types'
 
 // v3: components carry a footprint; bent leads are stored relative to the component.
@@ -98,6 +99,8 @@ function loadProject(): Project {
 export function App() {
   const [project, setProject] = useState<Project>(loadProject)
   const [selection, setSelection] = useState<Selection>(null)
+  const [tool, setTool] = useState<Tool>('select')
+  const [moveMode, setMoveMode] = useState<MoveMode>('part')
   const [fitRequest, setFitRequest] = useState(1)
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -297,23 +300,29 @@ export function App() {
     fileInputRef.current!.value = ''
   }
 
+  // Rotate and reset leads act on every selected part, each in place.
+  const refsToEdit = selectedRefs(selection)
+
   const rotateSelected = (degrees: number) => {
-    if (selection?.kind !== 'part') return
+    if (refsToEdit.length === 0) return
     rememberLayout()
     setLayout((l) => ({
       ...l,
-      placements: l.placements.map((p) => (p.ref === selection.ref ? { ...p, rotation: (p.rotation + degrees) % 360 } : p)),
+      placements: l.placements.map((p) => (refsToEdit.includes(p.ref) ? { ...p, rotation: (p.rotation + degrees) % 360 } : p)),
     }))
   }
 
   const resetLeads = () => {
-    if (selection?.kind !== 'part') return
+    if (refsToEdit.length === 0) return
     rememberLayout()
     setLayout((l) => ({
       ...l,
-      placements: l.placements.map((p) => (p.ref === selection.ref ? { ...p, leads: undefined } : p)),
+      placements: l.placements.map((p) => (refsToEdit.includes(p.ref) ? { ...p, leads: undefined } : p)),
     }))
   }
+
+  const selectAll = () =>
+    setSelection(selectionOf(layout.placements.map((p) => p.ref), layout.islands.map((i) => i.net)))
 
   const addRect = () => {
     if (selection?.kind !== 'island') return
@@ -397,11 +406,17 @@ export function App() {
     } else if (command && (e.key === 'y' || e.key === 'Y')) {
       e.preventDefault()
       redo()
+    } else if (command && (e.key === 'a' || e.key === 'A')) {
+      e.preventDefault()
+      selectAll()
     } else if (command) return
     else if (e.key === 'r' || e.key === 'R') rotateSelected(e.shiftKey ? 15 : 90)
     else if (e.key === 'Delete' || e.key === 'Backspace') removeRect()
     else if (e.key === 'Escape') setSelection(null)
     else if (e.key === 'f' || e.key === 'F') setFitRequest((n) => n + 1)
+    else if (e.key === 'v' || e.key === 'V') setTool('select')
+    else if (e.key === 'h' || e.key === 'H') setTool('pan')
+    else if (e.key === 'm' || e.key === 'M') setMoveMode((mode) => (mode === 'part' ? 'body' : 'part'))
   }
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => shortcuts.current(e)
@@ -460,12 +475,46 @@ export function App() {
 
         <main className="canvas-area">
           <div className="canvas-toolbar">
+            <button
+              className={tool === 'select' ? 'pill active' : 'pill'}
+              onClick={() => setTool('select')}
+              aria-pressed={tool === 'select'}
+              title="Select (V): drag empty space to select, Shift+drag adds"
+            >
+              <Icon name="select" />Select
+            </button>
+            <button
+              className={tool === 'pan' ? 'pill active' : 'pill'}
+              onClick={() => setTool('pan')}
+              aria-pressed={tool === 'pan'}
+              title="Pan (H): drag empty space to move the view; middle mouse always pans"
+            >
+              <Icon name="pan" />Pan
+            </button>
+            <span className="separator" />
+            <button
+              className={moveMode === 'part' ? 'pill active' : 'pill'}
+              onClick={() => setMoveMode('part')}
+              aria-pressed={moveMode === 'part'}
+              title="Move part (M toggles): dragging a part takes its bent leads along"
+            >
+              <Icon name="movePart" />Move part
+            </button>
+            <button
+              className={moveMode === 'body' ? 'pill active' : 'pill'}
+              onClick={() => setMoveMode('body')}
+              aria-pressed={moveMode === 'body'}
+              title="Body only (M toggles): dragging a part moves its body; lead ends stay where they are soldered"
+            >
+              <Icon name="moveBody" />Body only
+            </button>
+            <span className="separator" />
             <button className="pill" onClick={() => setFitRequest((n) => n + 1)} title="F"><Icon name="fit" />Fit</button>
             <span className="separator" />
-            <button className="pill" onClick={() => rotateSelected(90)} disabled={selection?.kind !== 'part'} title="R = 90°, Shift+R = 15°">
+            <button className="pill" onClick={() => rotateSelected(90)} disabled={refsToEdit.length === 0} title="R = 90°, Shift+R = 15°">
               <Icon name="rotate" />Rotate
             </button>
-            <button className="pill" onClick={resetLeads} disabled={selection?.kind !== 'part'} title="Straighten the selected part's leads">
+            <button className="pill" onClick={resetLeads} disabled={refsToEdit.length === 0} title="Straighten the selected parts' leads">
               <Icon name="leads" />Reset leads
             </button>
             <span className="separator" />
@@ -505,6 +554,8 @@ export function App() {
               problemNets={problemNets}
               fitRequest={fitRequest}
               layers={layers}
+              tool={tool}
+              moveMode={moveMode}
             />
           </div>
         </main>
@@ -591,7 +642,7 @@ export function App() {
             {boardSize && <span>Board {boardSize.w.toFixed(1)} × {boardSize.h.toFixed(1)} mm</span>}
           </>
         )}
-        <span className="hint">Drag empty space to pan · wheel zooms · drag a lead end to bend it · R / Shift+R rotate 90° / 15° · Ctrl+Z undo · Del remove rect · F fit</span>
+        <span className="hint">V select / H pan · Shift+click adds · Ctrl+A all · M move part / body only · middle-drag pans · wheel zooms · drag a lead end to bend it · R / Shift+R rotate 90° / 15° · Ctrl+Z undo · Del remove rect · F fit</span>
       </footer>
       {showAiHelp && <AiHelpDialog agentConnected={agentConnected} onClose={() => setShowAiHelp(false)} />}
     </div>

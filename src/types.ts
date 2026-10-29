@@ -79,4 +79,6 @@ export interface Project {
 export type Selection =
   | { kind: 'island'; net: string; rectIndex: number }
   | { kind: 'part'; ref: string }
+  /** Two or more items; a single item always uses one of the kinds above. */
+  | { kind: 'multi'; refs: string[]; nets: string[] }
   | null

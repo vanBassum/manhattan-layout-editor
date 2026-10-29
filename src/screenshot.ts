@@ -29,6 +29,7 @@ export async function canvasToPng(svg: SVGSVGElement, bounds: Rect): Promise<str
   copy.querySelector('.grid')?.remove()
   // Rulers are screen furniture, framed for the live view.
   copy.querySelector('.ruler')?.remove()
+  copy.querySelector('.marquee')?.remove()
   copy.querySelectorAll('[opacity]').forEach((element) => element.removeAttribute('opacity'))
 
   const background = document.createElementNS(SVG_NS, 'rect')

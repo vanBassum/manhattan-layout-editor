@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LayerName, Layers, LayerView } from './Canvas'
 import { componentGeometry, type ResistorChoice } from './layout'
+import { selectedRefs, toggleSelected } from './selection'
 import type { NetComponent, Netlist, Selection } from './types'
 
 const ICON_PATHS = {
@@ -17,6 +18,10 @@ const ICON_PATHS = {
   leads: 'M4 12h5 M15 12h5 M9 8h6v8H9z',
   addRect: 'M4 6h12v12H4z M19 9v6 M16 12h6',
   removeRect: 'M4 6h12v12H4z M16 12h6',
+  select: 'M6 3l13 8-6 1.5L10 19z',
+  pan: 'M12 3v18 M3 12h18 M9 6l3-3 3 3 M9 18l3 3 3-3 M6 9l-3 3 3 3 M18 9l3 3-3 3',
+  movePart: 'M8 8h8v8H8z M4 12h4 M16 12h4',
+  moveBody: 'M9 9h6v6H9z M3 12h2 M19 12h2 M5 10v4 M19 10v4',
   optimize: 'M13 3L5 14h6l-1 7 8-11h-6z',
   search: 'M10 4a6 6 0 1 1 0 12a6 6 0 1 1 0-12 M15 15l5 5',
   convert: 'M4 8h14l-3-3 M20 16H6l3 3',
@@ -142,6 +147,7 @@ const refPrefix = (ref: string) => ref.match(/^[A-Za-z]+/)?.[0].toUpperCase() ??
 
 export function ComponentList(props: ComponentListProps) {
   const { netlist, selection, onSelect, convertible, convertedToSmd, onConvert, refsWithIssues } = props
+  const highlighted = new Set(selectedRefs(selection))
   const [query, setQuery] = useState('')
   const [onlyIssues, setOnlyIssues] = useState(false)
   const [conversion, setConversion] = useState<Conversion | null>(null)
@@ -227,13 +233,14 @@ export function ComponentList(props: ComponentListProps) {
               </li>
             )
           }
-          const selected = selection?.kind === 'part' && selection.ref === c.ref
+          const selected = highlighted.has(c.ref)
           const issue = refsWithIssues.has(c.ref)
+          const item = { kind: 'part', ref: c.ref } as const
           return (
             <li key={c.ref} className={conversion ? 'unaffected' : ''}>
               <button
                 className={`component-row${selected ? ' selected' : ''}${issue ? ' issue' : ''}`}
-                onClick={() => onSelect({ kind: 'part', ref: c.ref })}
+                onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey ? toggleSelected(selection, item) : item)}
                 title={c.footprint || undefined}
               >
                 <span className={`kind-badge kind-${refPrefix(c.ref).charAt(0)}`} aria-hidden="true">
@@ -253,6 +260,18 @@ export function ComponentList(props: ComponentListProps) {
 }
 
 export function SelectionDetails({ netlist, selection }: { netlist: Netlist; selection: Selection }) {
+  if (selection?.kind === 'multi') {
+    return (
+      <dl className="properties">
+        <dt>Selected</dt>
+        <dd>{selection.refs.length} parts, {selection.nets.length} islands</dd>
+        <dt>Parts</dt>
+        <dd>{selection.refs.length ? selection.refs.join(' ') : '–'}</dd>
+        <dt>Nets</dt>
+        <dd>{selection.nets.length ? selection.nets.join(' ') : '–'}</dd>
+      </dl>
+    )
+  }
   if (selection?.kind === 'island') {
     const pins = netlist.components.flatMap((c) =>
       c.pins.filter((p) => p.net === selection.net).map((p) => `${c.ref}.${p.number}`),

@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
-import { boundsOf, inflate, nearestPointOnRects, outlinePath } from './geometry'
+import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectsOverlap } from './geometry'
 import { analyzeLeads, bodyBounds, componentGeometry, toLocal, toWorld as toWorldPoint, type Geometry, type PinStatus } from './layout'
+import { addToSelection, isSelected, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
 import type { Island, Layout, Netlist, Placement, Point, Rect, Selection } from './types'
 
 /** screen = world * scale + offset; scale is pixels per millimeter. */
@@ -13,14 +14,33 @@ interface View {
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
+/** Select: dragging empty space draws a selection rectangle. Pan: it moves the view. */
+export type Tool = 'select' | 'pan'
+
+/** Part: the part moves with its bent leads. Body: lead ends stay soldered where they are. */
+export type MoveMode = 'part' | 'body'
+
+/** A part as it was when the drag started. With worldLeadEnds set, only the body moves. */
+interface MovingPart {
+  placement: Placement
+  worldLeadEnds?: Record<string, Point>
+}
+
 type Drag =
   | { kind: 'pan'; startX: number; startY: number; view: View }
+  | { kind: 'marquee'; start: Point; startX: number; startY: number; additive: boolean }
   | { kind: 'island'; net: string; start: Point; rects: Rect[] }
   | { kind: 'resize'; net: string; rectIndex: number; handle: Handle; start: Point; rect: Rect }
-  | { kind: 'part'; ref: string; start: Point; origin: Point }
+  | { kind: 'part'; start: Point; part: MovingPart }
+  | { kind: 'group'; start: Point; parts: MovingPart[]; islands: Island[]; pressed: SingleSelection }
   | { kind: 'lead'; pin: string; start: Point; origin: Point; placement: Placement }
 
+type MarqueeDrag = Extract<Drag, { kind: 'marquee' }>
+type GroupDrag = Extract<Drag, { kind: 'group' }>
+
 const MIN_RECT_SIZE = 1
+/** A press that moves less than this (screen pixels) is a click, not a selection rectangle. */
+const CLICK_TOLERANCE_PX = 3
 const HANDLES: Handle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
 
 const PIN_COLORS: Record<PinStatus, string> = {
@@ -79,6 +99,8 @@ interface Props {
   problemNets: Set<string>
   fitRequest: number
   layers: Layers
+  tool: Tool
+  moveMode: MoveMode
 }
 
 function resizeRect(r: Rect, handle: Handle, dx: number, dy: number): Rect {
@@ -162,14 +184,46 @@ function updateIsland(layout: Layout, net: string, rects: Rect[]): Layout {
   return { ...layout, islands: layout.islands.map((i) => (i.net === net ? { ...i, rects } : i)) }
 }
 
+const moveRects = (rects: Rect[], dx: number, dy: number) => rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy }))
+
+function movePart(current: Placement, moving: MovingPart, dx: number, dy: number): Placement {
+  const moved = { ...current, x: moving.placement.x + dx, y: moving.placement.y + dy }
+  if (!moving.worldLeadEnds) return moved
+  // Leads are stored relative to the body, so keeping their ends in place means re-bending them.
+  const leads = Object.fromEntries(Object.entries(moving.worldLeadEnds).map(([pin, end]) => [pin, toLocal(end, moved)]))
+  return { ...moved, leads }
+}
+
+function moveGroup(layout: Layout, drag: GroupDrag, dx: number, dy: number): Layout {
+  const parts = new Map(drag.parts.map((part) => [part.placement.ref, part]))
+  const islands = new Map(drag.islands.map((island) => [island.net, island]))
+  return {
+    placements: layout.placements.map((pl) => {
+      const moving = parts.get(pl.ref)
+      return moving ? movePart(pl, moving, dx, dy) : pl
+    }),
+    islands: layout.islands.map((island) => {
+      const original = islands.get(island.net)
+      return original ? { ...island, rects: moveRects(original.rects, dx, dy) } : island
+    }),
+  }
+}
+
+function rectBetween(a: Point, b: Point): Rect {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }
+}
+
+const isToggleClick = (e: ReactPointerEvent) => e.shiftKey || e.ctrlKey || e.metaKey
+
 export function Canvas(props: Props) {
-  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, problemNets, fitRequest, layers } = props
+  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, problemNets, fitRequest, layers, tool, moveMode } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const dragChangedRef = useRef(false)
   const [view, setView] = useState<View>({ scale: 5, ox: 40, oy: 40 })
   const [size, setSize] = useState({ width: 800, height: 600 })
   const [hoveredRef, setHoveredRef] = useState<string | null>(null)
+  const [marquee, setMarquee] = useState<Rect | null>(null)
   // While one part is hovered, the others fade so its leads are easy to follow.
   const partOpacity = (ref: string) => (hoveredRef === null || hoveredRef === ref ? 1 : 0.15)
 
@@ -256,17 +310,58 @@ export function Canvas(props: Props) {
   }
 
   const onBackgroundPointerDown = (e: ReactPointerEvent) => {
+    if (e.button === 0 && tool === 'select') {
+      beginDrag(e, { kind: 'marquee', start: toWorld(e), startX: e.clientX, startY: e.clientY, additive: isToggleClick(e) })
+      return
+    }
     if (e.button === 0) onSelect(null)
     beginDrag(e, { kind: 'pan', startX: e.clientX, startY: e.clientY, view })
   }
 
-  // Non-left buttons fall through to the background handler, so middle-drag always pans.
-  const onIslandPointerDown = (e: ReactPointerEvent, island: Island, rectIndex: number) => {
+  const movingPart = (ref: string): MovingPart => {
+    const part = parts.find((p) => p.component.ref === ref)!
+    if (moveMode === 'part') return { placement: part.placement }
+    const worldLeadEnds = Object.fromEntries(part.component.pins.map((pin, k) => [pin.number, part.leads[k].end]))
+    return { placement: part.placement, worldLeadEnds }
+  }
+
+  /**
+   * Shift/Ctrl+click toggles the item in the selection. Pressing an item of a multi-selection drags
+   * the whole group; otherwise the item alone is selected and `singleDrag` starts.
+   */
+  const onItemPointerDown = (e: ReactPointerEvent, item: SingleSelection, singleDrag: () => Drag) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    onSelect({ kind: 'island', net: island.net, rectIndex })
-    beginDrag(e, { kind: 'island', net: island.net, start: toWorld(e), rects: island.rects })
+    if (isToggleClick(e)) {
+      onSelect(toggleSelected(selection, item))
+      return
+    }
+    if (selection?.kind === 'multi' && isSelected(selection, item)) {
+      const { refs, nets } = selection
+      beginDrag(e, {
+        kind: 'group',
+        start: toWorld(e),
+        parts: parts.filter((p) => refs.includes(p.component.ref)).map((p) => movingPart(p.component.ref)),
+        islands: layout.islands.filter((island) => nets.includes(island.net)),
+        pressed: item,
+      })
+      return
+    }
+    onSelect(item)
+    beginDrag(e, singleDrag())
   }
+
+  // Non-left buttons fall through to the background handler, so middle-drag always pans.
+  const onIslandPointerDown = (e: ReactPointerEvent, island: Island, rectIndex: number) =>
+    onItemPointerDown(e, { kind: 'island', net: island.net, rectIndex }, () => ({
+      kind: 'island',
+      net: island.net,
+      start: toWorld(e),
+      rects: island.rects,
+    }))
+
+  const onPartPointerDown = (e: ReactPointerEvent, ref: string) =>
+    onItemPointerDown(e, { kind: 'part', ref }, () => ({ kind: 'part', start: toWorld(e), part: movingPart(ref) }))
 
   const onHandlePointerDown = (e: ReactPointerEvent, island: Island, rectIndex: number, handle: Handle) => {
     if (e.button !== 0) return
@@ -275,16 +370,13 @@ export function Canvas(props: Props) {
     beginDrag(e, { kind: 'resize', net: island.net, rectIndex, handle, start: toWorld(e), rect: island.rects[rectIndex] })
   }
 
-  const onPartPointerDown = (e: ReactPointerEvent, ref: string, origin: Point) => {
-    if (e.button !== 0) return
-    e.stopPropagation()
-    onSelect({ kind: 'part', ref })
-    beginDrag(e, { kind: 'part', ref, start: toWorld(e), origin })
-  }
-
   const onLeadPointerDown = (e: ReactPointerEvent, placement: Placement, pin: string, origin: Point) => {
     if (e.button !== 0) return
     e.stopPropagation()
+    if (isToggleClick(e)) {
+      onSelect(toggleSelected(selection, { kind: 'part', ref: placement.ref }))
+      return
+    }
     onSelect({ kind: 'part', ref: placement.ref })
     beginDrag(e, { kind: 'lead', pin, start: toWorld(e), origin, placement })
   }
@@ -296,6 +388,10 @@ export function Canvas(props: Props) {
       setView({ ...drag.view, ox: drag.view.ox + e.clientX - drag.startX, oy: drag.view.oy + e.clientY - drag.startY })
       return
     }
+    if (drag.kind === 'marquee') {
+      setMarquee(rectBetween(drag.start, toWorld(e)))
+      return
+    }
     const p = toWorld(e)
     const dx = snapValue(p.x - drag.start.x)
     const dy = snapValue(p.y - drag.start.y)
@@ -305,7 +401,7 @@ export function Canvas(props: Props) {
       onBeginEdit()
     }
     if (drag.kind === 'island') {
-      const moved = drag.rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy }))
+      const moved = moveRects(drag.rects, dx, dy)
       onLayoutChange((l) => updateIsland(l, drag.net, moved))
     } else if (drag.kind === 'resize') {
       const resized = resizeRect(drag.rect, drag.handle, dx, dy)
@@ -322,19 +418,37 @@ export function Canvas(props: Props) {
           pl.ref === drag.placement.ref ? { ...pl, leads: { ...pl.leads, [drag.pin]: end } } : pl,
         ),
       }))
-    } else {
+    } else if (drag.kind === 'part') {
       onLayoutChange((l) => ({
         ...l,
-        placements: l.placements.map((pl) =>
-          pl.ref === drag.ref ? { ...pl, x: drag.origin.x + dx, y: drag.origin.y + dy } : pl,
-        ),
+        placements: l.placements.map((pl) => (pl.ref === drag.part.placement.ref ? movePart(pl, drag.part, dx, dy) : pl)),
       }))
+    } else {
+      onLayoutChange((l) => moveGroup(l, drag, dx, dy))
     }
   }
 
+  const finishMarquee = (drag: MarqueeDrag, e: ReactPointerEvent) => {
+    setMarquee(null)
+    if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) <= CLICK_TOLERANCE_PX) {
+      if (!drag.additive) onSelect(null)
+      return
+    }
+    const area = rectBetween(drag.start, toWorld(e))
+    const refs = parts
+      .filter(({ geometry, placement }) => rectsOverlap(bodyBounds(geometry, placement), area))
+      .map(({ component }) => component.ref)
+    const nets = layout.islands.filter((island) => island.rects.some((r) => rectsOverlap(r, area))).map((i) => i.net)
+    onSelect(drag.additive ? addToSelection(selection, refs, nets) : selectionOf(refs, nets))
+  }
+
   const onPointerUp = (e: ReactPointerEvent) => {
+    const drag = dragRef.current
     dragRef.current = null
     svgRef.current!.releasePointerCapture(e.pointerId)
+    if (drag?.kind === 'marquee') finishMarquee(drag, e)
+    // A click without dragging on an item of a multi-selection selects just that item.
+    else if (drag?.kind === 'group' && !dragChangedRef.current) onSelect(drag.pressed)
   }
 
   // Sizes that should stay constant on screen, expressed in mm.
@@ -348,11 +462,13 @@ export function Canvas(props: Props) {
   }
   const selectedIsland = selection?.kind === 'island' ? islandsByNet.get(selection.net) : undefined
   const selectedRectIndex = selection?.kind === 'island' ? selection.rectIndex : -1
+  const highlightedNets = new Set(selectedNets(selection))
+  const highlightedRefs = new Set(selectedRefs(selection))
 
   return (
     <svg
       ref={svgRef}
-      className={layerClasses(layers)}
+      className={tool === 'pan' ? `${layerClasses(layers)} tool-pan` : layerClasses(layers)}
       style={layerOpacities(layers)}
       onPointerDown={onBackgroundPointerDown}
       onPointerMove={onPointerMove}
@@ -384,7 +500,7 @@ export function Canvas(props: Props) {
 
         {planesFirst(layout.islands).map((island) => {
           const violating = problemNets.has(island.net)
-          const selected = selectedIsland?.net === island.net
+          const selected = highlightedNets.has(island.net)
           return (
             <g key={island.net} className="island">
               {island.rects.map((r, k) => (
@@ -437,7 +553,7 @@ export function Canvas(props: Props) {
         )}
 
         {parts.map(({ component, placement, geometry, leads }) => {
-          const selected = selection?.kind === 'part' && selection.ref === component.ref
+          const selected = highlightedRefs.has(component.ref)
           const { body } = geometry
           const center = toWorldPoint({ x: body.x + body.w / 2, y: body.y + body.h / 2 }, placement)
           const rotatedHeight = bodyBounds(geometry, placement).h
@@ -446,7 +562,7 @@ export function Canvas(props: Props) {
               key={component.ref}
               className="part"
               opacity={partOpacity(component.ref) * layers.parts.opacity}
-              onPointerDown={(e) => onPartPointerDown(e, component.ref, placement)}
+              onPointerDown={(e) => onPartPointerDown(e, component.ref)}
               onPointerEnter={() => setHoveredRef(component.ref)}
               onPointerLeave={() => setHoveredRef((ref) => (ref === component.ref ? null : ref))}
             >
@@ -532,6 +648,19 @@ export function Canvas(props: Props) {
             })}
           </g>
         ))}
+
+        {marquee && (
+          <rect
+            className="marquee"
+            x={marquee.x}
+            y={marquee.y}
+            width={marquee.w}
+            height={marquee.h}
+            strokeWidth={px}
+            strokeDasharray={`${4 * px} ${3 * px}`}
+            pointerEvents="none"
+          />
+        )}
       </g>
       <Rulers view={view} width={size.width} height={size.height} pitch={pitch} />
     </svg>

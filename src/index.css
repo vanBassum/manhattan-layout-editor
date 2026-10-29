@@ -465,6 +465,12 @@ label.pill select {
   background: none;
 }
 
+.pill.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .pill.primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -501,7 +507,17 @@ label.pill select {
   background-size: 16px 16px;
   touch-action: none;
   user-select: none;
+  cursor: default;
+}
+
+.canvas.tool-pan {
   cursor: grab;
+}
+
+.marquee {
+  fill: var(--accent);
+  fill-opacity: 0.08;
+  stroke: var(--accent);
 }
 
 /* Layer toggles hide through classes on the svg, so the agent screenshot can reset them on its copy. */
