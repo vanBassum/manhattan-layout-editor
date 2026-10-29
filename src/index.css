@@ -114,22 +114,79 @@ input:focus-visible {
   color: #fff;
 }
 
+.project-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
 .project-tab {
-  max-width: 280px;
+  display: flex;
+  align-items: center;
+  flex: none;
+  max-width: 240px;
+  border: 1px solid var(--border);
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: var(--panel-muted);
+  color: var(--text-muted);
+}
+
+.project-tab.active {
+  border-bottom-color: var(--accent);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.project-tab button {
+  border: none;
+  background: none;
+}
+
+.tab-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 4px 4px 10px;
+}
+
+.tab-name span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 4px 12px;
-  border: 1px solid var(--border);
-  border-bottom: 2px solid var(--accent);
-  border-radius: 6px 6px 0 0;
-  background: var(--panel-muted);
+}
+
+.tab-close {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .header-actions {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
+}
+
+.button-group {
+  display: flex;
+  gap: 4px;
+}
+
+.header-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+}
+
+.header-actions select {
+  height: 30px;
 }
 
 .icon-button {
@@ -337,10 +394,6 @@ input:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.properties dd.footprint {
-  font-size: 12px;
-}
-
 .counts dd {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -438,48 +491,70 @@ input:focus-visible {
 .canvas-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  row-gap: 6px;
+  padding: 6px 0;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 
-.pill {
+.tool-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+.tool-group + .tool-group {
+  border-left: 1px solid var(--border);
+}
+
+.tool-group-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tool-group-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tool {
   display: flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
-  padding: 4px 12px;
+  padding: 5px 10px;
 }
 
-label.pill {
-  border: 1px solid var(--border);
-  background: var(--panel);
-}
-
-label.pill select {
-  border: none;
-  padding: 0 2px;
-  background: none;
-}
-
-.pill.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.pill.primary {
+.tool.active,
+.tool.active:hover:not(:disabled) {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
 }
 
-.pill.primary:hover:not(:disabled) {
-  background: #3049b8;
-  border-color: #3049b8;
+/* Two mutually exclusive choices drawn as one control. */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-muted);
+}
+
+.segmented button {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+}
+
+.segmented button.active,
+.segmented button.active:hover {
+  background: var(--accent);
+  color: #fff;
 }
 
 .separator {
@@ -1069,6 +1144,88 @@ label.pill select {
   border-color: #3049b8;
 }
 
-.selection-actions {
-  margin-top: 8px;
+/* Selection panel: a header card, then editable fields. */
+.selection-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.selection-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.kind-badge.large {
+  min-width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.selection-thumb.island {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: #d9904f;
+}
+
+.field-list {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.field-label {
+  color: var(--text-muted);
+}
+
+.field-list input[type='number'] {
+  width: 100%;
+  min-width: 0;
+}
+
+.field-list .unit-input {
+  min-width: 0;
+}
+
+.field-pair {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+
+.field-pair .axis {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.footprint-field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-left: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.footprint-field span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.footprint-field .icon-button {
+  width: 28px;
+  height: 26px;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
 }

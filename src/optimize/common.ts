@@ -1,5 +1,5 @@
-import { boundsOf, inflate, rectContains, rectsOverlap, segmentsCross } from '../geometry'
-import { bodyBounds, componentGeometry, defaultLeadEnds, solderPoint, toLocal, toWorld, type Geometry } from '../layout'
+import { boundsOf, inflate, rectsOverlap, segmentsCross } from '../geometry'
+import { bodyBounds, componentGeometry, defaultLeadEnds, onCopper, solderPoint, toLocal, toWorld, type Geometry } from '../layout'
 import { isRealNet, naturalCompare } from '../netlist'
 import type { Island, NetComponent, Netlist, Placement, Point, Rect, Settings } from '../types'
 
@@ -191,9 +191,9 @@ export function placeOnIslands(netlist: Netlist, islands: Island[], settings: Se
             const net = nets[k]
             const island = net === null ? undefined : islandsByNet.get(net)
             if (!island) return
-            const onOwn = island.rects.some((r) => rectContains(r, end))
-            const finalEnd = onOwn ? end : solderPoint(island, toWorld(geometry.anchors[k], placement), geometry)
-            const onForeign = islands.some((i) => i.net !== net && !i.plane && i.rects.some((r) => rectContains(r, finalEnd)))
+            const onOwn = onCopper(island, end, settings.isolation)
+            const finalEnd = onOwn ? end : solderPoint(island, toWorld(geometry.anchors[k], placement), geometry, settings.isolation)
+            const onForeign = islands.some((i) => i.net !== net && !i.plane && onCopper(i, finalEnd, settings.isolation))
             if (onForeign) feasible = false
             const anchor = toWorld(geometry.anchors[k], placement)
             cost += leadCost(Math.hypot(finalEnd.x - anchor.x, finalEnd.y - anchor.y), limit)
@@ -280,21 +280,4 @@ function endsTooClose(ends: Point[], nets: (string | null)[], placed: PlacedPart
       }),
     ),
   )
-}
-
-/** Board area: everything placed, plus a margin. */
-export function boardBounds(parts: PlacedPart[], margin: number): Rect {
-  return inflate(boundsOf(parts.map((p) => p.keepOut)) ?? { x: 0, y: 0, w: 10, h: 10 }, margin)
-}
-
-/** Lead ends that should land on copper, grouped per net. */
-export function endsByNet(parts: PlacedPart[]): Map<string, Point[]> {
-  const result = new Map<string, Point[]>()
-  for (const part of parts) {
-    part.ends.forEach((end, k) => {
-      const net = part.component.pins[k].net
-      if (isRealNet(net)) result.set(net, [...(result.get(net) ?? []), end])
-    })
-  }
-  return result
 }

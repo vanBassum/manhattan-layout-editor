@@ -17,14 +17,30 @@ import {
 } from './layout'
 import { parseNetlist } from './netlist'
 import { findStrategy, STRATEGIES } from './optimize'
-import { AiHelpDialog, ComponentList, Icon, LayerToggles, Section, SelectionDetails, Validation } from './panels'
+import { AiHelpDialog, ComponentList, Icon, LayerToggles, Section, SelectionDetails, ToolGroup, Validation } from './panels'
+import {
+  DEFAULT_SETTINGS,
+  emptyProject,
+  loadTabs,
+  newTabId,
+  parseStoredProject,
+  parseStoredTabs,
+  projectFromFile,
+  projectToFile,
+  projectKey,
+  readProject,
+  rememberActiveTab,
+  removeProject,
+  TABS_KEY,
+  writeProject,
+  writeTabs,
+  type ProjectTab,
+} from './projectStore'
 import { canvasToPng } from './screenshot'
 import { selectedRefs, selectionOf } from './selection'
-import type { Layout, Project, Selection, Settings } from './types'
+import { screenshotHidden } from './hiddenScreenshot'
+import type { Layout, Netlist, Placement, Project, Selection, Settings } from './types'
 
-// v3: components carry a footprint; bent leads are stored relative to the component.
-const STORAGE_KEY = 'manhattan-layout-editor/project-v3'
-const DEFAULT_SETTINGS: Settings = { snap: 0.5, isolation: 0.4, strategy: STRATEGIES[0].id, clearance: 3, maxLead: 10 }
 const UNDO_LIMIT = 100
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
@@ -56,20 +72,15 @@ function loadLayers(): Layers {
   }
 }
 
-const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
-  name: 'Untitled',
-  netlist: { components: [], nets: [] },
-  layout: { islands: [], placements: [] },
-  settings,
-})
-
-function projectFromNetlist(name: string, text: string, previous?: Project): Project {
+/** The tab's project with a new netlist; it stays the same project, so it keeps its guid. */
+function projectFromNetlist(name: string, text: string, current: Project, keepLayout: boolean): Project {
   const netlist = parseNetlist(text)
   return {
+    guid: current.guid,
     name,
     netlist,
-    layout: createLayout(netlist, previous?.layout),
-    settings: previous?.settings ?? DEFAULT_SETTINGS,
+    layout: createLayout(netlist, keepLayout ? current.layout : undefined),
+    settings: keepLayout ? current.settings : DEFAULT_SETTINGS,
   }
 }
 
@@ -79,33 +90,58 @@ const asBuilt = (project: Project): Project => ({
   netlist: withFootprintChoices(project.netlist, project.layout.placements),
 })
 
-function parseStoredProject(stored: string): Project | null {
-  const project = JSON.parse(stored) as Project
-  if (!project.netlist?.components || !project.layout?.islands) return null
-  return { ...project, settings: { ...DEFAULT_SETTINGS, ...project.settings } }
+/** The layout after an agent's edit command. `current` is as built; `imported` is the netlist as imported. */
+function agentLayoutEdit(command: string, args: Record<string, unknown>, current: Project, imported: Netlist): Layout {
+  switch (command) {
+    case 'move_component':
+      return moveComponent(current, args)
+    case 'set_lead_end':
+      return setLeadEnd(current, args)
+    case 'reset_leads':
+      return resetLeadsOf(current, args)
+    case 'set_island':
+      return setIsland(current, args)
+    case 'move_island':
+      return moveIsland(current, args)
+    case 'batch':
+      return applyBatch(current, args)
+    case 'run_optimizer': {
+      const optimized = findStrategy(String(args.strategy)).run(current.netlist, current.settings)
+      return keepFootprintChoices(optimized, current.layout)
+    }
+    case 'set_resistor_footprint':
+      if (args.footprint !== 'through-hole' && args.footprint !== '1206') {
+        throw new Error('"footprint" must be "through-hole" or "1206"')
+      }
+      return chooseResistors(imported, current.layout, args.footprint)
+    case 'set_footprint':
+      return setFootprint(current, imported, args)
+    default:
+      throw new Error(`Unknown command "${command}"`)
+  }
 }
 
-function loadProject(): Project {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    const project = stored ? parseStoredProject(stored) : null
-    if (project) return project
-  } catch {
-    // Corrupt or inaccessible storage: start empty.
-  }
-  return emptyProject()
+interface History {
+  undo: Layout[]
+  redo: Layout[]
 }
 
 export function App() {
-  const [project, setProject] = useState<Project>(loadProject)
+  const [initialTabs] = useState(loadTabs)
+  const [tabs, setTabs] = useState<ProjectTab[]>(initialTabs.tabs)
+  const [activeId, setActiveId] = useState(initialTabs.activeId)
+  const [project, setProject] = useState<Project>(() => readProject(initialTabs.activeId))
   const [selection, setSelection] = useState<Selection>(null)
   const [tool, setTool] = useState<Tool>('select')
   const [moveMode, setMoveMode] = useState<MoveMode>('part')
   const [fitRequest, setFitRequest] = useState(1)
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const projectFileInputRef = useRef<HTMLInputElement>(null)
   const undoStack = useRef<Layout[]>([])
   const redoStack = useRef<Layout[]>([])
+  /** Undo history of the tabs that are not shown, so switching back keeps it. */
+  const parkedHistory = useRef(new Map<string, History>())
   const [agentConnected, setAgentConnected] = useState(false)
   const [showAiHelp, setShowAiHelp] = useState(false)
   /** Parts checked when the footprint dialog opened; null while it is closed. */
@@ -152,53 +188,71 @@ export function App() {
     return { problems: findProblems(asBuilt(projectRef.current)) }
   }
 
+  /** The tab an agent command is for: its "project" argument (tab id or name), else the shown tab. */
+  const agentTarget = (project: unknown): string => {
+    if (project === undefined || project === '') return activeId
+    const wanted = String(project)
+    const byId = tabs.find((t) => t.id === wanted)
+    if (byId) return byId.id
+    const byName = tabs.filter((t) => t.name.toLowerCase() === wanted.toLowerCase())
+    if (byName.length === 1) return byName[0].id
+    const known = tabs.map((t) => `${t.name} (${t.id})`).join(', ')
+    throw new Error(`${byName.length > 1 ? 'Several' : 'No'} projects named "${wanted}"; use the id. Open: ${known}`)
+  }
+
+  /** Changes a tab that is not shown: straight in storage, with its own undo history. */
+  const editHiddenTab = (id: string, stored: Project, next: Layout) => {
+    const history = parkedHistory.current.get(id) ?? { undo: [], redo: [] }
+    parkedHistory.current.set(id, { undo: [...history.undo.slice(-(UNDO_LIMIT - 1)), stored.layout], redo: [] })
+    const updated = { ...stored, layout: next }
+    writeProject(id, updated)
+    return { problems: findProblems(asBuilt(updated)) }
+  }
+
+  const undoHiddenTab = (id: string, stored: Project, direction: 'undo' | 'redo') => {
+    const history = parkedHistory.current.get(id) ?? { undo: [], redo: [] }
+    const from = direction === 'undo' ? history.undo : history.redo
+    const to = direction === 'undo' ? history.redo : history.undo
+    const restored = from.pop()
+    if (restored) {
+      to.push(stored.layout)
+      parkedHistory.current.set(id, history)
+      writeProject(id, { ...stored, layout: restored })
+    }
+    return { problems: findProblems(asBuilt({ ...stored, layout: restored ?? stored.layout })) }
+  }
+
   const handleAgentCommand = useRef<(command: string, args: Record<string, unknown>) => unknown>(() => undefined)
   handleAgentCommand.current = (command, args) => {
-    const current = asBuilt(projectRef.current)
+    if (command === 'list_projects') {
+      return { projects: tabs.map((t) => ({ id: t.id, name: t.name, shown: t.id === activeId })) }
+    }
+    const targetId = agentTarget(args.project)
+    const shown = targetId === activeIdRef.current
+    const stored = shown ? projectRef.current : readProject(targetId)
+    const current = asBuilt(stored)
     switch (command) {
       case 'get_layout':
         return describeProject(current)
       case 'screenshot': {
-        const svg = document.querySelector<SVGSVGElement>('svg.canvas')
         const bounds = layoutBounds(current)
-        if (!svg || !bounds) throw new Error('Nothing to draw')
+        if (!bounds) throw new Error('Nothing to draw')
+        if (!shown) return screenshotHidden(current.netlist, current.layout, current.settings.isolation, bounds).then((png) => ({ png }))
+        const svg = document.querySelector<SVGSVGElement>('svg.canvas')
+        if (!svg) throw new Error('Nothing to draw')
         return canvasToPng(svg, bounds).then((png) => ({ png }))
       }
-      case 'move_component':
-        return applyAgentEdit(moveComponent(current, args))
-      case 'set_lead_end':
-        return applyAgentEdit(setLeadEnd(current, args))
-      case 'reset_leads':
-        return applyAgentEdit(resetLeadsOf(current, args))
-      case 'set_island':
-        return applyAgentEdit(setIsland(current, args))
-      case 'move_island':
-        return applyAgentEdit(moveIsland(current, args))
-      case 'batch':
-        return applyAgentEdit(applyBatch(current, args))
-      case 'run_optimizer': {
-        const optimized = findStrategy(String(args.strategy)).run(current.netlist, current.settings)
-        const result = applyAgentEdit(keepFootprintChoices(optimized, current.layout))
-        setFitRequest((n) => n + 1)
-        return result
-      }
-      case 'set_resistor_footprint': {
-        if (args.footprint !== 'through-hole' && args.footprint !== '1206') {
-          throw new Error('"footprint" must be "through-hole" or "1206"')
-        }
-        return applyAgentEdit(chooseResistors(projectRef.current.netlist, current.layout, args.footprint))
-      }
-      case 'set_footprint':
-        return applyAgentEdit(setFootprint(current, projectRef.current.netlist, args))
       case 'undo':
-        undo()
-        return { problems: findProblems(asBuilt(projectRef.current)) }
       case 'redo':
-        redo()
+        if (!shown) return undoHiddenTab(targetId, stored, command)
+        if (command === 'undo') undo()
+        else redo()
         return { problems: findProblems(asBuilt(projectRef.current)) }
-      default:
-        throw new Error(`Unknown command "${command}"`)
     }
+    const next = agentLayoutEdit(command, args, current, stored.netlist)
+    if (!shown) return editHiddenTab(targetId, stored, next)
+    if (command === 'run_optimizer') setFitRequest((n) => n + 1)
+    return applyAgentEdit(next)
   }
 
   useEffect(
@@ -206,11 +260,20 @@ export function App() {
     [],
   )
 
-  // The agent only talks to the most recently opened tab; other open tabs follow along through
-  // storage. Writing an unchanged value fires no event, so tabs do not echo each other.
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
+
+  // The agent only talks to the most recently opened browser tab; other browser tabs showing the
+  // same project follow along through storage. Writing an unchanged value fires no event, so
+  // browser tabs do not echo each other.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== STORAGE_KEY || !e.newValue) return
+      if (e.key === TABS_KEY) {
+        const stored = parseStoredTabs(e.newValue)
+        if (stored.length > 0) setTabs(stored)
+        return
+      }
+      if (e.key !== projectKey(activeIdRef.current) || !e.newValue) return
       try {
         const stored = parseStoredProject(e.newValue)
         if (!stored) return
@@ -225,15 +288,78 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(project))
-      } catch {
-        // Storage full or disabled; nothing useful to do in a prototype.
-      }
-    }, 300)
+    const timer = setTimeout(() => writeProject(activeId, project), 300)
     return () => clearTimeout(timer)
-  }, [project])
+  }, [project, activeId])
+
+  // The tab shows the project name, which changes when a netlist is imported.
+  useEffect(() => {
+    const tab = tabs.find((t) => t.id === activeId)
+    if (!tab || tab.name === project.name) return
+    const renamed = tabs.map((t) => (t.id === activeId ? { ...t, name: project.name } : t))
+    setTabs(renamed)
+    writeTabs(renamed)
+  }, [project.name, activeId, tabs])
+
+  /** Saves the shown project and its undo history, then shows `id` with its own. */
+  const showTab = (id: string, next: Project) => {
+    writeProject(activeId, projectRef.current)
+    parkedHistory.current.set(activeId, { undo: undoStack.current, redo: redoStack.current })
+    const history = parkedHistory.current.get(id)
+    undoStack.current = history?.undo ?? []
+    redoStack.current = history?.redo ?? []
+    parkedHistory.current.delete(id)
+    projectRef.current = next
+    setProject(next)
+    setActiveId(id)
+    rememberActiveTab(id)
+    setSelection(null)
+    setError('')
+    setFitRequest((n) => n + 1)
+  }
+
+  const switchTab = (id: string) => {
+    if (id !== activeId) showTab(id, readProject(id))
+  }
+
+  const openInNewTab = (opened: Project) => {
+    const id = newTabId()
+    writeProject(id, opened)
+    const next = [...tabs, { id, name: opened.name }]
+    setTabs(next)
+    writeTabs(next)
+    showTab(id, opened)
+  }
+
+  const addTab = () => openInNewTab(emptyProject(project.settings))
+
+  const closeTab = (id: string) => {
+    const tab = tabs.find((t) => t.id === id)
+    if (!tab || !confirm(`Close "${tab.name}"? Its layout is deleted (it cannot be undone).`)) return
+    const remaining = tabs.filter((t) => t.id !== id)
+    if (remaining.length === 0) {
+      // Always keep one tab: closing the last one leaves a fresh, empty project.
+      const created = emptyProject(project.settings)
+      writeProject(id, created)
+      const fresh = [{ id, name: created.name }]
+      setTabs(fresh)
+      writeTabs(fresh)
+      undoStack.current = []
+      redoStack.current = []
+      projectRef.current = created
+      setProject(created)
+      setSelection(null)
+      return
+    }
+    setTabs(remaining)
+    writeTabs(remaining)
+    if (id === activeId) {
+      const neighbour = remaining[Math.max(0, tabs.findIndex((t) => t.id === id) - 1)]
+      showTab(neighbour.id, readProject(neighbour.id))
+    }
+    parkedHistory.current.delete(id)
+    removeProject(id)
+  }
 
   const setLayers = (next: Layers) => {
     setLayersState(next)
@@ -251,8 +377,8 @@ export function App() {
     setProject((p) => ({ ...p, settings: { ...p.settings, ...changes } }))
 
   const spacingViolations = useMemo(
-    () => findSpacingViolations(layout.islands, settings.isolation),
-    [layout.islands, settings.isolation],
+    () => findSpacingViolations(layout.islands),
+    [layout.islands],
   )
   const splitNets = useMemo(() => findSplitNets(layout.islands), [layout.islands])
   const problemNets = useMemo(() => new Set([...spacingViolations, ...splitNets]), [spacingViolations, splitNets])
@@ -263,20 +389,20 @@ export function App() {
     for (const placement of layout.placements) {
       const component = components.get(placement.ref)
       if (!component) continue
-      for (const lead of analyzeLeads(component, placement, layout.islands)) {
+      for (const lead of analyzeLeads(component, placement, layout.islands, settings.isolation)) {
         if (lead.status === 'open') counts.open++
         if (lead.status === 'short') counts.short++
         if (lead.status === 'open' || lead.status === 'short') counts.refsWithIssues.add(component.ref)
       }
     }
     return counts
-  }, [builtNetlist, layout])
+  }, [builtNetlist, layout, settings.isolation])
 
   const boardSize = useMemo(() => boundsOf(layout.islands.flatMap((i) => i.rects)), [layout.islands])
 
   const loadNetlist = (name: string, text: string, keepLayout: boolean) => {
     try {
-      setProject((p) => projectFromNetlist(name, text, keepLayout ? p : undefined))
+      setProject((p) => projectFromNetlist(name, text, p, keepLayout))
       // Old layouts belong to the old netlist.
       undoStack.current = []
       redoStack.current = []
@@ -286,15 +412,6 @@ export function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }
-
-  const newProject = () => {
-    if (!confirm('Start a new, empty project? The current layout is discarded (it cannot be undone).')) return
-    setProject((p) => emptyProject(p.settings))
-    undoStack.current = []
-    redoStack.current = []
-    setSelection(null)
-    setError('')
   }
 
   const onFileChosen = async (file: File | undefined) => {
@@ -323,6 +440,11 @@ export function App() {
       ...l,
       placements: l.placements.map((p) => (refsToEdit.includes(p.ref) ? { ...p, leads: undefined } : p)),
     }))
+  }
+
+  const changePlacement = (ref: string, changes: Partial<Pick<Placement, 'x' | 'y' | 'rotation'>>) => {
+    rememberLayout()
+    setLayout((l) => ({ ...l, placements: l.placements.map((p) => (p.ref === ref ? { ...p, ...changes } : p)) }))
   }
 
   const selectAll = () =>
@@ -393,6 +515,18 @@ export function App() {
   const exportLayout = () =>
     downloadText(`${project.name}-isolation.svg`, exportSvg(layout.islands, settings.isolation), 'image/svg+xml')
 
+  const saveProject = () => downloadText(`${project.name}.manhattan.json`, projectToFile(project), 'application/json')
+
+  const onProjectFileChosen = async (file: File | undefined) => {
+    if (!file) return
+    projectFileInputRef.current!.value = ''
+    try {
+      openInNewTab(projectFromFile(await file.text()))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   // Keyboard shortcuts; handlers are recreated each render so they always see current state.
   const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {})
   shortcuts.current = (e: KeyboardEvent) => {
@@ -432,13 +566,50 @@ export function App() {
           <span className="brand-icon"><Icon name="app" /></span>
           Manhattan Layout Editor
         </div>
-        <div className="project-tab" title={project.name}>{project.name}</div>
-        <button className="icon-button" onClick={newProject} title="New empty project" aria-label="New empty project">
-          <Icon name="plus" />
-        </button>
+        <div className="project-tabs" role="tablist">
+          {tabs.map((tab) => (
+            <div key={tab.id} className={tab.id === activeId ? 'project-tab active' : 'project-tab'}>
+              <button
+                role="tab"
+                aria-selected={tab.id === activeId}
+                className="tab-name"
+                onClick={() => switchTab(tab.id)}
+                title={tab.name}
+              >
+                <Icon name="file" />
+                <span>{tab.name}</span>
+              </button>
+              <button className="tab-close" onClick={() => closeTab(tab.id)} title="Close project" aria-label={`Close ${tab.name}`}>
+                ✕
+              </button>
+            </div>
+          ))}
+          <button className="icon-button" onClick={addTab} title="Open a new project in a new tab" aria-label="New project tab">
+            <Icon name="plus" />
+          </button>
+        </div>
         <div className="header-actions">
-          <button className="icon-button" onClick={undo} title="Undo (Ctrl+Z)" aria-label="Undo"><Icon name="undo" /></button>
-          <button className="icon-button" onClick={redo} title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo"><Icon name="redo" /></button>
+          <div className="button-group">
+            <button className="icon-button" onClick={undo} title="Undo (Ctrl+Z)" aria-label="Undo"><Icon name="undo" /></button>
+            <button className="icon-button" onClick={redo} title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo"><Icon name="redo" /></button>
+          </div>
+          <span className="separator" />
+          <select
+            value={settings.strategy}
+            onChange={(e) => setSettings({ strategy: e.target.value })}
+            title={findStrategy(settings.strategy).description}
+            aria-label="Optimizer strategy"
+          >
+            {STRATEGIES.map((s) => (
+              <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
+            ))}
+          </select>
+          <button className="header-button" onClick={optimize} title={findStrategy(settings.strategy).description}>
+            <Icon name="optimize" />Optimize
+          </button>
+          <button className="header-button" onClick={() => setShowAiHelp(true)} title="Let an AI assistant edit this layout (MCP)">
+            <Icon name="ai" />AI
+          </button>
         </div>
       </header>
 
@@ -446,6 +617,19 @@ export function App() {
         <aside className="sidebar">
           <Section title="File">
             <div className="action-list">
+              <button onClick={() => projectFileInputRef.current!.click()} title="Open a saved project in a new tab">
+                <Icon name="open" />Open project…
+              </button>
+              <input
+                ref={projectFileInputRef}
+                type="file"
+                accept=".json"
+                hidden
+                onChange={(e) => onProjectFileChosen(e.target.files?.[0])}
+              />
+              <button onClick={saveProject} title="Download this tab's project as a JSON file">
+                <Icon name="save" />Save project…
+              </button>
               <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
               <input
                 ref={fileInputRef}
@@ -474,72 +658,66 @@ export function App() {
 
         <main className="canvas-area">
           <div className="canvas-toolbar">
-            <button
-              className={tool === 'select' ? 'pill active' : 'pill'}
-              onClick={() => setTool('select')}
-              aria-pressed={tool === 'select'}
-              title="Select (V): drag empty space to select, Shift+drag adds"
-            >
-              <Icon name="select" />Select
-            </button>
-            <button
-              className={tool === 'pan' ? 'pill active' : 'pill'}
-              onClick={() => setTool('pan')}
-              aria-pressed={tool === 'pan'}
-              title="Pan (H): drag empty space to move the view; middle mouse always pans"
-            >
-              <Icon name="pan" />Pan
-            </button>
-            <span className="separator" />
-            <button
-              className={moveMode === 'part' ? 'pill active' : 'pill'}
-              onClick={() => setMoveMode('part')}
-              aria-pressed={moveMode === 'part'}
-              title="Move part (M toggles): dragging a part takes its bent leads along"
-            >
-              <Icon name="movePart" />Move part
-            </button>
-            <button
-              className={moveMode === 'body' ? 'pill active' : 'pill'}
-              onClick={() => setMoveMode('body')}
-              aria-pressed={moveMode === 'body'}
-              title="Body only (M toggles): dragging a part moves its body; lead ends stay where they are soldered"
-            >
-              <Icon name="moveBody" />Body only
-            </button>
-            <span className="separator" />
-            <button className="pill" onClick={() => setFitRequest((n) => n + 1)} title="F"><Icon name="fit" />Fit</button>
-            <span className="separator" />
-            <button className="pill" onClick={() => rotateSelected(90)} disabled={refsToEdit.length === 0} title="R = 90°, Shift+R = 15°">
-              <Icon name="rotate" />Rotate
-            </button>
-            <button className="pill" onClick={resetLeads} disabled={refsToEdit.length === 0} title="Straighten the selected parts' leads">
-              <Icon name="leads" />Reset leads
-            </button>
-            <span className="separator" />
-            <button className="pill" onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
-              <Icon name="addRect" />Add rect
-            </button>
-            <button className="pill" onClick={removeRect} disabled={!canRemoveRect} title="Del">
-              <Icon name="removeRect" />Remove rect
-            </button>
-            <span className="separator" />
-            <select
-              className="pill"
-              value={settings.strategy}
-              onChange={(e) => setSettings({ strategy: e.target.value })}
-              title={findStrategy(settings.strategy).description}
-            >
-              {STRATEGIES.map((s) => (
-                <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
-              ))}
-            </select>
-            <button className="pill primary" onClick={optimize} title={findStrategy(settings.strategy).description}>
-              <Icon name="optimize" />Optimize
-            </button>
-            <button className="pill" onClick={() => setShowAiHelp(true)} title="Let an AI assistant edit this layout (MCP)">
-              <Icon name="ai" />AI
-            </button>
+            <ToolGroup label="View">
+              <button
+                className={tool === 'select' ? 'tool active' : 'tool'}
+                onClick={() => setTool('select')}
+                aria-pressed={tool === 'select'}
+                title="Select (V): drag empty space to select, Shift+drag adds"
+              >
+                <Icon name="select" />Select
+              </button>
+              <button
+                className={tool === 'pan' ? 'tool active' : 'tool'}
+                onClick={() => setTool('pan')}
+                aria-pressed={tool === 'pan'}
+                title="Pan (H): drag empty space to move the view; middle mouse always pans"
+              >
+                <Icon name="pan" />Pan
+              </button>
+              <button className="tool" onClick={() => setFitRequest((n) => n + 1)} title="Fit the board in view (F)">
+                <Icon name="fit" />Fit
+              </button>
+            </ToolGroup>
+            <ToolGroup label="Component">
+              <button className="tool" onClick={() => rotateSelected(90)} disabled={refsToEdit.length === 0} title="R = 90°, Shift+R = 15°">
+                <Icon name="rotate" />Rotate
+              </button>
+              <button className="tool" onClick={resetLeads} disabled={refsToEdit.length === 0} title="Straighten the selected parts' leads">
+                <Icon name="leads" />Reset leads
+              </button>
+              <button className="tool" onClick={openFootprintDialog} disabled={refsToEdit.length === 0} title="Choose another footprint for the selected parts">
+                <Icon name="convert" />Footprint…
+              </button>
+            </ToolGroup>
+            <ToolGroup label="Move mode (M)">
+              <div className="segmented">
+                <button
+                  className={moveMode === 'part' ? 'active' : ''}
+                  onClick={() => setMoveMode('part')}
+                  aria-pressed={moveMode === 'part'}
+                  title="Dragging a part takes its bent leads along"
+                >
+                  With leads
+                </button>
+                <button
+                  className={moveMode === 'body' ? 'active' : ''}
+                  onClick={() => setMoveMode('body')}
+                  aria-pressed={moveMode === 'body'}
+                  title="Dragging a part moves its body; lead ends stay where they are soldered. Shift+drag takes the leads along."
+                >
+                  Keep connections
+                </button>
+              </div>
+            </ToolGroup>
+            <ToolGroup label="Copper">
+              <button className="tool" onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
+                <Icon name="addRect" />Add rect
+              </button>
+              <button className="tool" onClick={removeRect} disabled={!canRemoveRect} title="Remove the selected rectangle (Del)">
+                <Icon name="removeRect" />Remove rect
+              </button>
+            </ToolGroup>
           </div>
           <div className="canvas-frame">
             <Canvas
@@ -550,6 +728,7 @@ export function App() {
               selection={selection}
               onSelect={setSelection}
               snap={settings.snap}
+              isolation={settings.isolation}
               problemNets={problemNets}
               fitRequest={fitRequest}
               layers={layers}
@@ -561,12 +740,13 @@ export function App() {
 
         <aside className="sidebar">
           <Section title="Selection">
-            <SelectionDetails netlist={builtNetlist} selection={selection} />
-            <div className="action-list selection-actions">
-              <button onClick={openFootprintDialog} disabled={refsToEdit.length === 0} title="Choose another footprint for the selected parts">
-                <Icon name="convert" />Change footprint…
-              </button>
-            </div>
+            <SelectionDetails
+              netlist={builtNetlist}
+              layout={layout}
+              selection={selection}
+              onPlacementChange={changePlacement}
+              onChangeFootprint={openFootprintDialog}
+            />
           </Section>
           <Section title="Board settings">
             <div className="settings">
@@ -646,7 +826,7 @@ export function App() {
             {boardSize && <span>Board {boardSize.w.toFixed(1)} × {boardSize.h.toFixed(1)} mm</span>}
           </>
         )}
-        <span className="hint">V select / H pan · Shift+click adds · Ctrl+A all · M move part / body only · middle-drag pans · wheel zooms · drag a lead end to bend it · R / Shift+R rotate 90° / 15° · Ctrl+Z undo · Del remove rect · F fit</span>
+        <span className="hint">V select / H pan · Shift+click adds · Ctrl+A all · M move part / body only · Shift+drag takes leads along · middle-drag pans · wheel zooms · drag a lead end to bend it · R / Shift+R rotate 90° / 15° · Ctrl+Z undo · Del remove rect · F fit</span>
       </footer>
       {showAiHelp && <AiHelpDialog agentConnected={agentConnected} onClose={() => setShowAiHelp(false)} />}
       {footprintDialogRefs && (

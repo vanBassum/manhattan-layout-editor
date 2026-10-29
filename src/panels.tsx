@@ -3,13 +3,15 @@ import type { ReactNode } from 'react'
 import type { LayerName, Layers, LayerView } from './Canvas'
 import { componentGeometry } from './layout'
 import { selectedRefs, toggleSelected } from './selection'
-import type { NetComponent, Netlist, Selection } from './types'
+import type { Layout, NetComponent, Netlist, Placement, Selection } from './types'
 
 const ICON_PATHS = {
   app: 'M4 4h6v6H4z M14 14h6v6h-6z M10 7h4v10 M7 10v7h7',
   undo: 'M9 14L4 9l5-5 M4 9h11a5 5 0 0 1 0 10h-3',
   redo: 'M15 14l5-5-5-5 M20 9H9a5 5 0 0 0 0 10h3',
   file: 'M6 3h8l4 4v14H6z M14 3v4h4',
+  open: 'M3 7h6l2 2h10v10H3z M3 7V5h6',
+  save: 'M5 4h11l3 3v13H5z M8 4v5h7V4 M8 20v-6h8v6',
   sample: 'M4 6h16v12H4z M8 10h8 M8 14h5',
   grid: 'M4 4h16v16H4z M4 12h16 M12 4v16',
   export: 'M12 4v11 M7 10l5 5 5-5 M5 20h14',
@@ -194,7 +196,64 @@ export function ComponentList(props: ComponentListProps) {
   )
 }
 
-export function SelectionDetails({ netlist, selection }: { netlist: Netlist; selection: Selection }) {
+/** A captioned cluster of toolbar buttons. */
+export function ToolGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="tool-group" role="group" aria-label={label}>
+      <span className="tool-group-label">{label}</span>
+      <div className="tool-group-buttons">{children}</div>
+    </div>
+  )
+}
+
+interface NumberFieldProps {
+  value: number
+  unit: string
+  step: number
+  label: string
+  onCommit: (value: number) => void
+}
+
+/** Number input that commits on Enter or blur, so typing a value is one undo step, not one per keystroke. */
+function NumberField({ value, unit, step, label, onCommit }: NumberFieldProps) {
+  const shown = String(Number(value.toFixed(2)))
+  const [draft, setDraft] = useState(shown)
+  useEffect(() => setDraft(shown), [shown])
+
+  const commit = () => {
+    const parsed = Number(draft)
+    if (draft.trim() === '' || !Number.isFinite(parsed)) setDraft(shown)
+    else if (parsed !== Number(shown)) onCommit(parsed)
+  }
+
+  return (
+    <span className="unit-input">
+      <input
+        type="number"
+        step={step}
+        value={draft}
+        aria-label={label}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+          if (e.key === 'Escape') setDraft(shown)
+        }}
+      />
+      {unit}
+    </span>
+  )
+}
+
+interface SelectionDetailsProps {
+  netlist: Netlist
+  layout: Layout
+  selection: Selection
+  onPlacementChange: (ref: string, changes: Partial<Pick<Placement, 'x' | 'y' | 'rotation'>>) => void
+  onChangeFootprint: () => void
+}
+
+export function SelectionDetails({ netlist, layout, selection, onPlacementChange, onChangeFootprint }: SelectionDetailsProps) {
   if (selection?.kind === 'multi') {
     return (
       <dl className="properties">
@@ -211,17 +270,36 @@ export function SelectionDetails({ netlist, selection }: { netlist: Netlist; sel
     const pins = netlist.components.flatMap((c) =>
       c.pins.filter((p) => p.net === selection.net).map((p) => `${c.ref}.${p.number}`),
     )
+    const island = layout.islands.find((i) => i.net === selection.net)
+    const rect = island?.rects[selection.rectIndex]
     return (
-      <dl className="properties">
-        <dt>Net</dt>
-        <dd>{selection.net}</dd>
-        <dt>Pins</dt>
-        <dd>{pins.length ? pins.join(' ') : '–'}</dd>
-      </dl>
+      <>
+        <div className="selection-card">
+          <span className="selection-thumb island" aria-hidden="true" />
+          <div>
+            <div className="selection-title">{selection.net}</div>
+            <div className="muted">
+              {island?.plane ? 'Ground plane' : 'Copper island'} · {island?.rects.length ?? 0} rect
+              {island?.rects.length === 1 ? '' : 's'}
+            </div>
+          </div>
+        </div>
+        <dl className="properties">
+          {rect && (
+            <>
+              <dt>Rect</dt>
+              <dd>{rect.w.toFixed(1)} × {rect.h.toFixed(1)} mm at ({rect.x.toFixed(1)}, {rect.y.toFixed(1)})</dd>
+            </>
+          )}
+          <dt>Pins</dt>
+          <dd>{pins.length ? pins.join(' ') : '–'}</dd>
+        </dl>
+      </>
     )
   }
   const component = selection?.kind === 'part' ? netlist.components.find((c) => c.ref === selection.ref) : undefined
-  if (!component) {
+  const placement = component && layout.placements.find((p) => p.ref === component.ref)
+  if (!component || !placement) {
     return (
       <p className="muted">
         Nothing selected.
@@ -230,16 +308,36 @@ export function SelectionDetails({ netlist, selection }: { netlist: Netlist; sel
       </p>
     )
   }
+  const change = (changes: Partial<Pick<Placement, 'x' | 'y' | 'rotation'>>) => onPlacementChange(component.ref, changes)
   return (
     <>
-      <dl className="properties">
-        <dt>Ref</dt>
-        <dd>{component.ref}</dd>
-        <dt>Value</dt>
-        <dd>{component.value || '–'}</dd>
-        <dt>Footprint</dt>
-        <dd className="footprint">{component.footprint || '–'}</dd>
-      </dl>
+      <div className="selection-card">
+        <span className={`kind-badge large kind-${refPrefix(component.ref).charAt(0)}`} aria-hidden="true">
+          {refPrefix(component.ref)}
+        </span>
+        <div>
+          <div className="selection-title">{component.ref}</div>
+          <div className="muted">{[component.value, packageLabel(component)].filter(Boolean).join(' · ')}</div>
+        </div>
+      </div>
+      <div className="field-list">
+        <span className="field-label">Footprint</span>
+        <div className="footprint-field">
+          <span title={component.footprint}>{component.footprint || '–'}</span>
+          <button className="icon-button" onClick={onChangeFootprint} title="Change footprint…" aria-label="Change footprint">
+            <Icon name="search" />
+          </button>
+        </div>
+        <span className="field-label">Position</span>
+        <div className="field-pair">
+          <span className="axis">X</span>
+          <NumberField label="X" value={placement.x} unit="mm" step={0.5} onCommit={(x) => change({ x })} />
+          <span className="axis">Y</span>
+          <NumberField label="Y" value={placement.y} unit="mm" step={0.5} onCommit={(y) => change({ y })} />
+        </div>
+        <span className="field-label">Rotation</span>
+        <NumberField label="Rotation" value={placement.rotation} unit="°" step={15} onCommit={(r) => change({ rotation: ((r % 360) + 360) % 360 })} />
+      </div>
       <table className="pin-table">
         <thead>
           <tr>

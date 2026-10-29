@@ -70,6 +70,8 @@ export interface Settings {
 }
 
 export interface Project {
+  /** Given once at creation and kept through renames, saves and reopening, so a project can be traced. */
+  guid: string
   name: string
   netlist: Netlist
   layout: Layout

@@ -1,6 +1,5 @@
 import type { Layout, Netlist, Settings } from '../types'
 import { knifeStrategy } from './knife'
-import { laserStrategy } from './laser'
 import { manhattanStrategy } from './manhattan'
 
 /**
@@ -14,7 +13,7 @@ export interface Strategy {
   run: (netlist: Netlist, settings: Settings) => Layout
 }
 
-export const STRATEGIES: Strategy[] = [laserStrategy, knifeStrategy, manhattanStrategy]
+export const STRATEGIES: Strategy[] = [knifeStrategy, manhattanStrategy]
 
 export function findStrategy(id: string): Strategy {
   return STRATEGIES.find((s) => s.id === id) ?? STRATEGIES[0]

@@ -1,3 +1,4 @@
+import { snapToGrid } from '../geometry'
 import { naturalCompare } from '../netlist'
 import type { Island, Netlist, Settings } from '../types'
 import type { Strategy } from './index'
@@ -13,14 +14,13 @@ const RAIL_MIN_PINS = 5
 const MAX_RAILS = 3
 
 /**
- * Knife: unlike Laser and Manhattan, the copper comes first, because straight edge-to-edge cuts
+ * Knife: unlike Manhattan, the copper comes first, because straight edge-to-edge cuts
  * only work when the nets are laid out for them. Full-width horizontal cuts separate rows; each
  * row is split by short vertical cuts running from one horizontal cut to the next. The busiest
  * nets become full-width rails, and nets that share parts are neighbors. Components are then
  * placed onto the strips with the shared collision-free placer.
  */
 function knifeLayout(netlist: Netlist, settings: Settings) {
-  const gap = settings.isolation
   const pinCounts = netPinCounts(netlist)
   const pins = (net: string) => pinCounts.get(net) ?? 1
 
@@ -56,20 +56,23 @@ function knifeLayout(netlist: Netlist, settings: Settings) {
   for (const row of rows) {
     if (row.rail) {
       islands.push({ net: row.nets[0], rects: [{ x: 0, y, w: boardWidth, h: RAIL_HEIGHT }] })
-      y += RAIL_HEIGHT + gap
+      y += RAIL_HEIGHT
       continue
     }
     // Every other row runs right to left, so the chain continues straight down at the row ends.
     const ordered = cellRowIndex++ % 2 === 0 ? row.nets : [...row.nets].reverse()
     // Stretch the cells so each row runs edge to edge and every vertical cut ends on a horizontal one.
-    const scale = (boardWidth - gap * (ordered.length - 1)) / ordered.reduce((sum, net) => sum + cellWidth(net), 0)
+    // Neighboring cells touch: the cut runs along their shared edge, which lies on the snap grid.
+    const rowWidth = ordered.reduce((sum, net) => sum + cellWidth(net), 0)
+    let used = 0
     let x = 0
-    for (const net of ordered) {
-      const w = cellWidth(net) * scale
-      islands.push({ net, rects: [{ x, y, w, h: ROW_HEIGHT }] })
-      x += w + gap
-    }
-    y += ROW_HEIGHT + gap
+    ordered.forEach((net, k) => {
+      used += cellWidth(net)
+      const right = k === ordered.length - 1 ? boardWidth : snapToGrid((used / rowWidth) * boardWidth, settings.snap)
+      islands.push({ net, rects: [{ x, y, w: snapToGrid(right - x, 0), h: ROW_HEIGHT }] })
+      x = right
+    })
+    y += ROW_HEIGHT
   }
 
   return { islands, placements: placeOnIslands(netlist, islands, settings) }

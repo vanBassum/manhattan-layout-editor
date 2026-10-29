@@ -1,4 +1,4 @@
-import { boundsOf, inflate, nearestPointOnRects, rectContains, rectsOverlap, rotatePoint } from './geometry'
+import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint } from './geometry'
 import { footprintPinCount } from './footprints'
 import { isRealNet } from './netlist'
 import type { Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
@@ -49,7 +49,12 @@ export interface Geometry {
   /** How far the unbent leads stick out beyond the anchors. */
   leadLength: number
   maxLeadLength: number
+  /** Drawn in its own color: an LED has the same round body as a capacitor can. */
+  led: boolean
 }
+
+const isLed = (component: NetComponent) =>
+  /LED/i.test(component.footprint) || /^LED/i.test(component.ref) || /^LED\b/i.test(component.value)
 
 function shapeOf(component: NetComponent): Shape {
   const footprint = component.footprint.toUpperCase()
@@ -130,8 +135,12 @@ function leadsFor(shape: Shape, component: NetComponent) {
       if (pinCount === 2) return endLeads(chipLength, chipWidth)
       return rowLeads(pinCount, footprintDimension(footprint, 'P') ?? 0.95, chipLength, chipWidth)
     }
-    case 'to92':
-      return rowLeads(pinCount, pitch, length ?? 4.9, width ?? 3.7)
+    case 'to92': {
+      // The legs leave the bottom of the package in a row through the centre of its round part,
+      // about 0.4 of the depth behind the flat face (as in KiCad's TO-92_Inline).
+      const leads = rowLeads(pinCount, pitch, length ?? 4.9, width ?? 3.7)
+      return { ...leads, body: { ...leads.body, y: -0.6 * leads.body.h } }
+    }
     case 'to126':
       return rowLeads(pinCount, pitch, length ?? 7.6, width ?? 2.7)
     case 'trimmer':
@@ -175,6 +184,7 @@ export function componentGeometry(component: NetComponent): Geometry {
     ...leads,
     leadLength: defaultLeadLength(shape, component.footprint, leads.body),
     maxLeadLength: MAX_LEAD_LENGTH[shape],
+    led: isLed(component),
   }
 }
 
@@ -194,10 +204,19 @@ export function toLocal(world: Point, placement: Placement): Point {
   return rotatePoint({ x: world.x - placement.x, y: world.y - placement.y }, -placement.rotation)
 }
 
-/** Nearest point of the island to `from`, kept a little inside the copper to leave room for solder. */
-export function solderPoint(island: Island, from: Point, geometry: Geometry): Point {
+/**
+ * Islands are stored touching each other; the isolation cut is burned centered on their edges, so
+ * the copper that remains is each island shrunk by isolation/2. A point is on the copper when the
+ * whole cut-wide square around it is inside the island.
+ */
+export function onCopper(island: Island, p: Point, isolation: number): boolean {
+  return coversSquare(island.rects, p, isolation / 2)
+}
+
+/** Nearest point of the island's copper to `from`, kept a little inside it to leave room for solder. */
+export function solderPoint(island: Island, from: Point, geometry: Geometry, isolation: number): Point {
   // SMD terminations sit directly on the copper; there is no lead to bend inward.
-  const inset = geometry.shape === 'smd' ? 0 : SOLDER_INSET
+  const inset = isolation / 2 + (geometry.shape === 'smd' ? 0 : SOLDER_INSET)
   const shrunk = island.rects.map((r) => inflate(r, -Math.min(inset, r.w / 2, r.h / 2)))
   return nearestPointOnRects(shrunk, from)
 }
@@ -211,7 +230,10 @@ export function bodyBounds(geometry: Geometry, placement: Placement, extraLocalP
 
 // ---------- Leads and checks ----------
 
-/** ok: lead ends on its own net's island. open: it does not. short: it ends on another net's island. */
+/**
+ * ok: lead ends on its own net's copper. open: it does not (a lead on the cut between two islands
+ * is open). short: it ends on another net's copper.
+ */
 export type PinStatus = 'ok' | 'open' | 'short' | 'unused'
 
 export interface LeadInfo {
@@ -227,19 +249,25 @@ export interface LeadInfo {
  * Islands under a point that it actually makes contact with. A pad glued onto the ground plane
  * insulates whatever is soldered to it from the plane underneath.
  */
-function contactIslands(islands: Island[], p: Point): Island[] {
-  const touched = islands.filter((i) => i.rects.some((r) => rectContains(r, p)))
+function contactIslands(islands: Island[], p: Point, isolation: number): Island[] {
+  const touched = islands.filter((i) => onCopper(i, p, isolation))
   const onTop = touched.filter((i) => !i.plane)
   return onTop.length > 0 ? onTop : touched
 }
 
 /** Leads keep their shape relative to the body; the netlist decides which island each should reach. */
-export function analyzeLeads(component: NetComponent, placement: Placement, islands: Island[], geometry = componentGeometry(component)): LeadInfo[] {
+export function analyzeLeads(
+  component: NetComponent,
+  placement: Placement,
+  islands: Island[],
+  isolation: number,
+  geometry = componentGeometry(component),
+): LeadInfo[] {
   const defaults = defaultLeadEnds(geometry)
   return component.pins.map((pin, k) => {
     const anchor = toWorld(geometry.anchors[k], placement)
     const end = toWorld(placement.leads?.[pin.number] ?? defaults[k], placement)
-    const touched = contactIslands(islands, end)
+    const touched = contactIslands(islands, end, isolation)
     let status: PinStatus
     if (touched.some((i) => i.net !== pin.net)) status = 'short'
     else if (!isRealNet(pin.net)) status = 'unused'
@@ -339,7 +367,7 @@ export type ResistorChoice = 'through-hole' | '1206'
 /** R1, R2, ... with an axial footprint. Trimmers (RV) and loads (RL) are left alone. */
 const isPlainResistor = (c: NetComponent) => /^R\d+$/i.test(c.ref) && /AXIAL/i.test(c.footprint)
 
-/** Builds every plain resistor through-hole (as in the netlist) or as a 1206 chip bridging the isolation gap. */
+/** Builds every plain resistor through-hole (as in the netlist) or as a 1206 chip bridging the cut between two islands. */
 export function chooseResistors(imported: Netlist, layout: Layout, choice: ResistorChoice): Layout {
   const resistors = new Set(imported.components.filter(isPlainResistor).map((c) => c.ref))
   return changeFootprints(imported, layout, resistors, choice === '1206' ? 'R1206' : undefined)
@@ -368,18 +396,18 @@ export function findSplitNets(islands: Island[]): Set<string> {
   return split
 }
 
-/** Nets whose islands are closer than the isolation width to a different net's island. */
-export function findSpacingViolations(islands: Island[], isolation: number): Set<string> {
+/**
+ * Nets whose island overlaps a different net's island. Touching is fine: the shared edge is where
+ * the isolation is cut.
+ */
+export function findSpacingViolations(islands: Island[]): Set<string> {
   const violating = new Set<string>()
-  const half = isolation / 2
   for (let a = 0; a < islands.length; a++) {
     for (let b = a + 1; b < islands.length; b++) {
       // Pads glued onto a ground plane are insulated from it, so they may sit on top of it.
       if (islands[a].plane || islands[b].plane) continue
-      const close = islands[a].rects.some((ra) =>
-        islands[b].rects.some((rb) => rectsOverlap(inflate(ra, half), inflate(rb, half))),
-      )
-      if (close) {
+      const overlapping = islands[a].rects.some((ra) => islands[b].rects.some((rb) => rectsOverlap(ra, rb)))
+      if (overlapping) {
         violating.add(islands[a].net)
         violating.add(islands[b].net)
       }

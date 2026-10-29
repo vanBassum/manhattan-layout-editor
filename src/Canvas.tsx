@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
-import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectsOverlap } from './geometry'
+import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectsOverlap, snapToGrid } from './geometry'
 import { analyzeLeads, bodyBounds, componentGeometry, toLocal, toWorld as toWorldPoint, type Geometry, type PinStatus } from './layout'
 import { addToSelection, isSelected, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
 import type { Island, Layout, Netlist, Placement, Point, Rect, Selection } from './types'
@@ -13,6 +13,15 @@ interface View {
 }
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+type Side = 'left' | 'right' | 'top' | 'bottom'
+
+/** A rectangle of another net with its `side` on an edge being dragged: the two share that cut. */
+interface CutNeighbour {
+  net: string
+  rectIndex: number
+  rect: Rect
+  side: Side
+}
 
 /** Select: dragging empty space draws a selection rectangle. Pan: it moves the view. */
 export type Tool = 'select' | 'pan'
@@ -30,7 +39,7 @@ type Drag =
   | { kind: 'pan'; startX: number; startY: number; view: View }
   | { kind: 'marquee'; start: Point; startX: number; startY: number; additive: boolean }
   | { kind: 'island'; net: string; start: Point; rects: Rect[] }
-  | { kind: 'resize'; net: string; rectIndex: number; handle: Handle; start: Point; rect: Rect }
+  | { kind: 'resize'; net: string; rectIndex: number; handle: Handle; start: Point; rect: Rect; neighbours: CutNeighbour[] }
   | { kind: 'part'; start: Point; part: MovingPart }
   | { kind: 'group'; start: Point; parts: MovingPart[]; islands: Island[]; pressed: SingleSelection }
   | { kind: 'lead'; pin: string; start: Point; origin: Point; placement: Placement }
@@ -95,7 +104,9 @@ interface Props {
   selection: Selection
   onSelect: (selection: Selection) => void
   snap: number
-  /** Nets drawn with a red outline: too close to another net, or split into separate pieces. */
+  /** Islands are drawn shrunk by half of this: the copper that remains after cutting. */
+  isolation: number
+  /** Nets drawn with a red outline: overlapping another net, or split into separate pieces. */
   problemNets: Set<string>
   fitRequest: number
   layers: Layers
@@ -103,16 +114,73 @@ interface Props {
   moveMode: MoveMode
 }
 
-function resizeRect(r: Rect, handle: Handle, dx: number, dy: number): Rect {
-  let left = r.x
-  let top = r.y
-  let right = r.x + r.w
-  let bottom = r.y + r.h
-  if (handle.includes('w')) left = Math.min(left + dx, right - MIN_RECT_SIZE)
-  if (handle.includes('e')) right = Math.max(right + dx, left + MIN_RECT_SIZE)
-  if (handle.includes('n')) top = Math.min(top + dy, bottom - MIN_RECT_SIZE)
-  if (handle.includes('s')) bottom = Math.max(bottom + dy, top + MIN_RECT_SIZE)
-  return { x: left, y: top, w: right - left, h: bottom - top }
+const OPPOSITE: Record<Side, Side> = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' }
+
+function handleSides(handle: Handle): Side[] {
+  const sides: Side[] = []
+  if (handle.includes('w')) sides.push('left')
+  if (handle.includes('e')) sides.push('right')
+  if (handle.includes('n')) sides.push('top')
+  if (handle.includes('s')) sides.push('bottom')
+  return sides
+}
+
+function sideValue(r: Rect, side: Side): number {
+  switch (side) {
+    case 'left':
+      return r.x
+    case 'right':
+      return r.x + r.w
+    case 'top':
+      return r.y
+    case 'bottom':
+      return r.y + r.h
+  }
+}
+
+/** Moves one edge of the rectangle, keeping the opposite edge and a minimum size. */
+function withSide(r: Rect, side: Side, value: number): Rect {
+  switch (side) {
+    case 'left': {
+      const x = Math.min(value, r.x + r.w - MIN_RECT_SIZE)
+      return { ...r, x, w: r.x + r.w - x }
+    }
+    case 'right':
+      return { ...r, w: Math.max(value - r.x, MIN_RECT_SIZE) }
+    case 'top': {
+      const y = Math.min(value, r.y + r.h - MIN_RECT_SIZE)
+      return { ...r, y, h: r.y + r.h - y }
+    }
+    case 'bottom':
+      return { ...r, h: Math.max(value - r.y, MIN_RECT_SIZE) }
+  }
+}
+
+/** The dragged edges move by the pointer delta and land on the snap grid. */
+function resizeRect(r: Rect, handle: Handle, dx: number, dy: number, snap: number): Rect {
+  return handleSides(handle).reduce((resized, side) => {
+    const delta = side === 'left' || side === 'right' ? dx : dy
+    return withSide(resized, side, snapToGrid(sideValue(r, side) + delta, snap))
+  }, r)
+}
+
+/** Rectangles of other nets that share a dragged edge of `r`; dragging that cut moves both sides. */
+function cutNeighbours(islands: Island[], dragged: Island, r: Rect, handle: Handle): CutNeighbour[] {
+  if (dragged.plane) return []
+  const eps = 1e-6
+  const others = islands.filter((island) => island.net !== dragged.net && !island.plane)
+  return handleSides(handle).flatMap((side) =>
+    others.flatMap((island) =>
+      island.rects.flatMap((other, rectIndex) => {
+        const onEdge = Math.abs(sideValue(other, OPPOSITE[side]) - sideValue(r, side)) < eps
+        const alongEdge =
+          side === 'top' || side === 'bottom'
+            ? Math.min(r.x + r.w, other.x + other.w) - Math.max(r.x, other.x)
+            : Math.min(r.y + r.h, other.y + other.h) - Math.max(r.y, other.y)
+        return onEdge && alongEdge > eps ? [{ net: island.net, rectIndex, rect: other, side: OPPOSITE[side] }] : []
+      }),
+    ),
+  )
 }
 
 function handlePosition(r: Rect, handle: Handle): Point {
@@ -138,10 +206,12 @@ const BODY_FILLS: Record<Geometry['shape'], string> = {
   dip: '#2a2a2a',
   row: '#3c6ea8',
 }
+const LED_FILL = '#e03131'
 
 export function BodyShape({ geometry, stroke, strokeWidth }: { geometry: Geometry; stroke: string; strokeWidth: number }) {
   const { x, y, w, h } = geometry.body
-  const style = { fill: BODY_FILLS[geometry.shape], fillOpacity: 0.85, stroke, strokeWidth }
+  const fill = geometry.led ? LED_FILL : BODY_FILLS[geometry.shape]
+  const style = { fill, fillOpacity: 0.85, stroke, strokeWidth }
   switch (geometry.shape) {
     case 'radial':
       // A can is round; a box capacitor (length differs from width) is a rounded block.
@@ -184,7 +254,19 @@ function updateIsland(layout: Layout, net: string, rects: Rect[]): Layout {
   return { ...layout, islands: layout.islands.map((i) => (i.net === net ? { ...i, rects } : i)) }
 }
 
-const moveRects = (rects: Rect[], dx: number, dy: number) => rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy }))
+function replaceRect(layout: Layout, net: string, rectIndex: number, rect: Rect): Layout {
+  const island = layout.islands.find((i) => i.net === net)!
+  return updateIsland(layout, net, island.rects.map((r, k) => (k === rectIndex ? rect : r)))
+}
+
+const moveRects = (rects: Rect[], dx: number, dy: number) =>
+  rects.map((r) => ({ ...r, x: snapToGrid(r.x + dx, 0), y: snapToGrid(r.y + dy, 0) }))
+
+/** The delta that puts the first rectangle's top-left corner on the snap grid; the rest follow it. */
+function gridDelta(rects: Rect[], dx: number, dy: number, snap: number): Point {
+  const first = rects[0]
+  return { x: snapToGrid(first.x + dx, snap) - first.x, y: snapToGrid(first.y + dy, snap) - first.y }
+}
 
 function movePart(current: Placement, moving: MovingPart, dx: number, dy: number): Placement {
   const moved = { ...current, x: moving.placement.x + dx, y: moving.placement.y + dy }
@@ -216,10 +298,12 @@ function rectBetween(a: Point, b: Point): Rect {
 const isToggleClick = (e: ReactPointerEvent) => e.shiftKey || e.ctrlKey || e.metaKey
 
 export function Canvas(props: Props) {
-  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, problemNets, fitRequest, layers, tool, moveMode } = props
+  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const dragChangedRef = useRef(false)
+  /** Item to toggle in the selection if the current Shift/Ctrl press ends without dragging. */
+  const toggleOnClickRef = useRef<SingleSelection | null>(null)
   const [view, setView] = useState<View>({ scale: 5, ox: 40, oy: 40 })
   const [size, setSize] = useState({ width: 800, height: 600 })
   const [hoveredRef, setHoveredRef] = useState<string | null>(null)
@@ -270,11 +354,11 @@ export function Canvas(props: Props) {
             component,
             placement,
             geometry,
-            leads: analyzeLeads(component, placement, layout.islands, geometry),
+            leads: analyzeLeads(component, placement, layout.islands, isolation, geometry),
           },
         ]
       }),
-    [layout, componentsByRef],
+    [layout, componentsByRef, isolation],
   )
 
   useEffect(() => {
@@ -296,7 +380,7 @@ export function Canvas(props: Props) {
     // Only refit when explicitly requested, not on every layout change.
   }, [fitRequest])
 
-  const snapValue = (v: number) => (snap > 0 ? Math.round(v / snap) * snap : v)
+  const snapValue = (v: number) => snapToGrid(v, snap)
 
   const toWorld = (e: { clientX: number; clientY: number }): Point => {
     const r = svgRef.current!.getBoundingClientRect()
@@ -306,6 +390,7 @@ export function Canvas(props: Props) {
   const beginDrag = (e: ReactPointerEvent, drag: Drag) => {
     dragRef.current = drag
     dragChangedRef.current = false
+    toggleOnClickRef.current = null
     svgRef.current!.setPointerCapture(e.pointerId)
   }
 
@@ -318,37 +403,37 @@ export function Canvas(props: Props) {
     beginDrag(e, { kind: 'pan', startX: e.clientX, startY: e.clientY, view })
   }
 
-  const movingPart = (ref: string): MovingPart => {
+  const movingPart = (ref: string, withLeads: boolean): MovingPart => {
     const part = parts.find((p) => p.component.ref === ref)!
-    if (moveMode === 'part') return { placement: part.placement }
+    if (withLeads) return { placement: part.placement }
     const worldLeadEnds = Object.fromEntries(part.component.pins.map((pin, k) => [pin.number, part.leads[k].end]))
     return { placement: part.placement, worldLeadEnds }
   }
 
   /**
-   * Shift/Ctrl+click toggles the item in the selection. Pressing an item of a multi-selection drags
-   * the whole group; otherwise the item alone is selected and `singleDrag` starts.
+   * Pressing an item of a multi-selection drags the whole group; otherwise the item alone is
+   * selected and `singleDrag` starts. Shift+drag always takes the leads along, whatever the move
+   * mode. A Shift/Ctrl press that ends without dragging toggles the item in the selection instead.
    */
-  const onItemPointerDown = (e: ReactPointerEvent, item: SingleSelection, singleDrag: () => Drag) => {
+  const onItemPointerDown = (e: ReactPointerEvent, item: SingleSelection, singleDrag: (withLeads: boolean) => Drag) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    if (isToggleClick(e)) {
-      onSelect(toggleSelected(selection, item))
-      return
-    }
+    const toggling = isToggleClick(e)
+    const withLeads = e.shiftKey || moveMode === 'part'
     if (selection?.kind === 'multi' && isSelected(selection, item)) {
       const { refs, nets } = selection
       beginDrag(e, {
         kind: 'group',
         start: toWorld(e),
-        parts: parts.filter((p) => refs.includes(p.component.ref)).map((p) => movingPart(p.component.ref)),
+        parts: parts.filter((p) => refs.includes(p.component.ref)).map((p) => movingPart(p.component.ref, withLeads)),
         islands: layout.islands.filter((island) => nets.includes(island.net)),
         pressed: item,
       })
-      return
+    } else {
+      if (!toggling) onSelect(item)
+      beginDrag(e, singleDrag(withLeads))
     }
-    onSelect(item)
-    beginDrag(e, singleDrag())
+    if (toggling) toggleOnClickRef.current = item
   }
 
   // Non-left buttons fall through to the background handler, so middle-drag always pans.
@@ -361,13 +446,15 @@ export function Canvas(props: Props) {
     }))
 
   const onPartPointerDown = (e: ReactPointerEvent, ref: string) =>
-    onItemPointerDown(e, { kind: 'part', ref }, () => ({ kind: 'part', start: toWorld(e), part: movingPart(ref) }))
+    onItemPointerDown(e, { kind: 'part', ref }, (withLeads) => ({ kind: 'part', start: toWorld(e), part: movingPart(ref, withLeads) }))
 
   const onHandlePointerDown = (e: ReactPointerEvent, island: Island, rectIndex: number, handle: Handle) => {
     if (e.button !== 0) return
     e.stopPropagation()
     onSelect({ kind: 'island', net: island.net, rectIndex })
-    beginDrag(e, { kind: 'resize', net: island.net, rectIndex, handle, start: toWorld(e), rect: island.rects[rectIndex] })
+    const rect = island.rects[rectIndex]
+    const neighbours = cutNeighbours(layout.islands, island, rect, handle)
+    beginDrag(e, { kind: 'resize', net: island.net, rectIndex, handle, start: toWorld(e), rect, neighbours })
   }
 
   const onLeadPointerDown = (e: ReactPointerEvent, placement: Placement, pin: string, origin: Point) => {
@@ -393,22 +480,29 @@ export function Canvas(props: Props) {
       return
     }
     const p = toWorld(e)
-    const dx = snapValue(p.x - drag.start.x)
-    const dy = snapValue(p.y - drag.start.y)
+    const rawDx = p.x - drag.start.x
+    const rawDy = p.y - drag.start.y
     if (!dragChangedRef.current) {
-      if (dx === 0 && dy === 0) return
+      // Island edges snap to the grid, not by the delta, so the slightest jitter could move an
+      // off-grid island: a press must move a few pixels before it counts as a drag.
+      if (Math.hypot(rawDx, rawDy) * view.scale <= CLICK_TOLERANCE_PX) return
       dragChangedRef.current = true
       onBeginEdit()
     }
+    const dx = snapValue(rawDx)
+    const dy = snapValue(rawDy)
     if (drag.kind === 'island') {
-      const moved = moveRects(drag.rects, dx, dy)
+      const delta = gridDelta(drag.rects, rawDx, rawDy, snap)
+      const moved = moveRects(drag.rects, delta.x, delta.y)
       onLayoutChange((l) => updateIsland(l, drag.net, moved))
     } else if (drag.kind === 'resize') {
-      const resized = resizeRect(drag.rect, drag.handle, dx, dy)
-      onLayoutChange((l) => {
-        const island = l.islands.find((i) => i.net === drag.net)!
-        return updateIsland(l, drag.net, island.rects.map((r, k) => (k === drag.rectIndex ? resized : r)))
-      })
+      const resized = resizeRect(drag.rect, drag.handle, rawDx, rawDy, snap)
+      onLayoutChange((l) =>
+        drag.neighbours.reduce(
+          (next, n) => replaceRect(next, n.net, n.rectIndex, withSide(n.rect, n.side, sideValue(resized, OPPOSITE[n.side]))),
+          replaceRect(l, drag.net, drag.rectIndex, resized),
+        ),
+      )
     } else if (drag.kind === 'lead') {
       // Stored relative to the body so the bent lead follows the component.
       const end = toLocal({ x: drag.origin.x + dx, y: drag.origin.y + dy }, drag.placement)
@@ -424,7 +518,9 @@ export function Canvas(props: Props) {
         placements: l.placements.map((pl) => (pl.ref === drag.part.placement.ref ? movePart(pl, drag.part, dx, dy) : pl)),
       }))
     } else {
-      onLayoutChange((l) => moveGroup(l, drag, dx, dy))
+      // Parts move by the same delta as the islands, so they stay where they sit on the copper.
+      const delta = drag.islands.length > 0 ? gridDelta(drag.islands[0].rects, rawDx, rawDy, snap) : { x: dx, y: dy }
+      onLayoutChange((l) => moveGroup(l, drag, delta.x, delta.y))
     }
   }
 
@@ -444,9 +540,12 @@ export function Canvas(props: Props) {
 
   const onPointerUp = (e: ReactPointerEvent) => {
     const drag = dragRef.current
+    const toggleOnClick = toggleOnClickRef.current
     dragRef.current = null
+    toggleOnClickRef.current = null
     svgRef.current!.releasePointerCapture(e.pointerId)
     if (drag?.kind === 'marquee') finishMarquee(drag, e)
+    else if (toggleOnClick && !dragChangedRef.current) onSelect(toggleSelected(selection, toggleOnClick))
     // A click without dragging on an item of a multi-selection selects just that item.
     else if (drag?.kind === 'group' && !dragChangedRef.current) onSelect(drag.pressed)
   }
@@ -503,6 +602,15 @@ export function Canvas(props: Props) {
           const selected = highlightedNets.has(island.net)
           return (
             <g key={island.net} className="island">
+              {/* The copper left after cutting; the rectangles themselves only catch the pointer. */}
+              <path
+                d={outlinePath(island.rects, isolation / 2)}
+                fill={island.plane ? (selected ? '#f3d6b4' : '#ecc9a4') : selected ? '#f0a860' : '#d9945a'}
+                fillRule="evenodd"
+                stroke={violating ? '#e02020' : selected ? '#7a3d00' : '#9c5a24'}
+                strokeWidth={(violating ? 3 : selected ? 2 : 1) * px}
+                pointerEvents="none"
+              />
               {island.rects.map((r, k) => (
                 <rect
                   key={k}
@@ -511,17 +619,10 @@ export function Canvas(props: Props) {
                   width={r.w}
                   height={r.h}
                   className="island-rect"
-                  fill={island.plane ? (selected ? '#f3d6b4' : '#ecc9a4') : selected ? '#f0a860' : '#d9945a'}
+                  fill="transparent"
                   onPointerDown={(e) => onIslandPointerDown(e, island, k)}
                 />
               ))}
-              <path
-                d={outlinePath(island.rects)}
-                fill="none"
-                stroke={violating ? '#e02020' : selected ? '#7a3d00' : '#9c5a24'}
-                strokeWidth={(violating ? 3 : selected ? 2 : 1) * px}
-                pointerEvents="none"
-              />
               <text x={island.rects[0].x + 0.5} y={island.rects[0].y + 1.6} className="net-label">
                 {island.net}
               </text>

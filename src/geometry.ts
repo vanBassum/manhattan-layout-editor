@@ -13,6 +13,38 @@ export function rectContains(r: Rect, p: Point): boolean {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
 }
 
+/** Nearest multiple of `step` (any value when step is 0), without floating point fuzz like 0.30000000000000004. */
+export function snapToGrid(v: number, step: number): number {
+  const snapped = step > 0 ? Math.round(v / step) * step : v
+  return Math.round(snapped * 1e6) / 1e6
+}
+
+/**
+ * True when the square of half-size `half` around `p` lies entirely within the union of `rects`.
+ * With half = isolation/2 this tells whether `p` is on the copper that remains after cutting.
+ */
+export function coversSquare(rects: Rect[], p: Point, half: number): boolean {
+  if (half <= 0) return rects.some((r) => rectContains(r, p))
+  // Slightly smaller, so a square whose edge coincides with a rectangle edge counts as covered.
+  const square = inflate({ x: p.x, y: p.y, w: 0, h: 0 }, half - 1e-6)
+  const pieces = rects.flatMap((r) => {
+    const left = Math.max(r.x, square.x)
+    const top = Math.max(r.y, square.y)
+    const right = Math.min(r.x + r.w, square.x + square.w)
+    const bottom = Math.min(r.y + r.h, square.y + square.h)
+    return right > left && bottom > top ? [{ x: left, y: top, w: right - left, h: bottom - top }] : []
+  })
+  const xs = [...new Set([square.x, square.x + square.w, ...pieces.flatMap((r) => [r.x, r.x + r.w])])].sort((a, b) => a - b)
+  const ys = [...new Set([square.y, square.y + square.h, ...pieces.flatMap((r) => [r.y, r.y + r.h])])].sort((a, b) => a - b)
+  for (let j = 0; j < ys.length - 1; j++) {
+    for (let i = 0; i < xs.length - 1; i++) {
+      const center = { x: (xs[i] + xs[i + 1]) / 2, y: (ys[j] + ys[j + 1]) / 2 }
+      if (!pieces.some((r) => rectContains(r, center))) return false
+    }
+  }
+  return true
+}
+
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
 
 export function nearestPointOnRects(rects: Rect[], p: Point): Point {
@@ -130,10 +162,28 @@ function dropCollinear(corners: [number, number][]): [number, number][] {
   })
 }
 
+/**
+ * The union outline moved `inset` inward, with square corners. Loops run with the covered area on
+ * their right (holes run the other way), so each corner moves along the right-hand normals of its
+ * two edges. Parts narrower than 2 * inset do not vanish but turn inside out.
+ */
+export function insetOutline(rects: Rect[], inset: number): Point[][] {
+  return unionOutline(rects).map((loop) =>
+    loop.map((p, k) => {
+      const prev = loop[(k - 1 + loop.length) % loop.length]
+      const next = loop[(k + 1) % loop.length]
+      const incoming = { x: Math.sign(p.x - prev.x), y: Math.sign(p.y - prev.y) }
+      const outgoing = { x: Math.sign(next.x - p.x), y: Math.sign(next.y - p.y) }
+      // Right-hand normal of (dx, dy) with y pointing down is (-dy, dx).
+      return { x: p.x - inset * (incoming.y + outgoing.y), y: p.y + inset * (incoming.x + outgoing.x) }
+    }),
+  )
+}
+
 const fmt = (v: number) => String(Math.round(v * 1e4) / 1e4)
 
-export function outlinePath(rects: Rect[]): string {
-  return unionOutline(rects)
+export function outlinePath(rects: Rect[], inset = 0): string {
+  return insetOutline(rects, inset)
     .map((loop) => 'M' + loop.map((p) => `${fmt(p.x)} ${fmt(p.y)}`).join('L') + 'Z')
     .join('')
 }

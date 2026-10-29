@@ -7,26 +7,21 @@ const escapeXml = (s: string) =>
 const fmt = (v: number) => String(Math.round(v * 1e4) / 1e4)
 
 /**
- * One closed contour per island, offset outward by isolation/2 and stroked with width = isolation.
- * The burned band therefore runs from the copper edge to isolation mm outside it,
- * leaving the island itself fully intact. Units are millimeters (1 user unit = 1 mm).
+ * One closed contour per island along its outline, stroked with width = isolation. Islands touch,
+ * so the burned band is centered on the edge they share (and burned once from each side); the
+ * outer edges of the board lose isolation/2 of copper too. Units are millimeters (1 user unit = 1 mm).
  */
 export function exportSvg(islands: Island[], isolation: number): string {
-  const half = isolation / 2
-  const contours = islands.map((island) => ({
-    net: island.net,
-    rects: island.rects.map((r) => inflate(r, half)),
-  }))
-  const bounds = boundsOf(contours.flatMap((c) => c.rects)) ?? { x: 0, y: 0, w: 1, h: 1 }
+  const bounds = boundsOf(islands.flatMap((i) => i.rects)) ?? { x: 0, y: 0, w: 1, h: 1 }
   const view = inflate(bounds, isolation + 1)
 
-  const paths = contours
-    .map((c) => `    <path data-net="${escapeXml(c.net)}" d="${outlinePath(c.rects)}"><title>${escapeXml(c.net)}</title></path>`)
+  const paths = islands
+    .map((i) => `    <path data-net="${escapeXml(i.net)}" d="${outlinePath(i.rects)}"><title>${escapeXml(i.net)}</title></path>`)
     .join('\n')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${fmt(view.w)}mm" height="${fmt(view.h)}mm" viewBox="${fmt(view.x)} ${fmt(view.y)} ${fmt(view.w)} ${fmt(view.h)}">
-  <!-- Isolation contours. Stroke width = isolation gap (${fmt(isolation)} mm). -->
+  <!-- Isolation cuts, centered on the island outlines. Stroke width = isolation (${fmt(isolation)} mm). -->
   <g id="isolation" fill="none" stroke="#000000" stroke-width="${fmt(isolation)}" stroke-linejoin="miter" stroke-linecap="square">
 ${paths}
   </g>

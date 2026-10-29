@@ -1,5 +1,5 @@
-import { boundsOf, inflate, rectContains, rectsOverlap } from '../geometry'
-import { solderPoint, toLocal, toWorld } from '../layout'
+import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid } from '../geometry'
+import { onCopper, solderPoint, toLocal, toWorld } from '../layout'
 import { isRealNet, naturalCompare } from '../netlist'
 import type { Island, Netlist, Point, Rect, Settings } from '../types'
 import type { Strategy } from './index'
@@ -74,7 +74,11 @@ function manhattanLayout(netlist: Netlist, settings: Settings) {
     const own = leads.filter((l) => l.net === net)
     const foreign = leads.filter((l) => l.net !== net)
     const size = padSize(own.length)
-    const center = { x: median(own.map((l) => l.end.x)), y: median(own.map((l) => l.end.y)) }
+    // On the search grid, so the pad edges (whole millimeters apart) land on it too.
+    const center = {
+      x: snapToGrid(median(own.map((l) => l.end.x)), PAD_SEARCH_STEP),
+      y: snapToGrid(median(own.map((l) => l.end.y)), PAD_SEARCH_STEP),
+    }
 
     let best: { rect: Rect; cost: number } | null = null
     for (const offset of spiralOffsets(PAD_SEARCH_RADIUS, PAD_SEARCH_STEP)) {
@@ -84,7 +88,7 @@ function manhattanLayout(netlist: Netlist, settings: Settings) {
       const pad = { net, rects: [rect] }
       const cost =
         own.reduce((sum, l) => {
-          const target = solderPoint(pad, l.anchor, l.part.geometry)
+          const target = solderPoint(pad, l.anchor, l.part.geometry, settings.isolation)
           return sum + leadCost(Math.hypot(target.x - l.anchor.x, target.y - l.anchor.y), l.limit)
         }, 0) +
         0.1 * Math.hypot(offset.x, offset.y)
@@ -96,22 +100,31 @@ function manhattanLayout(netlist: Netlist, settings: Settings) {
   const placements = parts.map((part) => {
     const bent: Record<string, Point> = {}
     for (const lead of leads.filter((l) => l.part === part)) {
-      const end = lead.net === ground ? groundEnd(lead, pads) : padEnd(lead, pads)
+      const end = lead.net === ground ? groundEnd(lead, pads) : padEnd(lead, pads, settings.isolation)
       if (end) bent[part.component.pins[lead.index].number] = toLocal(end, part.placement)
     }
     return Object.keys(bent).length > 0 ? { ...part.placement, leads: bent } : part.placement
   })
 
   const everything = [...parts.map((p) => p.keepOut), ...pads.map((p) => p.rects[0])]
-  const plane: Island = { net: ground, plane: true, rects: [inflate(boundsOf(everything)!, PLANE_MARGIN)] }
+  const plane: Island = { net: ground, plane: true, rects: [gridOutward(inflate(boundsOf(everything)!, PLANE_MARGIN), PAD_SEARCH_STEP)] }
   return { islands: [plane, ...pads], placements }
 }
 
+/** The smallest rectangle with edges on the grid that contains `r`. */
+function gridOutward(r: Rect, step: number): Rect {
+  const left = Math.floor(r.x / step) * step
+  const top = Math.floor(r.y / step) * step
+  const right = Math.ceil((r.x + r.w) / step) * step
+  const bottom = Math.ceil((r.y + r.h) / step) * step
+  return { x: snapToGrid(left, 0), y: snapToGrid(top, 0), w: snapToGrid(right - left, 0), h: snapToGrid(bottom - top, 0) }
+}
+
 /** Bends a lead onto its pad, or returns null when it already lands there. */
-function padEnd(lead: Lead, pads: Island[]): Point | null {
+function padEnd(lead: Lead, pads: Island[], isolation: number): Point | null {
   const pad = pads.find((p) => p.net === lead.net)
-  if (!pad || rectContains(pad.rects[0], lead.end)) return null
-  return solderPoint(pad, lead.anchor, lead.part.geometry)
+  if (!pad || onCopper(pad, lead.end, isolation)) return null
+  return solderPoint(pad, lead.anchor, lead.part.geometry, isolation)
 }
 
 /** A ground lead that would land on a pad is extended straight on until it reaches bare plane. */

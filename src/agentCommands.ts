@@ -21,11 +21,11 @@ export function findProblems(project: Project): Problems {
   const problems: Problems = {
     openPins: [],
     shortedPins: [],
-    netsTooClose: [...findSpacingViolations(project.layout.islands, project.settings.isolation)],
+    netsTooClose: [...findSpacingViolations(project.layout.islands)],
     splitNets: [...findSplitNets(project.layout.islands)],
   }
   for (const { component, placement } of placedComponents(project)) {
-    analyzeLeads(component, placement, project.layout.islands).forEach((lead, k) => {
+    analyzeLeads(component, placement, project.layout.islands, project.settings.isolation).forEach((lead, k) => {
       const label = `${component.ref}.${component.pins[k].number} (${lead.net})`
       if (lead.status === 'open') problems.openPins.push(label)
       if (lead.status === 'short') problems.shortedPins.push(label)
@@ -48,7 +48,7 @@ export function layoutBounds(project: Project): Rect | null {
     return bodyBounds(geometry, placement, geometry.anchors)
   })
   const lead = placedComponents(project).flatMap(({ component, placement }) =>
-    analyzeLeads(component, placement, project.layout.islands).map((l) => ({ ...l.end, w: 0, h: 0 })),
+    analyzeLeads(component, placement, project.layout.islands, project.settings.isolation).map((l) => ({ ...l.end, w: 0, h: 0 })),
   )
   return boundsOf([...project.layout.islands.flatMap((i) => i.rects), ...parts, ...lead])
 }
@@ -56,8 +56,13 @@ export function layoutBounds(project: Project): Rect | null {
 export function describeProject(project: Project) {
   const { netlist, layout, settings } = project
   return {
+    project: { guid: project.guid, name: project.name },
     units: 'mm; x to the right, y down; rotation in degrees clockwise',
-    settings: { isolation: settings.isolation, clearance: settings.clearance, maxLead: settings.maxLead },
+    islands:
+      'Islands of different nets touch edge to edge; their shared edge is where the isolation is cut. ' +
+      'The copper left is each island shrunk by isolation/2 on every outer edge, so a lead end must lie at ' +
+      'least isolation/2 inside its island. Islands of different nets must not overlap.',
+    settings: { isolation: settings.isolation, snap: settings.snap, clearance: settings.clearance, maxLead: settings.maxLead },
     bounds: layoutBounds(project),
     nets: netlist.nets.map((net) => {
       const island = layout.islands.find((i) => i.net === net)
@@ -71,7 +76,7 @@ export function describeProject(project: Project) {
       const geometry = componentGeometry(component)
       const { x, y, w, h } = geometry.body
       const corners = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }]
-      const leads = analyzeLeads(component, placement, layout.islands, geometry)
+      const leads = analyzeLeads(component, placement, layout.islands, settings.isolation, geometry)
       return {
         ref: component.ref,
         value: component.value,
