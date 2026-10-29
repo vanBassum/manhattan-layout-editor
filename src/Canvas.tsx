@@ -585,13 +585,13 @@ export function Canvas(props: Props) {
           <path
             d={`M ${pitch} 0 L 0 0 0 ${pitch}`}
             fill="none"
-            stroke="#d0d4d9"
+            className="grid-minor"
             strokeWidth={px}
             strokeDasharray={`${2 * px} ${3 * px}`}
           />
         </pattern>
         <pattern id="grid-major" width={5 * pitch} height={5 * pitch} patternUnits="userSpaceOnUse">
-          <path d={`M ${5 * pitch} 0 L 0 0 0 ${5 * pitch}`} fill="none" stroke="#c4c9cf" strokeWidth={px} />
+          <path d={`M ${5 * pitch} 0 L 0 0 0 ${5 * pitch}`} fill="none" className="grid-major" strokeWidth={px} />
         </pattern>
       </defs>
       <g transform={`translate(${view.ox} ${view.oy}) scale(${view.scale})`}>
@@ -599,8 +599,8 @@ export function Canvas(props: Props) {
           <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-minor)" />
           <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-major)" />
           {/* Origin axes: x = 0 and y = 0 */}
-          <line x1={visible.x} y1={0} x2={visible.x + visible.w} y2={0} stroke="#8b96a3" strokeWidth={px} />
-          <line x1={0} y1={visible.y} x2={0} y2={visible.y + visible.h} stroke="#8b96a3" strokeWidth={px} />
+          <line x1={visible.x} y1={0} x2={visible.x + visible.w} y2={0} className="axis" strokeWidth={px} />
+          <line x1={0} y1={visible.y} x2={0} y2={visible.y + visible.h} className="axis" strokeWidth={px} />
         </g>
 
         {planesFirst(layout.islands).map((island) => {

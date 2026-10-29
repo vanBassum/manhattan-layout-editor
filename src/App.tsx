@@ -46,6 +46,15 @@ const UNDO_LIMIT = 100
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
 const LAYERS_KEY = 'manhattan-layout-editor/layers'
+const THEME_KEY = 'manhattan-layout-editor/theme'
+
+type Theme = 'light' | 'dark'
+
+function initialTheme(): Theme {
+  const stored = localStorage.getItem(THEME_KEY)
+  if (stored === 'light' || stored === 'dark') return stored
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
 const SHOWN: LayerView = { visible: true, opacity: 1 }
 const ALL_LAYERS: Layers = { islands: SHOWN, parts: SHOWN, netLabels: SHOWN, leads: SHOWN, grid: SHOWN }
 
@@ -146,6 +155,15 @@ export function App() {
   const [agentConnected, setAgentConnected] = useState(false)
   const [showAiHelp, setShowAiHelp] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [theme, setTheme] = useState(initialTheme)
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    localStorage.setItem(THEME_KEY, next)
+  }
   /** Parts checked when the footprint dialog opened; null while it is closed. */
   const [footprintDialogRefs, setFootprintDialogRefs] = useState<string[] | null>(null)
   const [layers, setLayersState] = useState<Layers>(loadLayers)
@@ -621,6 +639,14 @@ export function App() {
           >
             <Icon name="ai" />AI
             <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
+          </button>
+          <button
+            className="icon-button"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label="Toggle dark mode"
+          >
+            <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
           </button>
           <button className="icon-button" onClick={() => setShowHelp(true)} title="Keyboard and mouse shortcuts" aria-label="Help">
             <Icon name="help" />

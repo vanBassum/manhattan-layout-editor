@@ -15,6 +15,49 @@
   --error: #d01010;
   --error-soft: #fde8e8;
   --radius: 8px;
+  --accent-hover: #3049b8;
+  --code-bg: #f1f3f5;
+  --canvas-bg: #ffffff;
+  --canvas-text: #333333;
+  --grid-minor: #d0d4d9;
+  --grid-major: #c4c9cf;
+  --axis: #8b96a3;
+  --ruler-bg: rgba(255, 255, 255, 0.92);
+  --ruler-text: #6b7580;
+  --idle-dot: #b0b6bd;
+  --shadow: var(--shadow);
+  --backdrop: rgba(20, 24, 31, 0.35);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #131518;
+  --panel: #1c1f24;
+  --panel-muted: #252930;
+  --border: #30353d;
+  --border-strong: #434a54;
+  --text: #e3e6ea;
+  --text-muted: #9aa3ad;
+  --accent: #5b7cfa;
+  --accent-soft: #232f52;
+  --ok: #51cf66;
+  --ok-soft: #1d3324;
+  --warn: #f0b429;
+  --warn-soft: #3a2f12;
+  --error: #ff6b6b;
+  --error-soft: #3d1f1f;
+  --accent-hover: #4766ee;
+  --code-bg: #252930;
+  --canvas-bg: #16181c;
+  --canvas-text: #d5d9de;
+  --grid-minor: #262b31;
+  --grid-major: #333941;
+  --axis: #5d6773;
+  --ruler-bg: rgba(22, 24, 28, 0.92);
+  --ruler-text: #8a939d;
+  --idle-dot: #5d6773;
+  --shadow: rgba(0, 0, 0, 0.5);
+  --backdrop: rgba(0, 0, 0, 0.55);
 }
 
 * {
@@ -560,8 +603,8 @@ input:focus-visible {
   flex: 1;
   min-height: 0;
   width: 100%;
-  background-color: #fff;
-  background-image: radial-gradient(#d4d8de 1px, transparent 1px);
+  background-color: var(--canvas-bg);
+  background-image: radial-gradient(var(--grid-minor) 1px, transparent 1px);
   background-size: 16px 16px;
   touch-action: none;
   user-select: none;
@@ -599,6 +642,10 @@ input:focus-visible {
 }
 
 .canvas .grid { opacity: var(--opacity-grid, 1); }
+/* SVG presentation attributes cannot use var(), so the theme-dependent grid colours are set here. */
+.grid-minor { stroke: var(--grid-minor); }
+.grid-major { stroke: var(--grid-major); }
+.axis { stroke: var(--axis); }
 .canvas .island { opacity: var(--opacity-islands, 1); }
 .canvas .net-label { opacity: var(--opacity-netLabels, 1); }
 .canvas .lead { opacity: var(--opacity-leads, 1); }
@@ -644,19 +691,24 @@ input:focus-visible {
 
 .part-value {
   font-size: 1px;
-  fill: #333;
+  fill: var(--canvas-text);
   text-anchor: middle;
   pointer-events: none;
 }
 
-/* Status bar */
+/* Values sit on copper as well as on the dark background; a dark halo keeps light text readable on both. */
+:root[data-theme='dark'] .part-value {
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.8);
+  stroke-width: 0.3px;
+}
 
 /* Agent connection state, drawn as a dot on the AI button. */
 .agent-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #b0b6bd;
+  background: var(--idle-dot);
 }
 
 .agent-dot.connected {
@@ -720,7 +772,7 @@ input:focus-visible {
 
 .ai-dialog::backdrop,
 .footprint-dialog::backdrop {
-  background: rgba(20, 24, 31, 0.35);
+  background: var(--backdrop);
 }
 
 .ai-dialog header,
@@ -756,7 +808,7 @@ input:focus-visible {
   flex: 1;
   padding: 4px 6px;
   border-radius: 4px;
-  background: #f1f3f5;
+  background: var(--code-bg);
   font-size: 12px;
   overflow-x: auto;
   white-space: nowrap;
@@ -843,7 +895,7 @@ input:focus-visible {
 }
 
 .component-list .component-row.issue .ref {
-  color: #c92a2a;
+  color: var(--error);
 }
 
 .component-list .package {
@@ -871,19 +923,20 @@ input:focus-visible {
 .kind-badge.kind-Q { background: #343a40; }
 .kind-badge.kind-D { background: #e8590c; }
 .kind-badge.kind-U { background: #2b8a3e; }
+:root[data-theme='dark'] .kind-badge.kind-Q { background: #5c636b; }
 
 /* Screen-space mm rulers along the top and left canvas edge. */
 .ruler rect {
-  fill: rgba(255, 255, 255, 0.92);
+  fill: var(--ruler-bg);
 }
 
 .ruler line {
-  stroke: #8b96a3;
+  stroke: var(--axis);
   stroke-width: 1;
 }
 
 .ruler text {
-  fill: #6b7580;
+  fill: var(--ruler-text);
   font-size: 9px;
   font-family: inherit;
 }
@@ -1134,8 +1187,8 @@ input:focus-visible {
 }
 
 .footprint-dialog footer .primary:hover:not(:disabled) {
-  background: #3049b8;
-  border-color: #3049b8;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 /* Selection panel: a header card, then editable fields. */
