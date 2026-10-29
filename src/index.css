@@ -615,6 +615,53 @@ input:focus-visible {
   cursor: grab;
 }
 
+.cut {
+  stroke: transparent;
+}
+
+.cut-x {
+  cursor: ew-resize;
+}
+
+.cut-y {
+  cursor: ns-resize;
+}
+
+.cut:hover {
+  stroke: var(--accent);
+  stroke-opacity: 0.45;
+}
+
+/* Outline edges of the selected island in polygon editing: a visible band to grab. */
+.island-edge {
+  stroke: var(--accent);
+  stroke-opacity: 0.35;
+}
+
+.island-edge:hover {
+  stroke-opacity: 0.7;
+}
+
+.cut-channel {
+  stroke: var(--canvas-bg);
+  stroke-linecap: square;
+  pointer-events: none;
+}
+
+.free-copper {
+  fill: #d9945a;
+  fill-opacity: 0.45;
+}
+
+.board-outline {
+  fill: none;
+  stroke: var(--axis);
+}
+
+.draw-cut {
+  cursor: crosshair;
+}
+
 .marquee {
   fill: var(--accent);
   fill-opacity: 0.08;

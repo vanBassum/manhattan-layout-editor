@@ -104,7 +104,7 @@ function chainNets(netlist: Netlist, nets: string[], context: string[]): string[
 
 export const knifeStrategy: Strategy = {
   id: 'knife',
-  label: 'Knife',
+  label: 'Knife – polygons',
   description: 'Rectangular strips with straight edge-to-edge cuts, parts placed collision-free on top',
   run: knifeLayout,
 }

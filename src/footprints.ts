@@ -17,6 +17,7 @@ export const FOOTPRINT_LIBRARY: LibraryFootprint[] = [
   { id: 'R0603', label: '0603 SMD resistor', category: 'Resistors', pins: 2, description: '1.6 × 0.8 mm chip, bridges the gap' },
   { id: 'R_AXIAL-0.3', label: 'Axial 1/4 W, 7.62 mm', category: 'Resistors', pins: 2, description: '6.3 × 2.3 mm body, holes 0.3" apart' },
   { id: 'R_AXIAL-0.4', label: 'Axial 1/4 W, 10.16 mm', category: 'Resistors', pins: 2, description: '6.3 × 2.3 mm body, holes 0.4" apart' },
+  { id: 'RES-ADJ-TH_3296W_L9.5-W4.8-P2.54', label: '3296W trimmer, standing', category: 'Resistors', pins: 3, description: '9.5 × 4.8 mm multiturn, adjusting screw on top, leads 2.54 mm apart' },
   { id: 'C1206', label: '1206 SMD capacitor', category: 'Capacitors', pins: 2, description: '3.2 × 1.6 mm chip, bridges the gap' },
   { id: 'C0805', label: '0805 SMD capacitor', category: 'Capacitors', pins: 2, description: '2.0 × 1.25 mm chip, bridges the gap' },
   { id: 'CAP-TH_L5.5-W2.5-P5.00', label: 'Box capacitor, 5 mm pitch', category: 'Capacitors', pins: 2, description: '5.5 × 2.5 mm box, leads 5.0 mm apart' },

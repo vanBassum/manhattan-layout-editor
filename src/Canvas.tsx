@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectsOverlap, snapToGrid } from './geometry'
 import { analyzeLeads, bodyBounds, componentGeometry, toLocal, toWorld as toWorldPoint, type Geometry, type PinStatus } from './layout'
+import { findCuts, MIN_RECT_SIZE, moveCut, type Cut } from './cuts'
+import { islandEdges, moveIslandEdge, type IslandEdge } from './raster'
 import { addToSelection, isSelected, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
-import type { Island, Layout, Netlist, Placement, Point, Rect, Selection } from './types'
+import type { CutLine, Island, Layout, Netlist, Placement, Point, Rect, Selection } from './types'
 
 /** screen = world * scale + offset; scale is pixels per millimeter. */
 interface View {
@@ -24,7 +26,13 @@ interface CutNeighbour {
 }
 
 /** Select: dragging empty space draws a selection rectangle. Pan: it moves the view. */
-export type Tool = 'select' | 'pan'
+export type Tool = 'select' | 'pan' | 'cut'
+
+/**
+ * How copper is edited. rects: islands of rectangles with resize handles. polygons: an island is
+ * one shape whose outline edges are dragged. cuts: a solid board with cut lines; islands follow.
+ */
+export type EditMode = 'rects' | 'polygons' | 'cuts'
 
 /** Part: the part moves with its bent leads. Body: lead ends stay soldered where they are. */
 export type MoveMode = 'part' | 'body'
@@ -39,6 +47,10 @@ type Drag =
   | { kind: 'pan'; startX: number; startY: number; view: View }
   | { kind: 'marquee'; start: Point; startX: number; startY: number; additive: boolean }
   | { kind: 'island'; net: string; start: Point; rects: Rect[] }
+  | { kind: 'cut'; cut: Cut; start: Point; islands: Island[] }
+  | { kind: 'edge'; net: string; edge: IslandEdge; start: Point; islands: Island[] }
+  | { kind: 'cutLine'; index: number; line: CutLine; start: Point }
+  | { kind: 'drawCut'; start: Point }
   | { kind: 'resize'; net: string; rectIndex: number; handle: Handle; start: Point; rect: Rect; neighbours: CutNeighbour[] }
   | { kind: 'part'; start: Point; part: MovingPart }
   | { kind: 'group'; start: Point; parts: MovingPart[]; islands: Island[]; pressed: SingleSelection }
@@ -47,7 +59,6 @@ type Drag =
 type MarqueeDrag = Extract<Drag, { kind: 'marquee' }>
 type GroupDrag = Extract<Drag, { kind: 'group' }>
 
-const MIN_RECT_SIZE = 1
 /** A press that moves less than this (screen pixels) is a click, not a selection rectangle. */
 const CLICK_TOLERANCE_PX = 3
 const HANDLES: Handle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
@@ -112,6 +123,7 @@ interface Props {
   layers: Layers
   tool: Tool
   moveMode: MoveMode
+  editMode: EditMode
 }
 
 const OPPOSITE: Record<Side, Side> = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' }
@@ -226,6 +238,16 @@ export function BodyShape({ geometry, stroke, strokeWidth }: { geometry: Geometr
         </>
       )
     case 'trimmer':
+      // A standing multiturn trimmer (3296W) is a narrow block with its brass screw at the pin 3 end.
+      if (w !== h) {
+        const screw = Math.min(w, h) * 0.3
+        return (
+          <>
+            <rect x={x} y={y} width={w} height={h} rx={0.3} {...style} />
+            <circle cx={x + w - screw - 0.4} cy={y + h / 2} r={screw} fill="#c9a227" stroke="#7a6010" strokeWidth={strokeWidth} />
+          </>
+        )
+      }
       return (
         <>
           <rect x={x} y={y} width={w} height={h} rx={0.5} {...style} />
@@ -304,7 +326,7 @@ function rectBetween(a: Point, b: Point): Rect {
 const isToggleClick = (e: ReactPointerEvent) => e.shiftKey || e.ctrlKey || e.metaKey
 
 export function Canvas(props: Props) {
-  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode } = props
+  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode, editMode } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const dragChangedRef = useRef(false)
@@ -314,6 +336,7 @@ export function Canvas(props: Props) {
   const [size, setSize] = useState({ width: 800, height: 600 })
   const [hoveredRef, setHoveredRef] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<Rect | null>(null)
+  const [cutPreview, setCutPreview] = useState<CutLine | null>(null)
   // While one part is hovered, the others fade so its leads are easy to follow.
   const partOpacity = (ref: string) => (hoveredRef === null || hoveredRef === ref ? 1 : 0.15)
 
@@ -348,6 +371,7 @@ export function Canvas(props: Props) {
 
   const componentsByRef = useMemo(() => new Map(netlist.components.map((c) => [c.ref, c])), [netlist])
   const islandsByNet = useMemo(() => new Map(layout.islands.map((i) => [i.net, i])), [layout.islands])
+  const cuts = useMemo(() => findCuts(layout.islands), [layout.islands])
 
   const parts = useMemo(
     () =>
@@ -463,6 +487,36 @@ export function Canvas(props: Props) {
     beginDrag(e, { kind: 'resize', net: island.net, rectIndex, handle, start: toWorld(e), rect, neighbours })
   }
 
+  const onCutPointerDown = (e: ReactPointerEvent, cut: Cut) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    beginDrag(e, { kind: 'cut', cut, start: toWorld(e), islands: layout.islands })
+  }
+
+  const onEdgePointerDown = (e: ReactPointerEvent, net: string, edge: IslandEdge) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    beginDrag(e, { kind: 'edge', net, edge, start: toWorld(e), islands: layout.islands })
+  }
+
+  const onCutLinePointerDown = (e: ReactPointerEvent, index: number, line: CutLine) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    beginDrag(e, { kind: 'cutLine', index, line, start: toWorld(e) })
+  }
+
+  const removeCutLine = (index: number) => {
+    onBeginEdit()
+    onLayoutChange((l) => ({ ...l, knife: { ...l.knife!, cuts: l.knife!.cuts.filter((_, k) => k !== index) } }))
+  }
+
+  const onDrawCutPointerDown = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    const p = toWorld(e)
+    beginDrag(e, { kind: 'drawCut', start: { x: snapValue(p.x), y: snapValue(p.y) } })
+  }
+
   const onLeadPointerDown = (e: ReactPointerEvent, placement: Placement, pin: string, origin: Point) => {
     if (e.button !== 0) return
     e.stopPropagation()
@@ -497,10 +551,34 @@ export function Canvas(props: Props) {
     }
     const dx = snapValue(rawDx)
     const dy = snapValue(rawDy)
-    if (drag.kind === 'island') {
+    if (drag.kind === 'drawCut') {
+      // A cut runs along x or y, whichever way the pointer moved furthest.
+      const { start } = drag
+      const horizontal = Math.abs(rawDx) >= Math.abs(rawDy)
+      setCutPreview(
+        horizontal
+          ? { x1: start.x, y1: start.y, x2: snapValue(start.x + rawDx), y2: start.y }
+          : { x1: start.x, y1: start.y, x2: start.x, y2: snapValue(start.y + rawDy) },
+      )
+    } else if (drag.kind === 'cutLine') {
+      const { line } = drag
+      const moved =
+        line.x1 === line.x2
+          ? { ...line, x1: snapValue(line.x1 + rawDx), x2: snapValue(line.x1 + rawDx) }
+          : { ...line, y1: snapValue(line.y1 + rawDy), y2: snapValue(line.y1 + rawDy) }
+      onLayoutChange((l) => ({ ...l, knife: { ...l.knife!, cuts: l.knife!.cuts.map((c, k) => (k === drag.index ? moved : c)) } }))
+    } else if (drag.kind === 'edge') {
+      const target = snapValue(drag.edge.at + (drag.edge.axis === 'x' ? rawDx : rawDy))
+      onLayoutChange((l) => ({ ...l, islands: moveIslandEdge(drag.islands, drag.net, drag.edge, target) }))
+    } else if (drag.kind === 'island') {
+      // In a cut-line layout the islands follow from the cuts; they cannot be dragged themselves.
+      if (editMode === 'cuts') return
       const delta = gridDelta(drag.rects, rawDx, rawDy, snap)
       const moved = moveRects(drag.rects, delta.x, delta.y)
       onLayoutChange((l) => updateIsland(l, drag.net, moved))
+    } else if (drag.kind === 'cut') {
+      const target = snapValue(drag.cut.at + (drag.cut.axis === 'x' ? rawDx : rawDy))
+      onLayoutChange((l) => ({ ...l, islands: moveCut(drag.islands, drag.cut, target) }))
     } else if (drag.kind === 'resize') {
       const resized = resizeRect(drag.rect, drag.handle, rawDx, rawDy, snap)
       onLayoutChange((l) =>
@@ -550,7 +628,13 @@ export function Canvas(props: Props) {
     dragRef.current = null
     toggleOnClickRef.current = null
     svgRef.current!.releasePointerCapture(e.pointerId)
-    if (drag?.kind === 'marquee') finishMarquee(drag, e)
+    if (drag?.kind === 'drawCut') {
+      const line = cutPreview
+      setCutPreview(null)
+      if (line && (line.x1 !== line.x2 || line.y1 !== line.y2)) {
+        onLayoutChange((l) => ({ ...l, knife: { ...l.knife!, cuts: [...l.knife!.cuts, line] } }))
+      }
+    } else if (drag?.kind === 'marquee') finishMarquee(drag, e)
     else if (toggleOnClick && !dragChangedRef.current) onSelect(toggleSelected(selection, toggleOnClick))
     // A click without dragging on an item of a multi-selection selects just that item.
     else if (drag?.kind === 'group' && !dragChangedRef.current) onSelect(drag.pressed)
@@ -568,6 +652,7 @@ export function Canvas(props: Props) {
   const selectedIsland = selection?.kind === 'island' ? islandsByNet.get(selection.net) : undefined
   const selectedRectIndex = selection?.kind === 'island' ? selection.rectIndex : -1
   const highlightedNets = new Set(selectedNets(selection))
+  const selectedEdges = editMode === 'polygons' && selectedIsland && !selectedIsland.plane ? islandEdges(layout.islands, selectedIsland.net) : []
   const highlightedRefs = new Set(selectedRefs(selection))
 
   return (
@@ -603,6 +688,22 @@ export function Canvas(props: Props) {
           <line x1={0} y1={visible.y} x2={0} y2={visible.y + visible.h} className="axis" strokeWidth={px} />
         </g>
 
+        {editMode === 'cuts' && layout.knife && (
+          <rect
+            className="board-outline"
+            x={layout.knife.board.x}
+            y={layout.knife.board.y}
+            width={layout.knife.board.w}
+            height={layout.knife.board.h}
+            strokeWidth={px}
+            strokeDasharray={`${4 * px} ${3 * px}`}
+            pointerEvents="none"
+          />
+        )}
+        {(layout.freeCopper ?? []).map((rects, k) => (
+          <path key={k} className="free-copper" d={outlinePath(rects, isolation / 2)} fillRule="evenodd" pointerEvents="none" />
+        ))}
+
         {planesFirst(layout.islands).map((island) => {
           const violating = problemNets.has(island.net)
           const selected = highlightedNets.has(island.net)
@@ -635,6 +736,50 @@ export function Canvas(props: Props) {
             </g>
           )
         })}
+
+        {/* Dragging a cut moves the islands on both sides of it, the way a knife-cut board is edited. */}
+        {tool === 'select' && editMode !== 'cuts' && (
+          <g className="cuts">
+            {cuts.map((cut) => {
+              const [x1, y1, x2, y2] = cut.axis === 'x' ? [cut.at, cut.from, cut.at, cut.to] : [cut.from, cut.at, cut.to, cut.at]
+              return (
+                <line
+                  key={`${cut.axis}${cut.at}:${cut.from}`}
+                  className={`cut cut-${cut.axis}`}
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  strokeWidth={6 * px}
+                  onPointerDown={(e) => onCutPointerDown(e, cut)}
+                />
+              )
+            })}
+          </g>
+        )}
+
+        {editMode === 'cuts' && layout.knife && (
+          <g className="cut-lines">
+            {[...layout.knife.cuts, ...(cutPreview ? [cutPreview] : [])].map((line, k) => (
+              <g key={k}>
+                {/* Drawn as the burned channel itself, so a cut that does not separate anything still shows. */}
+                <line className="cut-channel" x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} strokeWidth={isolation} />
+                {k < layout.knife!.cuts.length && tool === 'select' && (
+                  <line
+                    className={`cut ${line.x1 === line.x2 ? 'cut-x' : 'cut-y'}`}
+                    x1={line.x1}
+                    y1={line.y1}
+                    x2={line.x2}
+                    y2={line.y2}
+                    strokeWidth={6 * px}
+                    onPointerDown={(e) => onCutLinePointerDown(e, k, line)}
+                    onDoubleClick={() => removeCutLine(k)}
+                  />
+                )}
+              </g>
+            ))}
+          </g>
+        )}
 
         {parts.flatMap(({ component, leads }) =>
           leads.map((lead, k) => {
@@ -720,8 +865,24 @@ export function Canvas(props: Props) {
           )
         })}
 
+        {selectedEdges.map((edge, k) => {
+          const [x1, y1, x2, y2] = edge.axis === 'x' ? [edge.at, edge.from, edge.at, edge.to] : [edge.from, edge.at, edge.to, edge.at]
+          return (
+            <line
+              key={k}
+              className={`island-edge ${edge.axis === 'x' ? 'cut-x' : 'cut-y'}`}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              strokeWidth={6 * px}
+              onPointerDown={(e) => onEdgePointerDown(e, selectedIsland!.net, edge)}
+            />
+          )
+        })}
+
         {/* Handles only on the clicked rectangle: optimized islands can consist of hundreds. */}
-        {selectedIsland?.rects.map((r, k) => k === selectedRectIndex && (
+        {editMode === 'rects' && selectedIsland?.rects.map((r, k) => k === selectedRectIndex && (
           <g key={k}>
             {selectedIsland.rects.length > 1 && (
               <rect
@@ -755,6 +916,18 @@ export function Canvas(props: Props) {
             })}
           </g>
         ))}
+
+        {tool === 'cut' && (
+          <rect
+            className="draw-cut"
+            x={visible.x}
+            y={visible.y}
+            width={visible.w}
+            height={visible.h}
+            fill="transparent"
+            onPointerDown={onDrawCutPointerDown}
+          />
+        )}
 
         {marquee && (
           <rect

@@ -1,6 +1,7 @@
 import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint } from './geometry'
 import { footprintPinCount } from './footprints'
 import { isRealNet } from './netlist'
+import { cutsFromIslands, islandsFromCuts } from './raster'
 import type { Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
 
 const PITCH = 2.54
@@ -147,8 +148,12 @@ function leadsFor(shape: Shape, component: NetComponent) {
     }
     case 'to126':
       return rowLeads(pinCount, pitch, length ?? 7.6, width ?? 2.7)
-    case 'trimmer':
-      return rowLeads(pinCount, pitch, length ?? 9.5, width ?? 9.5)
+    case 'trimmer': {
+      const leads = rowLeads(pinCount, pitch, length ?? 9.5, width ?? 9.5)
+      // A standing trimmer (3296W) has its pins underneath, along the middle of the body.
+      if (length === undefined || length === width) return leads
+      return { ...leads, body: { ...leads.body, y: -leads.body.h / 2 } }
+    }
     case 'dip': {
       // Numbered counter-clockwise from top left, like a DIP seen from above.
       const perSide = pinCount / 2
@@ -278,6 +283,35 @@ export function analyzeLeads(
     else status = touched.length > 0 ? 'ok' : 'open'
     return { anchor, end, net: pin.net, status }
   })
+}
+
+/**
+ * In a cut-line layout the islands are not edited but follow from the cuts and from where the
+ * leads end. `netlist` must be the netlist as built (footprint choices applied).
+ */
+export function withCutIslands(netlist: Netlist, layout: Layout): Layout {
+  if (!layout.knife) return layout
+  const components = new Map(netlist.components.map((c) => [c.ref, c]))
+  const leadEnds = layout.placements.flatMap((placement) => {
+    const component = components.get(placement.ref)
+    if (!component) return []
+    const defaults = defaultLeadEnds(componentGeometry(component))
+    return component.pins.map((pin, k) => ({ net: pin.net, end: toWorld(placement.leads?.[pin.number] ?? defaults[k], placement) }))
+  })
+  const { islands, free } = islandsFromCuts(layout.knife, leadEnds)
+  return { ...layout, islands, freeCopper: free }
+}
+
+/** Turns island edges into cut lines on a solid board covering the islands. */
+export function toCutLayout(layout: Layout): Layout {
+  const rects = layout.islands.filter((island) => !island.plane).flatMap((island) => island.rects)
+  const board = boundsOf(rects) ?? { x: 0, y: 0, w: 30, h: 20 }
+  return { ...layout, knife: { board, cuts: cutsFromIslands(layout.islands) } }
+}
+
+/** Back to editable islands: keeps the islands the cuts gave. */
+export function fromCutLayout(layout: Layout): Layout {
+  return { islands: layout.islands, placements: layout.placements }
 }
 
 /**
