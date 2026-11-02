@@ -1,8 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from './panels'
-import type { ProjectTab } from './projectStore'
 
-/** Matches .project-tabs gap and .icon-button width in index.css. */
+export interface TabInfo {
+  id: string
+  label: string
+  /** Shown as a dot; closing the tab asks to save first. */
+  unsaved: boolean
+}
+
+/** Matches .project-tabs gap and the .icon-button width of the overflow menu button in index.css. */
 const GAP = 4
 const ICON_BUTTON = 30
 
@@ -10,12 +16,11 @@ const ICON_BUTTON = 30
  * The tabs that fit in `room` px, in order, always including the active one.
  * Returns null when every tab fits, so no overflow menu is needed.
  */
-function tabsThatFit(tabs: ProjectTab[], widths: Map<string, number>, activeId: string, room: number): Set<string> | null {
-  const widthOf = (tab: ProjectTab) => (widths.get(tab.id) ?? 0) + GAP
-  const roomForTabs = room - ICON_BUTTON
-  if (tabs.reduce((sum, tab) => sum + widthOf(tab), 0) <= roomForTabs) return null
+function tabsThatFit(tabs: TabInfo[], widths: Map<string, number>, activeId: string, room: number): Set<string> | null {
+  const widthOf = (tab: TabInfo) => (widths.get(tab.id) ?? 0) + GAP
+  if (tabs.reduce((sum, tab) => sum + widthOf(tab), 0) <= room) return null
 
-  const roomWithMenu = roomForTabs - ICON_BUTTON - GAP
+  const roomWithMenu = room - ICON_BUTTON
   const shown = new Set([activeId])
   let used = widths.get(activeId) ?? 0
   for (const tab of tabs) {
@@ -27,16 +32,25 @@ function tabsThatFit(tabs: ProjectTab[], widths: Map<string, number>, activeId: 
   return shown
 }
 
+function TabContent({ tab }: { tab: TabInfo }) {
+  return (
+    <>
+      <Icon name="file" />
+      <span className="tab-label">{tab.label}</span>
+      {tab.unsaved && <span className="unsaved-dot" aria-label="unsaved changes">●</span>}
+    </>
+  )
+}
+
 interface ProjectTabsProps {
-  tabs: ProjectTab[]
+  tabs: TabInfo[]
   activeId: string
   onSwitch: (id: string) => void
   onClose: (id: string) => void
-  onAdd: () => void
 }
 
 /** Project tabs in the header; the tabs that do not fit go into a menu instead of a scroll bar. */
-export function ProjectTabs({ tabs, activeId, onSwitch, onClose, onAdd }: ProjectTabsProps) {
+export function ProjectTabs({ tabs, activeId, onSwitch, onClose }: ProjectTabsProps) {
   const stripRef = useRef<HTMLDivElement>(null)
   const tabElements = useRef(new Map<string, HTMLDivElement>())
   const [room, setRoom] = useState(0)
@@ -51,11 +65,13 @@ export function ProjectTabs({ tabs, activeId, onSwitch, onClose, onAdd }: Projec
     return () => observer.disconnect()
   }, [])
 
+  // The tabs array is new on every render of the editor; measure only when what is drawn changes.
+  const drawn = tabs.map((tab) => `${tab.id} ${tab.unsaved} ${tab.label}`).join('\n')
   // Hidden tabs stay rendered (invisible, out of the flow), so every tab's width can be measured here.
   useLayoutEffect(() => {
     const widths = new Map([...tabElements.current].map(([id, element]) => [id, element.offsetWidth]))
     setShown(tabsThatFit(tabs, widths, activeId, room))
-  }, [tabs, activeId, room])
+  }, [drawn, activeId, room])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -66,8 +82,9 @@ export function ProjectTabs({ tabs, activeId, onSwitch, onClose, onAdd }: Projec
     return () => document.removeEventListener('pointerdown', closeOutside)
   }, [menuOpen])
 
-  const isShown = (tab: ProjectTab) => shown === null || shown.has(tab.id)
+  const isShown = (tab: TabInfo) => shown === null || shown.has(tab.id)
   const overflowing = tabs.filter((tab) => !isShown(tab))
+  const titleOf = (tab: TabInfo) => (tab.unsaved ? `${tab.label} (unsaved changes)` : tab.label)
 
   return (
     <div className="project-tabs" role="tablist" ref={stripRef}>
@@ -81,11 +98,10 @@ export function ProjectTabs({ tabs, activeId, onSwitch, onClose, onAdd }: Projec
           className={['project-tab', tab.id === activeId && 'active', !isShown(tab) && 'overflowed'].filter(Boolean).join(' ')}
           aria-hidden={!isShown(tab)}
         >
-          <button role="tab" aria-selected={tab.id === activeId} className="tab-name" onClick={() => onSwitch(tab.id)} title={tab.name}>
-            <Icon name="file" />
-            <span>{tab.name}</span>
+          <button role="tab" aria-selected={tab.id === activeId} className="tab-name" onClick={() => onSwitch(tab.id)} title={titleOf(tab)}>
+            <TabContent tab={tab} />
           </button>
-          <button className="tab-close" onClick={() => onClose(tab.id)} title="Close project" aria-label={`Close ${tab.name}`}>
+          <button className="tab-close" onClick={() => onClose(tab.id)} title="Close project" aria-label={`Close ${tab.label}`}>
             ✕
           </button>
         </div>
@@ -111,12 +127,11 @@ export function ProjectTabs({ tabs, activeId, onSwitch, onClose, onAdd }: Projec
                       setMenuOpen(false)
                       onSwitch(tab.id)
                     }}
-                    title={tab.name}
+                    title={titleOf(tab)}
                   >
-                    <Icon name="file" />
-                    <span>{tab.name}</span>
+                    <TabContent tab={tab} />
                   </button>
-                  <button className="tab-close" onClick={() => onClose(tab.id)} title="Close project" aria-label={`Close ${tab.name}`}>
+                  <button className="tab-close" onClick={() => onClose(tab.id)} title="Close project" aria-label={`Close ${tab.label}`}>
                     ✕
                   </button>
                 </div>
@@ -125,9 +140,6 @@ export function ProjectTabs({ tabs, activeId, onSwitch, onClose, onAdd }: Projec
           )}
         </div>
       )}
-      <button className="icon-button" onClick={onAdd} title="Open a new project in a new tab" aria-label="New project tab">
-        <Icon name="plus" />
-      </button>
     </div>
   )
 }

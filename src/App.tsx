@@ -29,25 +29,31 @@ import {
   Icon,
   LayerToggles,
   PartProperties,
+  SaveChangesDialog,
   SchematicCheck,
   Section,
   SelectionDetails,
   Validation,
+  type SaveChoice,
 } from './panels'
+import { canUseFiles, fileLabel, mayUse, pickFileToOpen, pickFileToSave, readFile, writeFile } from './projectFiles'
 import {
+  acceptFileContent,
+  addProject,
   DEFAULT_SETTINGS,
   emptyProject,
   loadTabs,
+  markSaved,
   newTabId,
-  parseStoredProject,
-  parseStoredTabs,
+  onFileChange,
+  onRemoteChange,
+  projectFile,
   projectFromFile,
   projectToFile,
-  projectKey,
   readProject,
   rememberActiveTab,
   removeProject,
-  TABS_KEY,
+  unlinkFile,
   writeProject,
   writeTabs,
   type ProjectTab,
@@ -277,6 +283,8 @@ interface History {
 export function App() {
   const [initialTabs] = useState(loadTabs)
   const [tabs, setTabs] = useState<ProjectTab[]>(initialTabs.tabs)
+  const tabsRef = useRef(tabs)
+  tabsRef.current = tabs
   const [activeId, setActiveId] = useState(initialTabs.activeId)
   const [storedProject, setProject] = useState<Project>(() => readProject(initialTabs.activeId))
   const project = useMemo(() => withDerivedIslands(storedProject), [storedProject])
@@ -518,33 +526,36 @@ export function App() {
   activeIdRef.current = activeId
 
   // The agent only talks to the most recently opened browser tab; other browser tabs showing the
-  // same project follow along through storage. Writing an unchanged value fires no event, so
-  // browser tabs do not echo each other.
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === TABS_KEY) {
-        const stored = parseStoredTabs(e.newValue)
-        if (stored.length > 0) setTabs(stored)
-        return
-      }
-      if (e.key !== projectKey(activeIdRef.current) || !e.newValue) return
-      try {
-        const stored = parseStoredProject(e.newValue)
-        if (!stored) return
-        projectRef.current = stored
-        setProject(stored)
-      } catch {
-        // Half-written or foreign data; the next change will bring a good copy.
-      }
-    }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
+  // same project follow along. The store skips writes that change nothing, so browser tabs do not
+  // echo each other.
+  useEffect(
+    () =>
+      onRemoteChange((change) => {
+        if (change.kind === 'tabs') {
+          if (change.tabs.length > 0) setTabs(change.tabs)
+        } else if (change.id === activeIdRef.current) {
+          projectRef.current = change.project
+          setProject(change.project)
+        }
+      }),
+    [],
+  )
+
+  // Re-render when a tab gets or loses unsaved changes, or its file is checked.
+  const [, setFileStatusVersion] = useState(0)
+  useEffect(() => onFileChange(() => setFileStatusVersion((n) => n + 1)), [])
 
   useEffect(() => {
     const timer = setTimeout(() => writeProject(activeId, project), 300)
     return () => clearTimeout(timer)
   }, [project, activeId])
+
+  // The last change may still wait for the timer above.
+  useEffect(() => {
+    const flush = () => writeProject(activeIdRef.current, projectRef.current)
+    window.addEventListener('pagehide', flush)
+    return () => window.removeEventListener('pagehide', flush)
+  }, [])
 
   // The tab shows the project name, which changes when a netlist is imported.
   useEffect(() => {
@@ -576,25 +587,157 @@ export function App() {
     if (id !== activeId) showTab(id, readProject(id))
   }
 
-  const openInNewTab = (opened: Project) => {
+  const openInNewTab = (opened: Project, handle?: FileSystemFileHandle) => {
     const id = newTabId()
-    writeProject(id, opened)
+    // Compared as the editor shows it, so an opened file does not count as changed right away.
+    addProject(id, withDerivedIslands(opened), handle)
     const next = [...tabs, { id, name: opened.name }]
     setTabs(next)
     writeTabs(next)
     showTab(id, opened)
   }
 
-  const addTab = () => openInNewTab(emptyProject(project.settings))
+  const newProject = () => openInNewTab(emptyProject(project.settings))
 
-  const closeTab = (id: string) => {
+  /** The project of tab `id` as the editor shows it, which is what gets saved. */
+  const shownProject = (id: string) => (id === activeIdRef.current ? projectRef.current : withDerivedIslands(readProject(id)))
+
+  /** File content in the form the editor saves it, so it compares with what the editor saved; null when unreadable. */
+  const readProjectFile = async (handle: FileSystemFileHandle) => {
+    const text = await readFile(handle)
+    try {
+      const fromFile = withDerivedIslands(projectFromFile(text))
+      return { project: fromFile, content: projectToFile(fromFile) }
+    } catch {
+      return { project: null, content: text }
+    }
+  }
+
+  /** Saves tab `id` to its file, or asks for one; false when nothing was saved. */
+  const saveTab = async (id: string, saveAs = false): Promise<boolean> => {
+    const toSave = shownProject(id)
+    const content = projectToFile(toSave)
+    try {
+      if (!canUseFiles) {
+        downloadText(`${toSave.name}.manhattan.json`, content, 'application/json')
+        markSaved(id, toSave)
+        return true
+      }
+      const file = projectFile(id)
+      let handle = saveAs ? undefined : file.handle
+      if (handle) {
+        if (!(await mayUse(handle, true))) return false
+        const onDisk = await readProjectFile(handle).catch(() => null)
+        const changedOnDisk = onDisk !== null && onDisk.content !== file.savedContent
+        if (changedOnDisk && !confirm(`"${handle.name}" changed on disk since it was opened or saved here. Overwrite it?`)) return false
+      } else {
+        handle = (await pickFileToSave(`${toSave.name}.manhattan.json`)) ?? undefined
+        if (!handle) return false
+      }
+      await writeFile(handle, content)
+      markSaved(id, toSave, handle)
+      return true
+    } catch (e) {
+      setError(`Could not save: ${e instanceof Error ? e.message : String(e)}`)
+      return false
+    }
+  }
+
+  const openProjectFile = async () => {
+    if (!canUseFiles) {
+      projectFileInputRef.current!.click()
+      return
+    }
+    try {
+      const handle = await pickFileToOpen()
+      if (!handle) return
+      for (const tab of tabs) {
+        const open = projectFile(tab.id).handle
+        if (open && (await open.isSameEntry(handle))) return switchTab(tab.id)
+      }
+      openInNewTab(projectFromFile(await readFile(handle)), handle)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /**
+   * After a reload the tab shows its recovery copy. Compares the file with it: an unchanged file
+   * needs nothing, a file changed elsewhere replaces a copy without unsaved changes, and with
+   * changes on both sides the user picks. Without permission yet (`ask` false) it waits for a click.
+   */
+  const [fileConflict, setFileConflict] = useState<{ id: string; project: Project; content: string } | null>(null)
+  const checkFile = async (id: string, ask: boolean) => {
+    const file = projectFile(id)
+    if (!file.handle || file.checked) return
+    try {
+      if (!(await mayUse(file.handle, ask))) return
+      const onDisk = await readProjectFile(file.handle)
+      if (id !== activeIdRef.current) return
+      if (onDisk.content === file.savedContent) acceptFileContent(id, onDisk.content)
+      else if (!onDisk.project) throw new Error('it is not a Manhattan project anymore')
+      else if (!file.dirty) loadFileVersion(id, onDisk.project, file.handle)
+      else setFileConflict({ id, project: onDisk.project, content: onDisk.content })
+    } catch (e) {
+      // Moved, deleted or damaged: keep working on the recovery copy; Save asks for a new file.
+      setError(`Could not read "${file.handle.name}" (${e instanceof Error ? e.message : String(e)}). Showing the recovery copy.`)
+      unlinkFile(id)
+    }
+  }
+
+  const loadFileVersion = (id: string, fromFile: Project, handle: FileSystemFileHandle) => {
+    rememberEdit()
+    projectRef.current = fromFile
+    setProject(fromFile)
+    markSaved(id, fromFile, handle)
+    setFileConflict(null)
+  }
+
+  const keepRecoveryCopy = (id: string, fileContent: string) => {
+    acceptFileContent(id, fileContent)
+    setFileConflict(null)
+  }
+
+  // Only on showing a tab; later checks come from the banner's button.
+  useEffect(() => {
+    checkFile(activeId, false)
+  }, [activeId])
+
+  const tabLabel = (tab: ProjectTab) => {
+    const handle = projectFile(tab.id).handle
+    return handle ? fileLabel(handle) : tab.name
+  }
+
+  const closeTab = async (id: string) => {
     const tab = tabs.find((t) => t.id === id)
-    if (!tab || !confirm(`Close "${tab.name}"? Its layout is deleted (it cannot be undone).`)) return
+    if (!tab) return
+    if (projectFile(id).dirty) {
+      const choice = await askToSave(tabLabel(tab))
+      if (choice === 'cancel' || (choice === 'save' && !(await saveTab(id)))) return
+    }
+    closeSavedTab(id)
+  }
+
+  const [saveQuestion, setSaveQuestion] = useState<{ name: string; answer: (choice: SaveChoice) => void } | null>(null)
+  const askToSave = (name: string) =>
+    new Promise<SaveChoice>((resolve) =>
+      setSaveQuestion({
+        name,
+        answer: (choice) => {
+          setSaveQuestion(null)
+          resolve(choice)
+        },
+      }),
+    )
+
+  const closeSavedTab = (id: string) => {
+    // Read fresh: an await in closeTab may have changed the tabs.
+    const tabs = tabsRef.current
     const remaining = tabs.filter((t) => t.id !== id)
     if (remaining.length === 0) {
       // Always keep one tab: closing the last one leaves a fresh, empty project.
       const created = emptyProject(project.settings)
-      writeProject(id, created)
+      addProject(id, created)
       const fresh = [{ id, name: created.name }]
       setTabs(fresh)
       writeTabs(fresh)
@@ -607,7 +750,7 @@ export function App() {
     }
     setTabs(remaining)
     writeTabs(remaining)
-    if (id === activeId) {
+    if (id === activeIdRef.current) {
       const neighbour = remaining[Math.max(0, tabs.findIndex((t) => t.id === id) - 1)]
       showTab(neighbour.id, readProject(neighbour.id))
     }
@@ -809,8 +952,6 @@ export function App() {
 
   const exportLayoutDxf = () => downloadText(`${project.name}-isolation.dxf`, exportDxf(allCopper(layout), settings.isolation), 'application/dxf')
 
-  const saveProject = () => downloadText(`${project.name}.manhattan.json`, projectToFile(project), 'application/json')
-
   const onProjectFileChosen = async (file: File | undefined) => {
     if (!file) return
     projectFileInputRef.current!.value = ''
@@ -824,10 +965,19 @@ export function App() {
   // Keyboard shortcuts; handlers are recreated each render so they always see current state.
   const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {})
   shortcuts.current = (e: KeyboardEvent) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
     // An open dialog handles its own keys (Escape closes it); the canvas shortcuts stay out of the way.
     if (e.target instanceof Element && e.target.closest('dialog')) return
     const command = e.ctrlKey || e.metaKey
+    // File shortcuts also work while typing in a field, instead of the browser's own.
+    const key = e.key.toLowerCase()
+    if (command && (key === 's' || key === 'o' || key === 'n')) {
+      e.preventDefault()
+      if (key === 's') saveTab(activeId, e.shiftKey)
+      else if (key === 'o') openProjectFile()
+      else newProject()
+      return
+    }
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
     if (command && (e.key === 'z' || e.key === 'Z')) {
       e.preventDefault()
       if (e.shiftKey) redo()
@@ -877,12 +1027,19 @@ export function App() {
             </button>
             {fileMenuOpen && (
               <div className="menu-list" role="menu" onClick={() => setFileMenuOpen(false)}>
-                <button onClick={() => projectFileInputRef.current!.click()} title="Open a saved project in a new tab">
-                  <Icon name="open" />Open project…
+                <button onClick={newProject} title="An empty project in a new tab">
+                  <Icon name="plus" />New project<kbd>Ctrl+N</kbd>
                 </button>
-                <button onClick={saveProject} title="Download this tab's project as a JSON file">
-                  <Icon name="save" />Save project…
+                <button onClick={openProjectFile} title="Open a project file in a new tab">
+                  <Icon name="open" />Open…<kbd>Ctrl+O</kbd>
                 </button>
+                <button onClick={() => saveTab(activeId)} title="Save this tab's project to its file">
+                  <Icon name="save" />Save<kbd>Ctrl+S</kbd>
+                </button>
+                <button onClick={() => saveTab(activeId, true)} title="Save this tab's project to another file">
+                  <Icon name="save" />Save as…<kbd>Ctrl+Shift+S</kbd>
+                </button>
+                <hr />
                 <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
                 <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
                 <button onClick={exportLayoutDxf} title="Area to burn as closed contours in mm (board outline + copper as holes), ready to hatch in EzCad">
@@ -926,7 +1083,12 @@ export function App() {
             <Icon name="help" />
           </button>
         </div>
-        <ProjectTabs tabs={tabs} activeId={activeId} onSwitch={switchTab} onClose={closeTab} onAdd={addTab} />
+        <ProjectTabs
+          tabs={tabs.map((tab) => ({ id: tab.id, label: tabLabel(tab), unsaved: projectFile(tab.id).dirty }))}
+          activeId={activeId}
+          onSwitch={switchTab}
+          onClose={closeTab}
+        />
         <div className="view-switch" role="group" aria-label="View">
           <button className={view === 'schematic' ? 'active' : ''} aria-pressed={view === 'schematic'} onClick={() => showView('schematic')}>
             <Icon name="schematic" />Schematic
@@ -972,6 +1134,27 @@ export function App() {
               {error}
               <button className="icon-button" onClick={() => setError('')} aria-label="Dismiss">✕</button>
             </div>
+          )}
+          {fileConflict?.id === activeId ? (
+            <div className="sync-banner" role="alert">
+              <span>"{tabLabel({ id: activeId, name: project.name })}" changed on disk, and this tab has changes that were not saved.</span>
+              <button className="header-button" onClick={() => loadFileVersion(activeId, fileConflict.project, projectFile(activeId).handle!)} title="Show the file; the recovered changes stay reachable with Undo">
+                Use file
+              </button>
+              <button className="header-button" onClick={() => keepRecoveryCopy(activeId, fileConflict.content)} title="Keep editing the recovered changes; Save overwrites the file">
+                Keep recovered changes
+              </button>
+            </div>
+          ) : (
+            projectFile(activeId).handle &&
+            !projectFile(activeId).checked && (
+              <div className="sync-banner" role="status">
+                <span>Showing the recovery copy of "{tabLabel({ id: activeId, name: project.name })}"; the file itself was not checked yet.</span>
+                <button className="header-button" onClick={() => checkFile(activeId, true)} title="Allow access to the file and compare it with the recovery copy">
+                  <Icon name="open" />Check file
+                </button>
+              </div>
+            )
           )}
           {pinsNotInPcb.length > 0 && (
             <div className="sync-banner" role="status">
@@ -1226,6 +1409,7 @@ export function App() {
 
       {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
       {showAiHelp && <AiHelpDialog agentConnected={agentConnected} onClose={() => setShowAiHelp(false)} />}
+      {saveQuestion && <SaveChangesDialog name={saveQuestion.name} onAnswer={saveQuestion.answer} />}
       {footprintDialogRefs && (
         <FootprintDialog
           built={builtNetlist}

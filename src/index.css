@@ -199,10 +199,16 @@ input:focus-visible {
   max-width: 280px;
 }
 
-.menu-tab span {
+.menu-tab .tab-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.unsaved-dot {
+  flex: none;
+  font-size: 10px;
+  color: var(--accent);
 }
 
 .project-tab {
@@ -1217,20 +1223,23 @@ input:focus-visible {
   padding-left: 18px;
 }
 
-.footprint-dialog footer {
+.footprint-dialog footer,
+.dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
 
-.footprint-dialog footer .primary {
+.footprint-dialog footer .primary,
+.dialog-actions .primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   font-weight: 600;
 }
 
-.footprint-dialog footer .primary:hover:not(:disabled) {
+.footprint-dialog footer .primary:hover:not(:disabled),
+.dialog-actions .primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
@@ -1583,6 +1592,21 @@ input:focus-visible {
 
 .menu-list button:hover {
   background: var(--panel-muted);
+}
+
+.menu-list kbd {
+  margin-left: auto;
+  padding-left: 16px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.menu-list hr {
+  width: 100%;
+  margin: 2px 0;
+  border: none;
+  border-top: 1px solid var(--border);
 }
 
 .reset-grid,

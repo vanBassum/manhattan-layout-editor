@@ -519,6 +519,8 @@ const SHORTCUTS: [string, string][] = [
   ['Space / Shift+Space', 'Rotate 90° / 15°'],
   ['Del', 'Remove the selected rectangle'],
   ['Ctrl+Z / Ctrl+Y', 'Undo / redo'],
+  ['Ctrl+S / Ctrl+Shift+S', 'Save / save as'],
+  ['Ctrl+O / Ctrl+N', 'Open a project / new project, in a new tab'],
   ['Middle-drag, wheel', 'Pan, zoom'],
   ['F', 'Fit the board in view'],
   ['W (schematic)', 'Wire tool: drag for one wire, or click corner by corner; double-click or Esc stops'],
@@ -550,6 +552,28 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
           ))}
         </tbody>
       </table>
+    </dialog>
+  )
+}
+
+export type SaveChoice = 'save' | 'discard' | 'cancel'
+
+/** Asked when closing a tab with unsaved changes. Escape cancels. */
+export function SaveChangesDialog({ name, onAnswer }: { name: string; onAnswer: (choice: SaveChoice) => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => dialogRef.current?.showModal(), [])
+
+  return (
+    <dialog ref={dialogRef} className="ai-dialog save-dialog" onCancel={() => onAnswer('cancel')}>
+      <h2>Save changes to "{name}"?</h2>
+      <p>Closing without saving throws the changes away.</p>
+      <div className="dialog-actions">
+        <button onClick={() => onAnswer('discard')}>Don't save</button>
+        <button onClick={() => onAnswer('cancel')}>Cancel</button>
+        <button className="primary" onClick={() => onAnswer('save')} autoFocus>
+          Save
+        </button>
+      </div>
     </dialog>
   )
 }
