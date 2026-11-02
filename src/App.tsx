@@ -283,16 +283,20 @@ export function App() {
     [schematicNets],
   )
 
-  // Latest project, also between a change and the next render: agent commands can arrive back to back.
+  // Latest project and shown tab, also between a change and the next render: agent commands and file
+  // checks can arrive in between. Only showProject and showTab change them, always together with the
+  // state, so they are never behind it. (tabsRef may lag one render; a lookup then only misses a tab.)
   const projectRef = useRef(project)
-  projectRef.current = project
   const activeIdRef = useRef(activeId)
-  activeIdRef.current = activeId
 
-  const restore = (snapshot: Snapshot) => {
-    projectRef.current = { ...projectRef.current, ...snapshot }
-    setProject(projectRef.current)
+  /** Every change to the shown project goes through here. */
+  const showProject = (next: Project) => {
+    projectRef.current = next
+    setProject(next)
   }
+  const updateProject = (update: (current: Project) => Project) => showProject(update(projectRef.current))
+
+  const restore = (snapshot: Snapshot) => updateProject((current) => ({ ...current, ...snapshot }))
 
   /** Call right before changing the layout or schematic, so the change can be undone. */
   const rememberEdit = () => {
@@ -374,8 +378,7 @@ export function App() {
         if (change.kind === 'tabs') {
           if (change.tabs.length > 0) setTabs(change.tabs)
         } else if (change.id === activeIdRef.current) {
-          projectRef.current = change.project
-          setProject(change.project)
+          showProject(change.project)
         }
       }),
     [],
@@ -413,8 +416,8 @@ export function App() {
     parkedHistory.current.set(activeId, history.current)
     history.current = parkedHistory.current.get(id) ?? NO_HISTORY
     parkedHistory.current.delete(id)
-    projectRef.current = next
-    setProject(next)
+    showProject(next)
+    activeIdRef.current = id
     setActiveId(id)
     rememberActiveTab(id)
     setSelection(null)
@@ -548,8 +551,7 @@ export function App() {
 
   const loadFileVersion = (id: string, fromFile: Project, handle: FileSystemFileHandle) => {
     rememberEdit()
-    projectRef.current = fromFile
-    setProject(fromFile)
+    showProject(fromFile)
     markSaved(id, fromFile, handle)
     setFileConflict(null)
   }
@@ -597,8 +599,7 @@ export function App() {
       setTabs(fresh)
       writeTabs(fresh)
       history.current = NO_HISTORY
-      projectRef.current = created
-      setProject(created)
+      showProject(created)
       setSelection(null)
       return
     }
@@ -623,10 +624,10 @@ export function App() {
   }
 
   const setLayout = (update: (layout: Layout) => Layout) =>
-    setProject((p) => ({ ...p, layout: update(p.layout) }))
+    updateProject((p) => ({ ...p, layout: update(p.layout) }))
 
   const setSettings = (changes: Partial<Settings>) =>
-    setProject((p) => ({ ...p, settings: { ...p.settings, ...changes } }))
+    updateProject((p) => ({ ...p, settings: { ...p.settings, ...changes } }))
 
   const spacingViolations = useMemo(
     () => findSpacingViolations(layout.islands),
@@ -654,7 +655,7 @@ export function App() {
 
   const loadNetlist = (name: string, text: string, keepLayout: boolean) => {
     try {
-      setProject((p) => projectFromNetlist(name, text, p, keepLayout))
+      updateProject((p) => projectFromNetlist(name, text, p, keepLayout))
       // Old layouts belong to the old netlist.
       history.current = NO_HISTORY
       setSelection(null)
@@ -689,11 +690,11 @@ export function App() {
   const refsToEdit = selectedRefs(selection)
 
   // Schematic edits leave the PCB alone; "Update PCB" takes their nets over when the user is ready.
-  const changeSchematic = (next: FullSchematic) => setProject((p) => ({ ...p, schematic: next }))
+  const changeSchematic = (next: FullSchematic) => updateProject((p) => ({ ...p, schematic: next }))
 
   const updatePcb = () => {
     rememberEdit()
-    setProject(withSchematicNets)
+    updateProject(withSchematicNets)
   }
 
   // Ground and power symbols turn and flip like parts do.
@@ -747,7 +748,7 @@ export function App() {
   /** Fills in or corrects a value, e.g. a transistor type the netlist left out. */
   const changeValue = (ref: string, value: string) => {
     rememberEdit()
-    setProject((p) => ({ ...p, netlist: withValues(p.netlist, [{ ref, value }]) }))
+    updateProject((p) => ({ ...p, netlist: withValues(p.netlist, [{ ref, value }]) }))
   }
 
   const selectAll = () => {
@@ -779,7 +780,7 @@ export function App() {
     })
     if (answer === 'cancel') return
     rememberEdit()
-    setProject((p) => {
+    updateProject((p) => {
       const grid = createLayout(buildProjectNetlist(p))
       return { ...p, layout: keepFootprintChoices(grid, p.layout) }
     })
@@ -813,7 +814,7 @@ export function App() {
       return
     }
     rememberEdit()
-    setProject((p) => ({ ...p, layout: keepFootprintChoices(optimized, p.layout) }))
+    updateProject((p) => ({ ...p, layout: keepFootprintChoices(optimized, p.layout) }))
     setSelection(null)
     refit()
   }
