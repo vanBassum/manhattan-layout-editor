@@ -79,8 +79,8 @@ export function gridPitch(scale: number, pitches: readonly number[]): number {
   return pitches.find((pitch) => pitch * scale >= MIN_GRID_SPACING_PX) ?? pitches[pitches.length - 1]
 }
 
-/** Dashed fine grid with every fifth line solid, plus the origin axes. Goes inside the world transform. */
-export function ViewportGrid({ view, size, pitch }: { view: View; size: Size; pitch: number }) {
+/** Dashed fine grid with every fifth line solid, plus the origin axes when `axes` is set. Goes inside the world transform. */
+export function ViewportGrid({ view, size, pitch, axes = true }: { view: View; size: Size; pitch: number; axes?: boolean }) {
   // Unique per instance: a hidden canvas for screenshots can be in the document at the same time.
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const px = 1 / view.scale
@@ -104,9 +104,12 @@ export function ViewportGrid({ view, size, pitch }: { view: View; size: Size; pi
       <g className="grid">
         <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill={`url(#${id}-minor)`} />
         <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill={`url(#${id}-major)`} />
-        {/* Origin axes: x = 0 and y = 0 */}
-        <line x1={visible.x} y1={0} x2={visible.x + visible.w} y2={0} className="axis" strokeWidth={px} />
-        <line x1={0} y1={visible.y} x2={0} y2={visible.y + visible.h} className="axis" strokeWidth={px} />
+        {axes && (
+          <>
+            <line x1={visible.x} y1={0} x2={visible.x + visible.w} y2={0} className="axis" strokeWidth={px} />
+            <line x1={0} y1={visible.y} x2={0} y2={visible.y + visible.h} className="axis" strokeWidth={px} />
+          </>
+        )}
       </g>
     </>
   )

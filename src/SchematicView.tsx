@@ -5,7 +5,7 @@ import { CELL_HEIGHT, CELL_WIDTH, pinEnds, pointKey, SCHEMATIC_GRID, withPlaceme
 import { symbolFor, type SymbolPin } from './schematicSymbols'
 import { selectedRefs } from './selection'
 import type { NetComponent, NetLabel, Netlist, Point, SchematicPlacement, Selection, Wire } from './types'
-import { gridPitch, Rulers, useViewport, ViewportGrid, type View } from './viewport'
+import { gridPitch, useViewport, ViewportGrid, type View } from './viewport'
 
 /** Select: click and drag parts, wires and labels. Wire: drag from point to point. Label: click to name a point. */
 export type SchematicTool = 'select' | 'wire' | 'label'
@@ -281,7 +281,8 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
         onContextMenu={(e) => e.preventDefault()}
       >
         <g transform={`translate(${view.ox} ${view.oy}) scale(${view.scale})`}>
-          <ViewportGrid view={view} size={size} pitch={pitch} />
+          {/* No origin axes or rulers: a schematic has no physical position, they only distract. */}
+          <ViewportGrid view={view} size={size} pitch={pitch} axes={false} />
           {schematic.wires.map((w, k) => {
             const selected = item?.kind === 'wire' && item.index === k
             return (
@@ -320,7 +321,6 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
           })}
           {wirePreview && <line className="sch-wire preview" x1={wirePreview.x1} y1={wirePreview.y1} x2={wirePreview.x2} y2={wirePreview.y2} />}
         </g>
-        <Rulers view={view} size={size} pitch={pitch} />
       </svg>
       {nets.conflicts.length > 0 && (
         <div className="schematic-conflicts" role="alert">

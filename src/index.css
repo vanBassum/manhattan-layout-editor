@@ -1371,18 +1371,6 @@ input:focus-visible {
   user-select: none;
 }
 
-.schematic-badge {
-  position: absolute;
-  top: 26px;
-  right: 8px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--warn-soft);
-  color: var(--warn);
-  font-size: 12px;
-  pointer-events: none;
-}
-
 .schematic-empty {
   position: absolute;
   inset: 0;
@@ -1536,7 +1524,7 @@ input:focus-visible {
 
 .schematic-conflicts {
   position: absolute;
-  left: 26px;
+  left: 8px;
   bottom: 8px;
   padding: 4px 10px;
   border-radius: var(--radius);
