@@ -2,7 +2,7 @@ import { rotatePoint, snapToGrid } from './geometry'
 import { isRealNet, naturalCompare } from './netlist'
 import { componentSymbol } from './definitions'
 import { NO_WIRING } from './selection'
-import type { NetComponent, NetLabel, Netlist, Point, Schematic, SchematicPlacement, Wire, WiringSelection } from './types'
+import type { LabelSymbol, NetComponent, NetLabel, Netlist, Point, Schematic, SchematicPlacement, Wire, WiringSelection } from './types'
 
 /** A pin end in schematic coordinates, with the direction a wire leaves it. */
 export interface PinEnd extends Point {
@@ -97,6 +97,16 @@ export function completeSchematic(built: Netlist, schematic: Schematic | undefin
       }),
     )
   return { placements, wires: schematic?.wires ?? [], labels }
+}
+
+const isGroundName = (name: string) => /^(GND|AGND|DGND|PGND|VSS|0)$/i.test(name)
+const isPowerName = (name: string) => /^(V\+|V-|VCC|VDD|VEE|[+-]?\d+(\.\d+)?V)$/i.test(name)
+
+/** How a label is drawn; labels from before it was stored get the symbol their name suggests. */
+export function labelSymbol(label: NetLabel): LabelSymbol {
+  if (label.symbol) return label.symbol
+  if (isGroundName(label.name)) return 'ground'
+  return isPowerName(label.name) ? 'power' : 'net'
 }
 
 /** True when `p` lies on the wire, ends excluded. Only straight horizontal and vertical wires take T-joins. */
@@ -426,10 +436,21 @@ export function wiresFromPolylines(polylines: unknown): Wire[] {
 /** Labels from an agent's {x, y, name} list, snapped to the grid. */
 export function labelsFromAgent(labels: unknown): NetLabel[] {
   if (!Array.isArray(labels)) throw new Error('"labels" must be an array')
-  return labels.map((item: { x?: unknown; y?: unknown; name?: unknown }, i) => {
+  return labels.map((item: { x?: unknown; y?: unknown; name?: unknown; symbol?: unknown; rotation?: unknown }, i) => {
     if (typeof item.name !== 'string' || item.name.trim() === '') throw new Error(`labels[${i}] needs a name`)
     const at = gridPoint([item.x, item.y], `labels[${i}]`)
-    return { ...at, name: item.name.trim() }
+    const label: NetLabel = { ...at, name: item.name.trim() }
+    if (item.symbol !== undefined) {
+      if (item.symbol !== 'net' && item.symbol !== 'ground' && item.symbol !== 'power') {
+        throw new Error(`labels[${i}].symbol must be "net", "ground" or "power"`)
+      }
+      label.symbol = item.symbol
+    }
+    if (item.rotation !== undefined) {
+      if (typeof item.rotation !== 'number' || item.rotation % 90 !== 0) throw new Error(`labels[${i}].rotation must be a multiple of 90`)
+      label.rotation = ((item.rotation % 360) + 360) % 360
+    }
+    return label
   })
 }
 

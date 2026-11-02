@@ -3,8 +3,9 @@ import type { ReactNode } from 'react'
 import type { LayerName, LayerView } from './Canvas'
 import { componentGeometry } from './layout'
 import type { SchematicLayer } from './SchematicView'
-import { selectedRefs, toggleSelected } from './selection'
-import type { Layout, NetComponent, Netlist, Placement, Selection } from './types'
+import { labelSymbol } from './schematic'
+import { selectedRefs, selectedWiring, toggleSelected } from './selection'
+import type { LabelSymbol, Layout, NetComponent, NetLabel, Netlist, Placement, Selection } from './types'
 
 const ICON_PATHS = {
   app: 'M4 4h6v6H4z M14 14h6v6h-6z M10 7h4v10 M7 10v7h7',
@@ -353,12 +354,43 @@ function PartCard({ component }: { component: NetComponent }) {
 interface PartPropertiesProps {
   /** With the schematic's nets. */
   netlist: Netlist
+  /** The schematic's labels, which a selection names by index. */
+  labels: NetLabel[]
   selection: Selection
   onValueChange: (ref: string, value: string) => void
+  onLabelChange: (index: number, changes: Partial<NetLabel>) => void
+}
+
+const LABEL_SYMBOLS: { value: LabelSymbol; label: string }[] = [
+  { value: 'net', label: 'Net name' },
+  { value: 'ground', label: 'Ground symbol' },
+  { value: 'power', label: 'Power symbol' },
+]
+
+/** A lone selected label: its net name, and whether it is drawn as a name or a ground or power symbol. */
+function LabelProperties({ label, onChange }: { label: NetLabel; onChange: (changes: Partial<NetLabel>) => void }) {
+  return (
+    <div className="field-list">
+      <span className="field-label">Net</span>
+      <TextField value={label.name} label="Net" placeholder="e.g. VCC or GND" onCommit={(name) => name && onChange({ name, symbol: labelSymbol(label) })} />
+      <span className="field-label">Drawn as</span>
+      <select value={labelSymbol(label)} onChange={(e) => onChange({ symbol: e.target.value as LabelSymbol })}>
+        {LABEL_SYMBOLS.map((s) => (
+          <option key={s.value} value={s.value}>{s.label}</option>
+        ))}
+      </select>
+    </div>
+  )
 }
 
 /** The schematic side of the selection: what the part is and how the schematic connects it. */
-export function PartProperties({ netlist, selection, onValueChange }: PartPropertiesProps) {
+export function PartProperties({ netlist, labels, selection, onValueChange, onLabelChange }: PartPropertiesProps) {
+  const wiring = selectedWiring(selection)
+  const loneLabel = selectedRefs(selection).length === 0 && wiring.wires.length === 0 && wiring.points.length === 0 && wiring.labels.length === 1
+  if (loneLabel && labels[wiring.labels[0]]) {
+    const index = wiring.labels[0]
+    return <LabelProperties label={labels[index]} onChange={(changes) => onLabelChange(index, changes)} />
+  }
   if (selection?.kind === 'multi') return <MultiSelection refs={selection.refs} nets={selection.nets} />
   const component = selection?.kind === 'part' ? netlist.components.find((c) => c.ref === selection.ref) : undefined
   if (!component) return <p className="muted">Nothing selected. Click a part in the schematic or the list.</p>

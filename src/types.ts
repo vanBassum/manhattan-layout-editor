@@ -180,7 +180,16 @@ export interface NetLabel {
   x: number
   y: number
   name: string
+  /**
+   * How it is drawn: as its name, or as a ground or power symbol, which then stays that symbol
+   * whatever it is renamed to. Missing (older projects): guessed from the name.
+   */
+  symbol?: LabelSymbol
+  /** Degrees clockwise, a multiple of 90. At 0 ground points down and power up. */
+  rotation?: number
 }
+
+export type LabelSymbol = 'net' | 'ground' | 'power'
 
 export interface Schematic {
   placements: SchematicPlacement[]

@@ -10,6 +10,7 @@ import {
   polylineWires,
   route,
   SCHEMATIC_GRID,
+  labelSymbol,
   withSchematicMoved,
   withTidyWires,
   type FullSchematic,
@@ -123,8 +124,13 @@ function partArea(pins: PinEnd[]): Rect | null {
   return bounds && inflate(bounds, 2)
 }
 
-const isGround = (name: string) => /^(GND|AGND|DGND|PGND|VSS|0)$/i.test(name)
-const isSupply = (name: string) => /^(V\+|V-|VCC|VDD|VEE|[+-]?\d+(\.\d+)?V)$/i.test(name)
+/** Text placed `distance` mm from `at` along `axis`, reading upright whichever way the axis points. */
+function textAlong(at: Point, axis: Point, distance: number) {
+  const x = at.x + axis.x * distance
+  const y = at.y + axis.y * distance
+  if (axis.x !== 0) return { x, y: y + 0.45, anchor: axis.x > 0 ? ('start' as const) : ('end' as const) }
+  return { x, y: axis.y > 0 ? y + 0.9 : y, anchor: 'middle' as const }
+}
 
 interface LabelProps {
   label: NetLabel
@@ -135,29 +141,44 @@ interface LabelProps {
   onDoubleClick: () => void
 }
 
-/** Ground as the thick bar from the reference drawings; any other net as its name. */
+/**
+ * Ground and power symbols are drawn pointing down and up at rotation 0, turning with the label's
+ * rotation while their name stays upright beyond the symbol's end. Any other net is just its name.
+ */
 function LabelMark({ label, direction, className, onPointerDown, onDoubleClick }: LabelProps) {
   const { x, y, name } = label
-  if (isGround(name)) {
-    const stubEnd = y + 2.54
+  const symbol = labelSymbol(label)
+  const rotation = label.rotation ?? 0
+  const turned = `translate(${x} ${y}) rotate(${rotation})`
+  if (symbol === 'ground') {
+    // The usual earth sign: a stub down to three bars, each shorter than the one above.
+    const text = textAlong(label, rotatePoint({ x: 0, y: 1 }, rotation), 4.3)
     return (
       <g className={className} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}>
-        <title>{name}</title>
-        <rect className="sch-hit" x={x - 1.6} y={y} width={3.2} height={3.4} />
-        <polyline className="sch-line" points={`${x},${y} ${x},${stubEnd}`} />
-        <rect className="sch-fill" x={x - 1.52} y={stubEnd} width={3.04} height={0.6} />
+        <g transform={turned}>
+          <rect className="sch-hit" x={-1.8} y={0} width={3.6} height={4.2} />
+          <polyline className="sch-line" points="0,0 0,2.54" />
+          <polyline className="sch-line" points="-1.52,2.54 1.52,2.54" />
+          <polyline className="sch-line" points="-0.96,3.18 0.96,3.18" />
+          <polyline className="sch-line" points="-0.4,3.82 0.4,3.82" />
+        </g>
+        <text className="sch-net" x={text.x} y={text.y} textAnchor={text.anchor}>
+          {name}
+        </text>
       </g>
     )
   }
-  if (isSupply(name)) {
+  if (symbol === 'power') {
     // A supply port as in the reference drawing: a stub up to a bar, the name above it.
-    const barY = y - 2.54
+    const text = textAlong(label, rotatePoint({ x: 0, y: -1 }, rotation), 3.44)
     return (
       <g className={className} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}>
-        <rect className="sch-hit" x={x - 1.8} y={barY - 2} width={3.6} height={4.6} />
-        <polyline className="sch-line" points={`${x},${y} ${x},${barY}`} />
-        <rect className="sch-fill" x={x - 1.52} y={barY - 0.3} width={3.04} height={0.6} />
-        <text className="sch-net" x={x} y={barY - 0.9} textAnchor="middle">
+        <g transform={turned}>
+          <rect className="sch-hit" x={-1.8} y={-4.54} width={3.6} height={4.6} />
+          <polyline className="sch-line" points="0,0 0,-2.54" />
+          <rect className="sch-fill" x={-1.52} y={-2.84} width={3.04} height={0.6} />
+        </g>
+        <text className="sch-net" x={text.x} y={text.y} textAnchor={text.anchor}>
           {name}
         </text>
       </g>
@@ -424,7 +445,8 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
       const name = askLabelName()
       if (!name) return
       onBeginEdit()
-      onChange({ ...schematic, labels: [...schematic.labels, { ...at, name }] })
+      // The symbol is decided once, from the name; renaming it later keeps it.
+      onChange({ ...schematic, labels: [...schematic.labels, { ...at, name, symbol: labelSymbol({ ...at, name }) }] })
       return
     }
     // As on the PCB: the left button draws a selection rectangle, the middle button pans.
@@ -515,7 +537,7 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
     const name = askLabelName(schematic.labels[index].name)
     if (!name) return
     onBeginEdit()
-    onChange({ ...schematic, labels: schematic.labels.map((l, k) => (k === index ? { ...l, name } : l)) })
+    onChange({ ...schematic, labels: schematic.labels.map((l, k) => (k === index ? { ...l, name, symbol: labelSymbol(l) } : l)) })
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {

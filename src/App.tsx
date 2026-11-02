@@ -60,7 +60,7 @@ import {
   type ProjectTab,
 } from './projectStore'
 import { canvasToPng } from './screenshot'
-import { selectedRefs, selectionOf } from './selection'
+import { selectedRefs, selectedWiring, selectionOf } from './selection'
 import { screenshotHidden } from './hiddenScreenshot'
 import {
   agentPlacements,
@@ -75,7 +75,7 @@ import {
   type FullSchematic,
 } from './schematic'
 import { SchematicView, type SchematicLayers, type SchematicTool } from './SchematicView'
-import type { Layout, Netlist, Placement, Project, Selection, Settings } from './types'
+import type { Layout, NetLabel, Netlist, Placement, Project, SchematicPlacement, Selection, Settings } from './types'
 import type { IconName } from './panels'
 import { ProjectTabs } from './ProjectTabs'
 import { NO_HISTORY, snapshotOf, stepHistory, withEdit, type History, type Snapshot } from './undoHistory'
@@ -797,18 +797,34 @@ export function App() {
     setProject(withSchematicNets)
   }
 
+  // Ground and power symbols turn and flip like parts do.
+  const labelsToTurn = selectedWiring(selection).labels
+  const canTurnSchematic = refsToEdit.length > 0 || labelsToTurn.length > 0
+
+  /** The schematic with the selected parts changed by `turnPart` and the selected labels' rotation by `turnLabel`. */
+  const turnedSchematic = (turnPart: (p: SchematicPlacement) => SchematicPlacement, turnLabel: (rotation: number) => number) => {
+    const turnedParts = fullSchematic.placements.filter((p) => refsToEdit.includes(p.ref)).map(turnPart)
+    const next = withPlacementChanges(fullSchematic, builtNetlist, turnedParts)
+    const labels = next.labels.map((l, i) => (labelsToTurn.includes(i) ? { ...l, rotation: turnLabel(l.rotation ?? 0) } : l))
+    return { ...next, labels }
+  }
+
   const rotateSelected = (degrees: number, pane: Pane) => {
-    if (refsToEdit.length === 0) return
-    rememberEdit()
     if (pane === 'schematic') {
+      if (!canTurnSchematic) return
+      rememberEdit()
       // Symbols only turn in quarter turns, so their pins stay on the grid.
       const quarterTurns = Math.max(1, Math.round(degrees / 90)) * 90
-      const rotated = fullSchematic.placements
-        .filter((p) => refsToEdit.includes(p.ref))
-        .map((p) => ({ ...p, rotation: (p.rotation + quarterTurns) % 360 }))
-      changeSchematic(withPlacementChanges(fullSchematic, builtNetlist, rotated))
+      changeSchematic(
+        turnedSchematic(
+          (p) => ({ ...p, rotation: (p.rotation + quarterTurns) % 360 }),
+          (rotation) => (rotation + quarterTurns) % 360,
+        ),
+      )
       return
     }
+    if (refsToEdit.length === 0) return
+    rememberEdit()
     setLayout((l) => ({
       ...l,
       placements: l.placements.map((p) => (refsToEdit.includes(p.ref) ? { ...p, rotation: (p.rotation + degrees) % 360 } : p)),
@@ -817,10 +833,16 @@ export function App() {
 
   /** Mirrors each selected symbol in place; wires and labels on its pins go along. */
   const flipSelected = (axis: 'horizontal' | 'vertical') => {
-    if (refsToEdit.length === 0) return
+    if (!canTurnSchematic) return
     rememberEdit()
-    const flippedParts = fullSchematic.placements.filter((p) => refsToEdit.includes(p.ref)).map((p) => flipped(p, axis))
-    changeSchematic(withPlacementChanges(fullSchematic, builtNetlist, flippedParts))
+    // A ground or power symbol is symmetric, so mirroring it only changes which way it points.
+    const turn = axis === 'horizontal' ? 360 : 540
+    changeSchematic(turnedSchematic((p) => flipped(p, axis), (rotation) => (turn - rotation) % 360))
+  }
+
+  const changeLabel = (index: number, changes: Partial<NetLabel>) => {
+    rememberEdit()
+    changeSchematic({ ...fullSchematic, labels: fullSchematic.labels.map((l, i) => (i === index ? { ...l, ...changes } : l)) })
   }
 
   const resetLeads = () => {
@@ -1081,7 +1103,13 @@ export function App() {
               <ComponentList netlist={schematicNetlist} selection={selection} onSelect={setSelection} />
             </Section>
             <Section title="Properties">
-              <PartProperties netlist={schematicNetlist} selection={selection} onValueChange={changeValue} />
+              <PartProperties
+                netlist={schematicNetlist}
+                labels={fullSchematic.labels}
+                selection={selection}
+                onValueChange={changeValue}
+                onLabelChange={changeLabel}
+              />
             </Section>
             <Section title="Electrical check">
               <SchematicCheck
@@ -1156,13 +1184,13 @@ export function App() {
                     </button>
                   </div>
                   <div className="rail-group" role="group" aria-label="Component">
-                    <button className="rail-button" onClick={() => rotateSelected(90, 'schematic')} disabled={refsToEdit.length === 0} title="Rotate a quarter turn (Space)">
+                    <button className="rail-button" onClick={() => rotateSelected(90, 'schematic')} disabled={!canTurnSchematic} title="Rotate a quarter turn (Space)">
                       <Icon name="rotate" />Rotate
                     </button>
-                    <button className="rail-button" onClick={() => flipSelected('horizontal')} disabled={refsToEdit.length === 0} title="Mirror left to right (X)">
+                    <button className="rail-button" onClick={() => flipSelected('horizontal')} disabled={!canTurnSchematic} title="Mirror left to right (X)">
                       <Icon name="flipHorizontal" />Flip H
                     </button>
-                    <button className="rail-button" onClick={() => flipSelected('vertical')} disabled={refsToEdit.length === 0} title="Mirror top to bottom (Y)">
+                    <button className="rail-button" onClick={() => flipSelected('vertical')} disabled={!canTurnSchematic} title="Mirror top to bottom (Y)">
                       <Icon name="flipVertical" />Flip V
                     </button>
                   </div>
