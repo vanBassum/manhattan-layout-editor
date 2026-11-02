@@ -1544,19 +1544,6 @@ input:focus-visible {
   grid-template-columns: 260px minmax(0, 1fr) 260px;
 }
 
-.panel-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 14px;
-}
-
 /* File menu in the header. */
 .menu {
   position: relative;

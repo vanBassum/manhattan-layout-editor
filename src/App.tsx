@@ -945,8 +945,8 @@ export function App() {
       <div className={`workspace view-${view}`}>
         {view !== 'layout' && (
           <aside className="sidebar">
-            <h2 className="panel-title"><Icon name="schematic" />Schematic</h2>
-            <Section title={`Components (${schematicNetlist.components.length})`}>
+            {/* The schematic panel has the most room, so the shared list lives here and takes the rest of its height. */}
+            <Section title={`Components (${schematicNetlist.components.length})`} fill>
               <ComponentList netlist={schematicNetlist} selection={selection} onSelect={setSelection} />
             </Section>
             <Section title="Properties">
@@ -1114,8 +1114,7 @@ export function App() {
 
         {view !== 'schematic' && (
           <aside className="sidebar">
-            <h2 className="panel-title"><Icon name="grid" />PCB</h2>
-            <Section title="Selection">
+            <Section title="Placement">
               <SelectionDetails
                 netlist={builtNetlist}
                 layout={layout}
@@ -1192,14 +1191,17 @@ export function App() {
                 netsSplit={splitNets.size}
               />
             </Section>
-            <Section title={`Components (${builtNetlist.components.length})`} fill>
-              <ComponentList
-                netlist={builtNetlist}
-                selection={selection}
-                onSelect={setSelection}
-                pcb={{ refsWithIssues: pinCounts.refsWithIssues, onChangeFootprint: openFootprintDialog }}
-              />
-            </Section>
+            {/* The component list lives in the schematic panel; only without it does the PCB panel show one. */}
+            {view === 'layout' && (
+              <Section title={`Components (${builtNetlist.components.length})`} fill>
+                <ComponentList
+                  netlist={builtNetlist}
+                  selection={selection}
+                  onSelect={setSelection}
+                  pcb={{ refsWithIssues: pinCounts.refsWithIssues, onChangeFootprint: openFootprintDialog }}
+                />
+              </Section>
+            )}
           </aside>
         )}
       </div>
