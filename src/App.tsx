@@ -69,6 +69,7 @@ import {
 import { SchematicView, type SchematicTool } from './SchematicView'
 import type { Layout, Netlist, Placement, Project, Selection, Settings } from './types'
 import type { IconName } from './panels'
+import { ProjectTabs } from './ProjectTabs'
 
 /** Which views are shown: one of them, or both side by side. */
 type ViewMode = 'schematic' | 'split' | 'layout'
@@ -925,28 +926,7 @@ export function App() {
             <Icon name="help" />
           </button>
         </div>
-        <div className="project-tabs" role="tablist">
-          {tabs.map((tab) => (
-            <div key={tab.id} className={tab.id === activeId ? 'project-tab active' : 'project-tab'}>
-              <button
-                role="tab"
-                aria-selected={tab.id === activeId}
-                className="tab-name"
-                onClick={() => switchTab(tab.id)}
-                title={tab.name}
-              >
-                <Icon name="file" />
-                <span>{tab.name}</span>
-              </button>
-              <button className="tab-close" onClick={() => closeTab(tab.id)} title="Close project" aria-label={`Close ${tab.name}`}>
-                ✕
-              </button>
-            </div>
-          ))}
-          <button className="icon-button" onClick={addTab} title="Open a new project in a new tab" aria-label="New project tab">
-            <Icon name="plus" />
-          </button>
-        </div>
+        <ProjectTabs tabs={tabs} activeId={activeId} onSwitch={switchTab} onClose={closeTab} onAdd={addTab} />
         <div className="view-switch" role="group" aria-label="View">
           <button className={view === 'schematic' ? 'active' : ''} aria-pressed={view === 'schematic'} onClick={() => showView('schematic')}>
             <Icon name="schematic" />Schematic
