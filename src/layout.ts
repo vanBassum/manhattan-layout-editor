@@ -125,8 +125,9 @@ function leadsFor(shape: Shape, component: NetComponent) {
       // cans a body diameter ("BD" in EasyEDA, "D" in KiCad). A small EasyEDA "D" is the lead diameter.
       if (pinCount !== 2) break
       const d = footprintDimension(footprint, 'D')
-      const diameter = footprintDimension(footprint, 'BD') ?? (d !== undefined && d >= 2 ? d : 5)
-      const [bodyLength, bodyWidth] = length && width ? [length, width] : [diameter, diameter]
+      const canDiameter = footprintDimension(footprint, 'BD') ?? (d !== undefined && d >= 2 ? d : /CP_|ELEC|POL/i.test(footprint) ? 5 : undefined)
+      // Nothing in the name says it is a can: a small block, like a ceramic or film capacitor.
+      const [bodyLength, bodyWidth] = length && width ? [length, width] : canDiameter ? [canDiameter, canDiameter] : [5, 2.5]
       const leadSpacing = footprintDimension(footprint, 'P') ?? bodyLength / 2
       return {
         body: { x: -bodyLength / 2, y: -bodyWidth / 2, w: bodyLength, h: bodyWidth },
