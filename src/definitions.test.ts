@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import example from './examples/multivibrator.manhattan.json?raw'
-import { buildNetlist, withDefinitions } from './definitions'
+import { buildNetlist, checkedDefinition, checkedDefinitions, withDefinitions } from './definitions'
+import { projectFromFile } from './projectStore'
 import type { ComponentDefinition, FootprintDefinition, NetComponent, Project, SymbolDefinition } from './types'
 
 const SYMBOL: SymbolDefinition = {
@@ -84,12 +85,25 @@ describe('buildNetlist', () => {
     expect(part.geometry.body).toEqual(ODD_FOOTPRINT.body)
   })
 
-  it('falls back to the template for a definition footprint that lacks one of the pins', () => {
+  it('refuses a definition footprint that lacks one of the pins instead of drawing another one', () => {
     const onePin = { ...ODD_FOOTPRINT, pins: [ODD_FOOTPRINT.pins[0]] }
     const project = projectWith([resistor({ definition: 'odd' })], { odd: definition({ 'R_AXIAL-0.4': onePin }) })
-    const [part] = build(project).components
-    expect(part.geometry.anchors).toHaveLength(2)
-    expect(part.geometry.shape).toBe('axial')
+    expect(() => build(project)).toThrow('lacks some of its pins')
+  })
+})
+
+describe('checkedDefinition', () => {
+  it('refuses a footprint without every pin of the symbol', () => {
+    const onePin = { ...ODD_FOOTPRINT, pins: [ODD_FOOTPRINT.pins[0]] }
+    expect(() => checkedDefinition(definition({ 'R_AXIAL-0.4': onePin }))).toThrow('footprint "R_AXIAL-0.4" has no pin 2')
+    expect(checkedDefinition(definition({ 'R_AXIAL-0.4': ODD_FOOTPRINT }))).toBeTruthy()
+  })
+
+  it('names the definition at fault in a project file', () => {
+    const onePin = { ...ODD_FOOTPRINT, pins: [ODD_FOOTPRINT.pins[0]] }
+    const project = projectWith([resistor({ definition: 'odd' })], { odd: definition({ 'R_AXIAL-0.4': onePin }) })
+    const file = JSON.stringify({ format: 'manhattan-layout-editor', version: 6, project })
+    expect(() => projectFromFile(file)).toThrow('definition "odd": footprint "R_AXIAL-0.4" has no pin 2')
   })
 })
 
@@ -100,6 +114,20 @@ describe('withDefinitions', () => {
     })
     project.layout.placements[0].footprint = 'R1206'
     expect(looks(withDefinitions(project))).toEqual(looks(project))
+  })
+
+  it("makes a template footprint for every pin of the definition's symbol, so it passes the check", () => {
+    // A two-pin part on a definition whose symbol has a third pin.
+    const threePins: ComponentDefinition = {
+      ...definition({}),
+      pins: [{ number: '1' }, { number: '2' }, { number: '3' }],
+      symbol: { ...SYMBOL, pins: [...SYMBOL.pins, { number: '3', x: 0, y: 5.08, dx: 0, dy: 1 }] },
+    }
+    const project = projectWith([resistor({ definition: 'three' })], { three: threePins })
+    const saved = withDefinitions(project)
+    expect(saved.definitions!.three.footprints['R_AXIAL-0.4'].pins.map((p) => p.number)).toEqual(['1', '2', '3'])
+    expect(() => checkedDefinitions(saved.definitions)).not.toThrow()
+    expect(looks(saved)).toEqual(looks(project))
   })
 
   it('keeps every part of the example as it was, with or without stored definitions', () => {

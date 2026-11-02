@@ -306,7 +306,8 @@ forward(
 forward(
   'set_definition',
   'Adds or replaces a component definition in the project (format as get_definitions describes), as one undo step. ' +
-    'Copy an existing one and change it, e.g. a resistor with fill "power". Parts use it after assign_definition.',
+    'Copy an existing one and change it, e.g. a resistor with fill "power". Every footprint must have all the ' +
+    'symbol\'s pin numbers; a definition that breaks that is refused. Parts use it after assign_definition.',
   { id: z.string().describe('lowercase letters, digits and dashes, e.g. "resistor-power"'), definition: z.record(z.string(), z.unknown()) },
 )
 

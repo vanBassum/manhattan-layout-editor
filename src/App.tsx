@@ -55,6 +55,7 @@ import {
   readProject,
   rememberActiveTab,
   removeProject,
+  restoreErrors,
   unlinkFile,
   writeProject,
   writeTabs,
@@ -320,7 +321,7 @@ export function App() {
   }
   const [fitRequest, setFitRequest] = useState(1)
   const refit = () => setFitRequest((n) => n + 1)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => restoreErrors.join(' '))
   /** A short confirmation, e.g. that a link was copied; it goes away by itself. */
   const [notice, setNotice] = useState('')
   useEffect(() => {

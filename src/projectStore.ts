@@ -8,7 +8,8 @@
 // remembers its own active project in sessionStorage, so two browser tabs can work on different
 // projects without overwriting each other.
 
-import { withDefinitions } from './definitions'
+import { checkedDefinitions, withDefinitions } from './definitions'
+import { errorText } from './errorText'
 import { withoutCutLines } from './migrateCutLayout'
 import { migrateGappedIslands } from './migrateIslands'
 import { STRATEGIES } from './optimize'
@@ -57,6 +58,9 @@ const META_STORE = 'meta'
 const TABS_RECORD = 'tabs'
 const ACTIVE_TAB_KEY = 'manhattan-layout-editor/active-tab'
 
+/** Why tabs from the last session could not be opened again; the editor shows them once it is up. */
+export const restoreErrors: string[] = []
+
 const openProjects = new Map<string, OpenProject>()
 let openTabs: ProjectTab[] = []
 let db: IDBDatabase | null = null
@@ -77,6 +81,7 @@ export const newTabId = () => Math.random().toString(36).slice(2, 10)
 /**
  * A project read from storage or a file; projects from before guids get one here, parts without a
  * component definition get one from the built-in templates, and a cut-line layout becomes islands.
+ * Null without a netlist or layout; an invalid component definition throws, naming it.
  */
 function checkedProject(data: unknown): Project | null {
   const project = data as Partial<Project> | null
@@ -85,6 +90,7 @@ function checkedProject(data: unknown): Project | null {
     withDefinitions({
       ...(project as Project),
       guid: project.guid || crypto.randomUUID(),
+      definitions: checkedDefinitions(project.definitions),
       settings: { ...DEFAULT_SETTINGS, ...project.settings },
     }),
   )
@@ -221,7 +227,15 @@ export async function openProjectStore() {
     const tabs = (await request(transaction.objectStore(META_STORE).get(TABS_RECORD))) as ProjectTab[] | undefined
     for (const tab of tabs ?? []) {
       const stored = (await request(db.transaction(PROJECTS_STORE).objectStore(PROJECTS_STORE).get(tab.id))) as StoredProject | undefined
-      const project = stored && checkedProject(stored.project)
+      if (!stored) continue
+      let project: Project | null
+      try {
+        project = checkedProject(stored.project)
+      } catch (e) {
+        // Left in IndexedDB as it is, but not opened: the editor cannot draw it.
+        restoreErrors.push(`Could not open "${tab.name}" again: ${errorText(e)}.`)
+        continue
+      }
       if (!project) continue
       remember(tab.id, { ...stored, project }, false)
       openTabs.push(tab)

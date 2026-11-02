@@ -1,3 +1,4 @@
+import { errorText } from './errorText'
 import { generatedGeometry, withFootprintChoices, type Geometry } from './layout'
 import { symbolTemplate } from './schematicSymbols'
 import type { BuiltNetlist, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, SymbolDefinition } from './types'
@@ -91,14 +92,26 @@ export function buildNetlist(netlist: Netlist, placements: Placement[], definiti
   return {
     ...chosen,
     components: chosen.components.map((component) => {
-      const { definition } = resolvedDefinition(component, definitions)
-      const stored = definition.footprints[component.footprint]
-      // A footprint the definition does not have yet comes from the template, as withDefinitions will
-      // add it. One that lacks some of the part's pins cannot be used for it, so the template stands in.
-      const geometry = (stored && geometryFromFootprint(stored, component)) ?? generatedGeometry(component)
+      const { id, definition } = resolvedDefinition(component, definitions)
+      // Every footprint has all the symbol's pins (checkedDefinition, footprintOf) and the part only
+      // uses a definition whose symbol has its pins, so this only fails for an unchecked definition.
+      const geometry = geometryFromFootprint(footprintOf(definition, component.footprint, component), component)
+      if (!geometry) throw new Error(`${component.ref}: footprint "${component.footprint}" of definition "${id}" lacks some of its pins`)
       return { ...component, geometry, symbol: definition.symbol }
     }),
   }
+}
+
+/**
+ * The definition's footprint `name`; one it does not have yet comes from the built-in template, as
+ * withDefinitions adds it. That one is made for all the symbol's pins, so it fits every part that
+ * fits the definition.
+ */
+function footprintOf(definition: ComponentDefinition, name: string, component: NetComponent): FootprintDefinition {
+  const stored = definition.footprints[name]
+  if (stored) return stored
+  const withSymbolPins = { ...component, footprint: name, pins: definition.symbol.pins.map((p) => ({ number: p.number, net: '' })) }
+  return footprintFromGeometry(generatedGeometry(withSymbolPins), withSymbolPins)
 }
 
 /** The project's own netlist, built; for the schematic's nets, build those with buildNetlist. */
@@ -121,7 +134,7 @@ export function withDefinitions(project: Project): Project {
     }
     for (const name of new Set([component.footprint, chosenFootprints.get(component.ref) ?? component.footprint])) {
       if (definitions[id].footprints[name]) continue
-      const footprint = footprintFromGeometry(generatedGeometry({ ...component, footprint: name }), component)
+      const footprint = footprintOf(definitions[id], name, component)
       definitions[id] = { ...definitions[id], footprints: { ...definitions[id].footprints, [name]: footprint } }
       changed = true
     }
@@ -136,7 +149,11 @@ export function withDefinitions(project: Project): Project {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isPinList = (v: unknown) => Array.isArray(v) && v.every((p) => isObject(p) && typeof p.number === 'string')
 
-/** An agent's definition, checked for the parts the editor relies on; the rest is taken as given. */
+/**
+ * A definition from an agent or a project file, checked for the parts the editor relies on; the rest
+ * is taken as given. Every footprint must have all the symbol's pins, so it fits every part the
+ * symbol fits.
+ */
 export function checkedDefinition(data: unknown): ComponentDefinition {
   if (!isObject(data)) throw new Error('"definition" must be an object')
   const { name, pins, symbol, footprints } = data
@@ -152,7 +169,27 @@ export function checkedDefinition(data: unknown): ComponentDefinition {
   const symbolNumbers = new Set((symbol.pins as { number: string }[]).map((p) => p.number))
   const missing = numbers.filter((n) => !symbolNumbers.has(n))
   if (missing.length) throw new Error(`symbol has no pin ${missing.join(', ')}`)
+  for (const [footprintName, footprint] of Object.entries(footprints as Record<string, { pins: { number: string }[] }>)) {
+    const footprintNumbers = new Set(footprint.pins.map((p) => p.number))
+    const lacking = [...symbolNumbers].filter((n) => !footprintNumbers.has(n))
+    if (lacking.length) throw new Error(`footprint "${footprintName}" has no pin ${lacking.join(', ')}`)
+  }
   return data as unknown as ComponentDefinition
+}
+
+/** A project's stored definitions, each checked like an agent's; the error names the definition at fault. */
+export function checkedDefinitions(data: unknown): Definitions | undefined {
+  if (data === undefined) return undefined
+  if (!isObject(data)) throw new Error('"definitions" must be an object')
+  return Object.fromEntries(
+    Object.entries(data).map(([id, definition]) => {
+      try {
+        return [id, checkedDefinition(definition)]
+      } catch (e) {
+        throw new Error(`definition "${id}": ${errorText(e)}`)
+      }
+    }),
+  )
 }
 
 /** The netlist with `refs` using definition `id`; refused for a part whose pins the definition does not have. */
