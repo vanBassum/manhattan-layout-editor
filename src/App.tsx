@@ -128,7 +128,7 @@ function writePreference(key: string, value: string) {
 function initialView(): ViewMode {
   const stored = readPreference(VIEW_KEY)
   if (stored === 'schematic' || stored === 'split' || stored === 'layout') return stored
-  return 'layout'
+  return 'split'
 }
 
 type Theme = 'light' | 'dark'
@@ -139,7 +139,7 @@ function initialTheme(): Theme {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 const SHOWN: LayerView = { visible: true, opacity: 1 }
-const ALL_LAYERS: Layers = { islands: SHOWN, parts: SHOWN, netLabels: SHOWN, leads: SHOWN, grid: SHOWN }
+const ALL_LAYERS: Layers = { islands: SHOWN, parts: SHOWN, references: SHOWN, values: SHOWN, netLabels: SHOWN, leads: SHOWN, grid: SHOWN }
 
 /** Reads a stored layer setting, including the older true/false and 'on'/'faded'/'off' forms. */
 function parseLayerView(value: unknown): LayerView {
@@ -221,16 +221,16 @@ export function App() {
   /** The pane last clicked in; keyboard shortcuts act on it when both are shown. */
   const [activePane, setActivePane] = useState<Pane>(() => (view === 'schematic' ? 'schematic' : 'layout'))
   const [schematicTool, setSchematicTool] = useState<SchematicTool>('select')
-  const [fileMenuOpen, setFileMenuOpen] = useState(false)
-  const fileMenuRef = useRef<HTMLDivElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!fileMenuOpen) return
+    if (!menuOpen) return
     const closeOutside = (e: PointerEvent) => {
-      if (!fileMenuRef.current?.contains(e.target as Node)) setFileMenuOpen(false)
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
     }
     document.addEventListener('pointerdown', closeOutside)
     return () => document.removeEventListener('pointerdown', closeOutside)
-  }, [fileMenuOpen])
+  }, [menuOpen])
   const showView = (mode: ViewMode) => {
     setView(mode)
     if (mode !== 'split') setActivePane(mode)
@@ -917,24 +917,27 @@ export function App() {
       {/* Same columns as the workspace below, so the project tabs start where the canvas does. */}
       <header className={`header view-${view}`}>
         <div className="header-start">
-          <div className="menu" ref={fileMenuRef}>
+          <div className="menu" ref={menuRef}>
             <button
               className="header-button"
               aria-haspopup="menu"
-              aria-expanded={fileMenuOpen}
-              onClick={() => setFileMenuOpen(!fileMenuOpen)}
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(!menuOpen)}
+              title={agentConnected ? 'Menu (AI agent connected)' : 'Menu'}
             >
-              <Icon name="file" />File<Icon name="chevronDown" />
+              <Icon name="menu" />Menu
+              {agentConnected && <span className="agent-dot connected" aria-label="Agent connected" />}
             </button>
-            {fileMenuOpen && (
-              <div className="menu-list" role="menu" onClick={() => setFileMenuOpen(false)}>
+            {menuOpen && (
+              <div className="menu-list" role="menu" onClick={() => setMenuOpen(false)}>
+                <span className="menu-heading">Project</span>
                 <button onClick={newProject} title="An empty project in a new tab">
                   <Icon name="plus" />New project<kbd>Ctrl+N</kbd>
                 </button>
                 <button onClick={openProjectFile} title="Open a project file in a new tab">
                   <Icon name="open" />Open…<kbd>Ctrl+O</kbd>
                 </button>
-                {/* Opens on hover, or on a click (keyboard, touch), which must not close the File menu. */}
+                {/* Opens on hover, or on a click (keyboard, touch), which must not close the menu. */}
                 <div className="submenu">
                   <button aria-haspopup="menu" onClick={(e) => e.stopPropagation()}>
                     <Icon name="sample" />Examples<Icon name="chevronRight" />
@@ -957,10 +960,24 @@ export function App() {
                   <Icon name="link" />Copy share link
                 </button>
                 <hr />
+                <span className="menu-heading">Import and export</span>
                 <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
                 <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
                 <button onClick={exportLayoutDxf} title="Area to burn as closed contours in mm (board outline + copper as holes), ready to hatch in EzCad">
                   <Icon name="export" />Export DXF
+                </button>
+                <hr />
+                <span className="menu-heading">Editor</span>
+                <button onClick={() => setShowAiHelp(true)} title="Let an AI assistant edit this layout (MCP)">
+                  <Icon name="ai" />AI assistant…
+                  <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
+                </button>
+                <button onClick={toggleTheme}>
+                  <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+                  {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                </button>
+                <button onClick={() => setShowHelp(true)}>
+                  <Icon name="help" />Keyboard and mouse
                 </button>
               </div>
             )}
@@ -980,25 +997,6 @@ export function App() {
             hidden
             onChange={(e) => onFileChosen(e.target.files?.[0])}
           />
-          <button
-            className="header-button ai-button"
-            onClick={() => setShowAiHelp(true)}
-            title={agentConnected ? 'AI agent connected (MCP)' : 'Let an AI assistant edit this layout (MCP)'}
-          >
-            <Icon name="ai" />AI
-            <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
-          </button>
-          <button
-            className="icon-button"
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            aria-label="Toggle dark mode"
-          >
-            <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-          </button>
-          <button className="icon-button" onClick={() => setShowHelp(true)} title="Keyboard and mouse shortcuts" aria-label="Help">
-            <Icon name="help" />
-          </button>
         </div>
         <ProjectTabs
           tabs={tabs.map((tab) => ({ id: tab.id, label: tabLabel(tab), unsaved: projectFile(tab.id).dirty }))}

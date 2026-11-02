@@ -167,11 +167,6 @@ input:focus-visible {
   gap: 8px;
 }
 
-/* File on the left edge of the panel, the app buttons on its right edge. */
-.ai-button {
-  margin-left: auto;
-}
-
 .project-tabs {
   display: flex;
   align-items: center;
@@ -687,9 +682,17 @@ input:focus-visible {
 .canvas.hide-islands .island,
 .canvas.hide-parts .part,
 .canvas.hide-netLabels .net-label,
+.canvas.hide-references .part-ref,
+.canvas.hide-values .part-value,
 .canvas.hide-leads .lead,
 .canvas.hide-leads .ratsnest {
   display: none;
+}
+
+/* Each pixel is on or off: anti-aliased half-tones make thin lines look grey and blurred. Text stays smooth. */
+.canvas,
+.schematic {
+  shape-rendering: crispEdges;
 }
 
 /* Per-layer opacity comes from --opacity-<layer> on the svg (set by the Layers panel). */
@@ -711,6 +714,8 @@ input:focus-visible {
 .canvas .island { opacity: var(--opacity-islands, 1); }
 .canvas .net-label { opacity: var(--opacity-netLabels, 1); }
 .canvas .lead { opacity: var(--opacity-leads, 1); }
+.canvas .part-ref { opacity: var(--opacity-references, 1); }
+.canvas .part-value { opacity: var(--opacity-values, 1); }
 /* Parts and ratsnest lines also fade on hover through their opacity attribute, so Canvas multiplies the layer opacity in there. */
 
 /* A strongly faded layer stays visible for reference but lets clicks through to the layers you are editing. */
@@ -765,7 +770,7 @@ input:focus-visible {
   stroke-width: 0.3px;
 }
 
-/* Agent connection state, drawn as a dot on the AI button. */
+/* Agent connection state, drawn as a dot on the Menu button and its AI item. */
 .agent-dot {
   width: 8px;
   height: 8px;
@@ -1468,10 +1473,16 @@ input:focus-visible {
   font-weight: 600;
 }
 
-.sch-pin-number,
-.sch-pin-mark {
+.sch-pin-number {
   fill: var(--text-muted);
   font-size: 1.1px;
+}
+
+/* A mark that matters, such as an electrolytic's +: as dark as the lines and clearly sized. */
+.sch-pin-mark {
+  fill: var(--canvas-text);
+  font-size: 2px;
+  font-weight: 700;
 }
 
 .sch-net {
@@ -1544,7 +1555,7 @@ polyline.sch-hit-shape {
 
 .sch-wire {
   stroke: var(--sch-wire);
-  stroke-width: 0.3;
+  stroke-width: 0.25;
   stroke-linecap: round;
 }
 
@@ -1561,6 +1572,10 @@ polyline.sch-hit-shape {
 .sch-label.selected .sch-line {
   stroke: var(--accent);
   stroke-width: 0.5;
+}
+
+.sch-label.selected .sch-plate-open {
+  stroke: var(--accent);
 }
 
 .sch-label.selected .sch-net,
@@ -1690,6 +1705,19 @@ polyline.sch-hit-shape {
   font-family: inherit;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.menu-heading {
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.menu-list .agent-dot {
+  margin-left: auto;
 }
 
 .menu-list hr {

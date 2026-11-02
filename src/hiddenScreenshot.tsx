@@ -6,7 +6,7 @@ import { canvasToPng } from './screenshot'
 import type { BuiltNetlist, Layout, Rect } from './types'
 
 const SHOWN = { visible: true, opacity: 1 }
-const ALL_LAYERS: Layers = { islands: SHOWN, parts: SHOWN, netLabels: SHOWN, leads: SHOWN, grid: SHOWN }
+const ALL_LAYERS: Layers = { islands: SHOWN, parts: SHOWN, references: SHOWN, values: SHOWN, netLabels: SHOWN, leads: SHOWN, grid: SHOWN }
 const ignore = () => {}
 
 /**

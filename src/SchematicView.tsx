@@ -131,6 +131,8 @@ function textAlong(at: Point, axis: Point, distance: number) {
   return { x, y: axis.y > 0 ? y + 0.9 : y, anchor: 'middle' as const }
 }
 
+const TERMINAL_RADIUS = 0.9
+
 interface LabelProps {
   label: NetLabel
   /** Direction of the pin the label sits on, so the text points away from the part. */
@@ -183,10 +185,25 @@ function LabelMark({ label, direction, className, onPointerDown, onDoubleClick }
       </g>
     )
   }
+  // A terminal's name sits beyond its circle; a plain net name right at the point.
+  const gap = symbol === 'terminal' ? TERMINAL_RADIUS : 0
   const horizontal = direction.x !== 0
-  const textX = x + direction.x * 0.6
-  const textY = horizontal ? y + 0.45 : y + direction.y * 1.2 + (direction.y > 0 ? 0.9 : 0)
+  const textX = x + direction.x * (0.6 + gap)
+  const textY = horizontal ? y + 0.45 : y + direction.y * (1.2 + gap) + (direction.y > 0 ? 0.9 : 0)
   const anchor = horizontal ? (direction.x > 0 ? 'start' : 'end') : 'middle'
+  if (symbol === 'terminal') {
+    // A connection point: an open circle with a slash, filled with the background so a wire ends at its edge.
+    const slash = TERMINAL_RADIUS * Math.SQRT1_2
+    return (
+      <g className={className} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}>
+        <circle className="sch-plate-open" cx={x} cy={y} r={TERMINAL_RADIUS} />
+        <polyline className="sch-line" points={`${x - slash},${y + slash} ${x + slash},${y - slash}`} />
+        <text className="sch-net" x={textX} y={textY} textAnchor={anchor}>
+          {name}
+        </text>
+      </g>
+    )
+  }
   // No dot on the point: on a wire it would look like a junction. The name alone marks the label.
   return (
     <g className={`${className} net-name`} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}>

@@ -71,7 +71,7 @@ export interface LayerView {
   opacity: number
 }
 
-export type LayerName = 'islands' | 'parts' | 'netLabels' | 'leads' | 'grid'
+export type LayerName = 'islands' | 'parts' | 'references' | 'values' | 'netLabels' | 'leads' | 'grid'
 
 /** View-only settings; hidden layers stay in the DOM so the agent screenshot can still show them. */
 export type Layers = Record<LayerName, LayerView>

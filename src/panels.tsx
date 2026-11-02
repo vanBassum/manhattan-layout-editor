@@ -105,6 +105,8 @@ type LayerInfo<Name extends string> = Record<Name, { label: string; swatch: stri
 export const PCB_LAYERS: LayerInfo<LayerName> = {
   islands: { label: 'Copper islands', swatch: '#d9904f' },
   parts: { label: 'Components', swatch: '#4a4a4a' },
+  references: { label: 'References', swatch: '#333333' },
+  values: { label: 'Values', swatch: '#777777' },
   netLabels: { label: 'Net labels', swatch: '#5a3b1c' },
   leads: { label: 'Leads / ratsnest', swatch: '#2f9e44' },
   grid: { label: 'Grid', swatch: '#c7cdd4' },
@@ -365,9 +367,10 @@ const LABEL_SYMBOLS: { value: LabelSymbol; label: string }[] = [
   { value: 'net', label: 'Net name' },
   { value: 'ground', label: 'Ground symbol' },
   { value: 'power', label: 'Power symbol' },
+  { value: 'terminal', label: 'Terminal (connection point)' },
 ]
 
-/** A lone selected label: its net name, and whether it is drawn as a name or a ground or power symbol. */
+/** A lone selected label: its net name, and whether it is drawn as a name or as a ground, power or terminal symbol. */
 function LabelProperties({ label, onChange }: { label: NetLabel; onChange: (changes: Partial<NetLabel>) => void }) {
   return (
     <div className="field-list">
@@ -693,7 +696,7 @@ export function AiHelpDialog({ agentConnected, onClose }: { agentConnected: bool
           <span className="muted">Other clients, JSON config:</span>
           <CopyLine text={MCP_JSON_CONFIG} />
         </li>
-        <li>Keep this page open. The AI button gets a green dot once the assistant runs.</li>
+        <li>Keep this page open. The Menu button gets a green dot once the assistant runs.</li>
         <li>
           Ask it, for example:
           <CopyLine text={EXAMPLE_PROMPT} />

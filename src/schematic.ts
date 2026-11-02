@@ -442,8 +442,8 @@ export function labelsFromAgent(labels: unknown): NetLabel[] {
     const at = gridPoint([item.x, item.y], `labels[${i}]`)
     const label: NetLabel = { ...at, name: item.name.trim() }
     if (item.symbol !== undefined) {
-      if (item.symbol !== 'net' && item.symbol !== 'ground' && item.symbol !== 'power') {
-        throw new Error(`labels[${i}].symbol must be "net", "ground" or "power"`)
+      if (item.symbol !== 'net' && item.symbol !== 'ground' && item.symbol !== 'power' && item.symbol !== 'terminal') {
+        throw new Error(`labels[${i}].symbol must be "net", "ground", "power" or "terminal"`)
       }
       label.symbol = item.symbol
     }

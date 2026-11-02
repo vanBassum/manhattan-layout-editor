@@ -339,9 +339,20 @@ forward(
 forward(
   'set_labels',
   'Replaces ALL net labels of the schematic, as one undo step. A label names the net at its point; labels with the ' +
-    'same name are connected. GND (and AGND, VSS, ...) is drawn as a ground symbol. Keep labels for supply, ground, ' +
+    'same name are connected. GND (and AGND, VSS, ...) is drawn as a ground symbol; symbol "terminal" draws a ' +
+    'connection point (circle with a slash) for wires leaving the board. Keep labels for supply, ground, ' +
     'inputs and outputs; nets that are fully wired need none. Returns the schematic as get_schematic does.',
-  { labels: z.array(z.object({ x: z.number(), y: z.number(), name: z.string().min(1) })) },
+  {
+    labels: z.array(
+      z.object({
+        x: z.number(),
+        y: z.number(),
+        name: z.string().min(1),
+        symbol: z.enum(['net', 'ground', 'power', 'terminal']).optional().describe('how it is drawn; default: guessed from the name'),
+        rotation: z.number().optional().describe('degrees clockwise, a multiple of 90; at 0 ground points down, power up'),
+      }),
+    ),
+  },
 )
 
 forward(
