@@ -50,6 +50,7 @@ import {
   deriveNets,
   labelsFromAgent,
   pinEnds,
+  pinsWithOtherNet,
   wiresFromPolylines,
   withPlacementChanges,
   type FullSchematic,
@@ -131,18 +132,23 @@ function projectFromNetlist(name: string, text: string, current: Project, keepLa
 const fullSchematicOf = (project: Project): FullSchematic =>
   completeSchematic(withFootprintChoices(project.netlist, project.layout.placements), project.schematic)
 
-/** The project with an edited schematic: its nets follow from the schematic, and the layout follows the nets. */
-function withSchematic(project: Project, schematic: FullSchematic): Project {
+/** The nets the project's schematic gives, which the PCB does not use until it is updated. */
+function schematicNetsOf(project: Project) {
   const built = withFootprintChoices(project.netlist, project.layout.placements)
-  const { netlist } = deriveNets(project.netlist, built, schematic)
-  return { ...project, schematic, netlist, layout: followNetlist(project.layout, project.netlist, netlist) }
+  return deriveNets(project.netlist, built, fullSchematicOf(project))
 }
 
-/** What an agent needs to draw wires: every pin end with its net, the wires and labels, and shorts. */
+/** The project with the PCB brought in line with the schematic: its nets, and islands that follow them. */
+function withSchematicNets(project: Project): Project {
+  const { netlist } = schematicNetsOf(project)
+  return { ...project, netlist, layout: followNetlist(project.layout, project.netlist, netlist) }
+}
+
+/** What an agent needs to draw wires: every pin end with its schematic net, the wires and labels, shorts, and what the PCB does not have yet. */
 function describeSchematic(project: Project) {
-  const built = withFootprintChoices(project.netlist, project.layout.placements)
   const schematic = fullSchematicOf(project)
-  const { conflicts } = deriveNets(project.netlist, built, schematic)
+  const { netlist, conflicts } = schematicNetsOf(project)
+  const built = withFootprintChoices(netlist, project.layout.placements)
   return {
     units: 'mm; x to the right, y down; grid 2.54',
     parts: built.components.map((component, i) => ({
@@ -158,6 +164,7 @@ function describeSchematic(project: Project) {
     wires: schematic.wires,
     labels: schematic.labels,
     shorts: conflicts.map((c) => c.names),
+    pinsNotInPcb: pinsWithOtherNet(project.netlist, netlist),
   }
 }
 
@@ -260,6 +267,12 @@ export function App() {
   const builtNetlist = useMemo(() => withFootprintChoices(netlist, layout.placements), [netlist, layout.placements])
   const fullSchematic = useMemo(() => completeSchematic(builtNetlist, project.schematic), [builtNetlist, project.schematic])
   const schematicNets = useMemo(() => deriveNets(netlist, builtNetlist, fullSchematic), [netlist, builtNetlist, fullSchematic])
+  /** The schematic's own nets, drawn in the schematic; the PCB keeps `builtNetlist` until it is updated. */
+  const schematicNetlist = useMemo(
+    () => withFootprintChoices(schematicNets.netlist, layout.placements),
+    [schematicNets, layout.placements],
+  )
+  const pinsNotInPcb = useMemo(() => pinsWithOtherNet(netlist, schematicNets.netlist), [netlist, schematicNets])
 
   // Latest project, also between a change and the next render: agent commands can arrive back to back.
   const projectRef = useRef(project)
@@ -389,9 +402,13 @@ export function App() {
             : command === 'set_labels'
               ? { ...schematic, labels: labelsFromAgent(args.labels) }
               : withPlacementChanges(schematic, current.netlist, agentPlacements(stored.netlist, args.placements))
-        const updated = withSchematic(stored, next)
+        applyAgentChange(targetId, stored, { schematic: next })
+        return describeSchematic({ ...stored, schematic: next })
+      }
+      case 'update_pcb': {
+        const updated = withSchematicNets(stored)
         applyAgentChange(targetId, stored, snapshotOf(updated))
-        return describeSchematic(updated)
+        return { problems: findProblems(asBuilt(updated)) }
       }
       case 'set_values': {
         const netlist = withValues(stored.netlist, args.values)
@@ -574,7 +591,13 @@ export function App() {
   // Rotate and reset leads act on every selected part, each in place.
   const refsToEdit = selectedRefs(selection)
 
-  const changeSchematic = (next: FullSchematic) => setProject((p) => withSchematic(p, next))
+  // Schematic edits leave the PCB alone; "Update PCB" takes their nets over when the user is ready.
+  const changeSchematic = (next: FullSchematic) => setProject((p) => ({ ...p, schematic: next }))
+
+  const updatePcb = () => {
+    rememberEdit()
+    setProject(withSchematicNets)
+  }
 
   const rotateSelected = (degrees: number, pane: Pane) => {
     if (refsToEdit.length === 0) return
@@ -946,6 +969,16 @@ export function App() {
               <button className="icon-button" onClick={() => setError('')} aria-label="Dismiss">✕</button>
             </div>
           )}
+          {pinsNotInPcb.length > 0 && (
+            <div className="sync-banner" role="status">
+              <span title={pinsNotInPcb.join(' ')}>
+                The schematic has changes the PCB does not have yet: {pinsNotInPcb.length} pin{pinsNotInPcb.length === 1 ? '' : 's'} on another net.
+              </span>
+              <button className="header-button" onClick={updatePcb} title="Give the PCB the schematic's nets; islands follow renamed and merged nets (can be undone)">
+                <Icon name="convert" />Update PCB
+              </button>
+            </div>
+          )}
           <div className="canvas-panes">
             {view !== 'layout' && (
               <section className="canvas-pane" onPointerDownCapture={() => setActivePane('schematic')}>
@@ -974,7 +1007,7 @@ export function App() {
                 </nav>
                 <div className="canvas-frame">
                   <SchematicView
-                    netlist={builtNetlist}
+                    netlist={schematicNetlist}
                     schematic={fullSchematic}
                     nets={schematicNets}
                     onChange={changeSchematic}

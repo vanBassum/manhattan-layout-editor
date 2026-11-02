@@ -257,3 +257,14 @@ export function labelsFromAgent(labels: unknown): NetLabel[] {
     return { ...at, name: item.name.trim() }
   })
 }
+
+/** Pins ("R1.2") whose net differs between two netlists of the same components, e.g. the PCB's and the schematic's. */
+export function pinsWithOtherNet(a: Netlist, b: Netlist): string[] {
+  const netsOfB = new Map<string, string>(b.components.flatMap((c) => c.pins.map((p) => [`${c.ref}.${p.number}`, p.net])))
+  return a.components.flatMap((c) =>
+    c.pins.flatMap((p) => {
+      const pin = `${c.ref}.${p.number}`
+      return netsOfB.get(pin) === p.net ? [] : [pin]
+    }),
+  )
+}

@@ -281,13 +281,20 @@ forward(
   },
 )
 
+forward(
+  'update_pcb',
+  'Gives the PCB layout the nets the schematic gives (like the "Update PCB" button), as one undo step. Schematic ' +
+    'edits do not change the PCB until then; get_schematic lists the differing pins as "pinsNotInPcb". Islands follow ' +
+    'renamed and merged nets; new nets and parts get a spot on the grid. Returns the PCB problems after the update.',
+)
+
 const gridPoint = z.tuple([z.number(), z.number()]).describe('[x, y] in mm')
 
 forward(
   'set_wires',
   'Replaces ALL wires of the schematic, as one undo step. Each wire is a polyline [[x, y], [x, y], ...] whose steps ' +
     'are horizontal or vertical; points snap to the 2.54 mm grid. Start and end wires on pin ends from get_schematic. ' +
-    'The nets follow from the wires and labels, and the PCB layout follows the nets. Returns the schematic as ' +
+    'The nets follow from the wires and labels; the PCB takes them over on update_pcb. Returns the schematic as ' +
     'get_schematic does; check "shorts" and each pin\'s net.',
   { wires: z.array(z.array(gridPoint).min(2)) },
 )

@@ -780,6 +780,19 @@ input:focus-visible {
   color: var(--error);
 }
 
+/* The schematic's nets differ from the PCB's until the user updates the PCB. */
+.sync-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
 .board-size {
   margin: 0;
   color: var(--text-muted);
