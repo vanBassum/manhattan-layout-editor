@@ -2,6 +2,7 @@
 // browser tab remembers its own active project in sessionStorage, so two browser tabs can work
 // on different projects without overwriting each other.
 
+import { withDefinitions } from './definitions'
 import EXAMPLE_PROJECT from './examples/multivibrator.manhattan.json?raw'
 import { migrateGappedIslands } from './migrateIslands'
 import { STRATEGIES } from './optimize'
@@ -40,24 +41,28 @@ export function parseStoredProject(stored: string): Project | null {
   return checkedProject(JSON.parse(stored))
 }
 
-/** A project read from storage or a file; projects from before guids get one here. */
+/**
+ * A project read from storage or a file; projects from before guids get one here, and parts
+ * without a component definition get one from the built-in templates.
+ */
 function checkedProject(data: unknown): Project | null {
   const project = data as Partial<Project> | null
   if (!project?.netlist?.components || !project.layout?.islands) return null
-  return {
+  return withDefinitions({
     ...(project as Project),
     guid: project.guid || crypto.randomUUID(),
     settings: { ...DEFAULT_SETTINGS, ...project.settings },
-  }
+  })
 }
 
 // A saved project file. Bump the version when the stored layout changes meaning, and convert
 // older files in projectFromFile.
+// v6: component definitions (symbol and footprints) are stored in the project.
 const FILE_FORMAT = 'manhattan-layout-editor'
-const FILE_VERSION = 5
+const FILE_VERSION = 6
 
 export function projectToFile(project: Project): string {
-  return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, project }, null, 2)
+  return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, project: withDefinitions(project) }, null, 2)
 }
 
 export function projectFromFile(text: string): Project {
@@ -115,7 +120,8 @@ export function writeProject(id: string, project: Project) {
     // read before this version loaded (a browser tab kept open over an update) and still has gaps.
     const unread = localStorage.getItem(projectKey(id)) === null && localStorage.getItem(v3ProjectKey(id)) !== null
     const current = unread ? migrateGappedIslands(project) : project
-    localStorage.setItem(projectKey(id), JSON.stringify(current))
+    // Footprints chosen since loading get their definition here, so storage always has them all.
+    localStorage.setItem(projectKey(id), JSON.stringify(withDefinitions(current)))
   } catch {}
 }
 

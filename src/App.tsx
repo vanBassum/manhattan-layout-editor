@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
+import { buildNetlist, withDefinitions } from './definitions'
 import { applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setFootprint, setIsland, setLeadEnd } from './agentCommands'
 import { Canvas, type EditMode, type LayerName, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { exportDxf } from './exportDxf'
@@ -18,7 +19,6 @@ import {
   keepFootprintChoices,
   toCutLayout,
   withCutIslands,
-  withFootprintChoices,
 } from './layout'
 import { parseNetlist, withValues } from './netlist'
 import { findStrategy, KNIFE_CUTS, STRATEGIES } from './optimize'
@@ -134,29 +134,38 @@ function loadLayers(): Layers {
 /** The tab's project with a new netlist; it stays the same project, so it keeps its guid. */
 function projectFromNetlist(name: string, text: string, current: Project, keepLayout: boolean): Project {
   const imported = parseNetlist(text)
-  // A value typed in the editor survives a re-import that still has none (EasyEDA exports "{Value}" as empty).
-  const typedValues = new Map(current.netlist.components.map((c) => [c.ref, c.value]))
+  // A value typed in the editor survives a re-import that still has none (EasyEDA exports "{Value}"
+  // as empty), and so does the part's definition; withDefinitions drops one that no longer fits.
+  const previous = new Map(current.netlist.components.map((c) => [c.ref, c]))
   const netlist = keepLayout
-    ? { ...imported, components: imported.components.map((c) => (c.value ? c : { ...c, value: typedValues.get(c.ref) ?? '' })) }
+    ? {
+        ...imported,
+        components: imported.components.map((c) => ({
+          ...c,
+          value: c.value || previous.get(c.ref)?.value || '',
+          definition: previous.get(c.ref)?.definition,
+        })),
+      }
     : imported
-  return {
+  return withDefinitions({
     guid: current.guid,
     name,
     netlist,
     layout: createLayout(netlist, keepLayout ? current.layout : undefined),
     // Symbols stay where they were; wires and labels start over from the imported nets.
     schematic: keepLayout && current.schematic ? { placements: current.schematic.placements } : undefined,
+    definitions: keepLayout ? current.definitions : undefined,
     settings: keepLayout ? current.settings : DEFAULT_SETTINGS,
-  }
+  })
 }
 
 /** The project's schematic with every part placed; `project` is as stored, without footprint choices applied. */
 const fullSchematicOf = (project: Project): FullSchematic =>
-  completeSchematic(withFootprintChoices(project.netlist, project.layout.placements), project.schematic)
+  completeSchematic(buildNetlist(project.netlist, project.layout.placements, project.definitions), project.schematic)
 
 /** The nets the project's schematic gives, which the PCB does not use until it is updated. */
 function schematicNetsOf(project: Project) {
-  const built = withFootprintChoices(project.netlist, project.layout.placements)
+  const built = buildNetlist(project.netlist, project.layout.placements, project.definitions)
   return deriveNets(project.netlist, built, fullSchematicOf(project))
 }
 
@@ -170,7 +179,7 @@ function withSchematicNets(project: Project): Project {
 function describeSchematic(project: Project) {
   const schematic = fullSchematicOf(project)
   const { netlist, conflicts } = schematicNetsOf(project)
-  const built = withFootprintChoices(netlist, project.layout.placements)
+  const built = buildNetlist(netlist, project.layout.placements, project.definitions)
   return {
     units: 'mm; x to the right, y down; grid 2.54',
     parts: built.components.map((component, i) => ({
@@ -193,7 +202,7 @@ function describeSchematic(project: Project) {
 /** The project with the editor's footprint choices applied: what drawing, checks and optimizers should see. */
 /** The project with footprint choices applied and, in a cut-line layout, the islands the cuts give. */
 const asBuilt = (project: Project): Project => {
-  const netlist = withFootprintChoices(project.netlist, project.layout.placements)
+  const netlist = buildNetlist(project.netlist, project.layout.placements, project.definitions)
   return { ...project, netlist, layout: withCutIslands(netlist, project.layout) }
 }
 
@@ -301,13 +310,13 @@ export function App() {
   const [footprintDialogRefs, setFootprintDialogRefs] = useState<string[] | null>(null)
   const [layers, setLayersState] = useState<Layers>(loadLayers)
   const { netlist, layout, settings } = project
-  const builtNetlist = useMemo(() => withFootprintChoices(netlist, layout.placements), [netlist, layout.placements])
+  const builtNetlist = useMemo(() => buildNetlist(netlist, layout.placements, project.definitions), [netlist, layout.placements, project.definitions])
   const fullSchematic = useMemo(() => completeSchematic(builtNetlist, project.schematic), [builtNetlist, project.schematic])
   const schematicNets = useMemo(() => deriveNets(netlist, builtNetlist, fullSchematic), [netlist, builtNetlist, fullSchematic])
   /** The schematic's own nets, drawn in the schematic; the PCB keeps `builtNetlist` until it is updated. */
   const schematicNetlist = useMemo(
-    () => withFootprintChoices(schematicNets.netlist, layout.placements),
-    [schematicNets, layout.placements],
+    () => buildNetlist(schematicNets.netlist, layout.placements, project.definitions),
+    [schematicNets, layout.placements, project.definitions],
   )
   const pinsNotInPcb = useMemo(() => pinsWithOtherNet(netlist, schematicNets.netlist), [netlist, schematicNets])
   const schematicOpenPins = useMemo(
@@ -713,7 +722,7 @@ export function App() {
     if (!confirm('Discard all manual placement and put everything back on a grid?')) return
     rememberEdit()
     setProject((p) => {
-      const grid = createLayout(withFootprintChoices(p.netlist, p.layout.placements))
+      const grid = createLayout(buildNetlist(p.netlist, p.layout.placements, p.definitions))
       return { ...p, layout: keepFootprintChoices(grid, p.layout) }
     })
     setSelection(null)

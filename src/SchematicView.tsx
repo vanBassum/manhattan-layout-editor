@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, inflate, rotatePoint, snapToGrid } from './geometry'
 import { CELL_HEIGHT, CELL_WIDTH, pinEnds, pointKey, SCHEMATIC_GRID, withPlacementChanges, type FullSchematic, type SchematicNets } from './schematic'
-import { symbolFor, type SymbolPin } from './schematicSymbols'
+import { componentSymbol } from './definitions'
+import type { PinEnd } from './schematic'
+import type { SymbolGraphic } from './types'
 import { selectedRefs } from './selection'
 import type { NetComponent, NetLabel, Netlist, Point, SchematicPlacement, Selection, Wire } from './types'
 import { gridPitch, useViewport, ViewportGrid, type View } from './viewport'
@@ -86,17 +88,40 @@ function LabelMark({ label, direction, className, onPointerDown, onDoubleClick }
   )
 }
 
+const FILL_CLASS = { solid: 'sch-fill', body: 'sch-resistor', open: 'sch-plate-open', box: 'sch-box', none: 'sch-outline' } as const
+const pointList = (points: [number, number][]) => points.map((p) => p.join(',')).join(' ')
+
+/** One drawing element of a symbol definition. */
+function SymbolShape({ graphic }: { graphic: SymbolGraphic }) {
+  switch (graphic.type) {
+    case 'line':
+      return <polyline className="sch-line" points={pointList(graphic.points)} />
+    case 'polygon':
+      return <polygon className={FILL_CLASS[graphic.fill]} points={pointList(graphic.points)} />
+    case 'rect':
+      return <rect className={FILL_CLASS[graphic.fill]} x={graphic.x} y={graphic.y} width={graphic.w} height={graphic.h} />
+    case 'circle':
+      return <circle className={FILL_CLASS[graphic.fill]} cx={graphic.x} cy={graphic.y} r={graphic.r} />
+    case 'text':
+      return (
+        <text className={graphic.style === 'mark' ? 'sch-pin-mark' : 'sch-pin-number'} x={graphic.x} y={graphic.y} textAnchor={graphic.anchor}>
+          {graphic.text}
+        </text>
+      )
+  }
+}
+
 interface PartProps {
   component: NetComponent
   placement: SchematicPlacement
-  pins: SymbolPin[]
+  pins: PinEnd[]
   selected: boolean
   onPointerDown: (e: ReactPointerEvent) => void
 }
 
 /** The body rotates with the part; reference and value stay upright. Unconnected pins get an open circle. */
 function SchematicPart({ component, placement, pins, selected, onPointerDown }: PartProps) {
-  const symbol = symbolFor(component)
+  const symbol = componentSymbol(component)
   const { x, y, rotation } = placement
   const pinBounds = boundsOf(pins.map((p) => ({ x: p.x, y: p.y, w: 0, h: 0 })))
   const hitArea = pinBounds && inflate(pinBounds, 2)
@@ -106,7 +131,11 @@ function SchematicPart({ component, placement, pins, selected, onPointerDown }: 
     <g className={selected ? 'sch-part selected' : 'sch-part'} onPointerDown={onPointerDown}>
       <title>{`${component.ref} ${component.value}`}</title>
       {hitArea && <rect className="sch-hit" x={hitArea.x} y={hitArea.y} width={hitArea.w} height={hitArea.h} />}
-      <g transform={`translate(${x} ${y}) rotate(${rotation})`}>{symbol.body}</g>
+      <g transform={`translate(${x} ${y}) rotate(${rotation})`}>
+        {symbol.graphics.map((graphic, k) => (
+          <SymbolShape key={k} graphic={graphic} />
+        ))}
+      </g>
       <text className="sch-ref" x={label.x} y={label.y}>{component.ref}</text>
       <text className="sch-value" x={label.x} y={label.y + 1.5}>{component.value}</text>
       {pins.map((pin, k) => !component.pins[k]?.net && <circle key={k} className="sch-open-pin" cx={pin.x} cy={pin.y} r={0.5} />)}

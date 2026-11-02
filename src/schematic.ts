@@ -1,7 +1,13 @@
 import { rotatePoint, snapToGrid } from './geometry'
 import { isRealNet, naturalCompare } from './netlist'
-import { symbolFor, type SymbolPin } from './schematicSymbols'
+import { componentSymbol } from './definitions'
 import type { NetComponent, NetLabel, Netlist, Point, Schematic, SchematicPlacement, Wire } from './types'
+
+/** A pin end in schematic coordinates, with the direction a wire leaves it. */
+export interface PinEnd extends Point {
+  dx: number
+  dy: number
+}
 
 // The schematic is the source of the connections: wires and net labels decide which pins share a
 // net, and the netlist follows from them.
@@ -22,9 +28,12 @@ export interface FullSchematic {
 /** Map key of a point; coordinates are on the grid, so rounding only removes float noise. */
 export const pointKey = (p: Point) => `${Math.round(p.x * 1000) / 1000},${Math.round(p.y * 1000) / 1000}`
 
-/** Where a placed component's pins end, in schematic coordinates, with their outward direction. */
-export function pinEnds(component: NetComponent, placement: SchematicPlacement): SymbolPin[] {
-  return symbolFor(component).pins.map((pin) => {
+/** Where a placed component's pins end, in the component's pin order, with their outward direction. */
+export function pinEnds(component: NetComponent, placement: SchematicPlacement): PinEnd[] {
+  // componentSymbol only returns a symbol that has every pin of the part.
+  const byNumber = new Map(componentSymbol(component).pins.map((p) => [p.number, p]))
+  return component.pins.map(({ number }) => {
+    const pin = byNumber.get(number)!
     const at = rotatePoint(pin, placement.rotation)
     const direction = rotatePoint({ x: pin.dx, y: pin.dy }, placement.rotation)
     return { x: placement.x + at.x, y: placement.y + at.y, dx: Math.round(direction.x), dy: Math.round(direction.y) }

@@ -185,7 +185,13 @@ function defaultLeadLength(shape: Shape, footprint: string, body: Rect): number 
   return PITCH
 }
 
+/** The part's footprint geometry: from its definition on a built netlist, else the built-in template. */
 export function componentGeometry(component: NetComponent): Geometry {
+  return component.geometry ?? generatedGeometry(component)
+}
+
+/** The built-in footprint template, read from the footprint name (and reference and pin count when it says too little). */
+export function generatedGeometry(component: NetComponent): Geometry {
   const shape = shapeOf(component)
   const leads = leadsFor(shape, component)
   return {
