@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
-import { buildNetlist, withDefinitions } from './definitions'
+import { buildNetlist, checkedDefinition, withAssignedDefinition, withDefinitions } from './definitions'
 import { applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setFootprint, setIsland, setLeadEnd } from './agentCommands'
 import { Canvas, type EditMode, type LayerName, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { exportDxf } from './exportDxf'
@@ -245,9 +245,14 @@ function agentLayoutEdit(command: string, args: Record<string, unknown>, current
 }
 
 /** What one undo step restores. */
-type Snapshot = Pick<Project, 'netlist' | 'layout' | 'schematic'>
+type Snapshot = Pick<Project, 'netlist' | 'layout' | 'schematic' | 'definitions'>
 
-const snapshotOf = (project: Project): Snapshot => ({ netlist: project.netlist, layout: project.layout, schematic: project.schematic })
+const snapshotOf = (project: Project): Snapshot => ({
+  netlist: project.netlist,
+  layout: project.layout,
+  schematic: project.schematic,
+  definitions: project.definitions,
+})
 
 interface History {
   undo: Snapshot[]
@@ -459,6 +464,23 @@ export function App() {
         const updated = withSchematicNets(stored)
         applyAgentChange(targetId, stored, snapshotOf(updated))
         return { problems: findProblems(asBuilt(updated)) }
+      }
+      case 'get_definitions':
+        return {
+          definitions: stored.definitions ?? {},
+          parts: stored.netlist.components.map((c) => ({ ref: c.ref, value: c.value, definition: c.definition, footprint: c.footprint })),
+        }
+      case 'set_definition': {
+        const id = String(args.id ?? '')
+        if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error('"id" must be lowercase letters, digits and dashes, e.g. "lm1875"')
+        const definitions = { ...stored.definitions, [id]: checkedDefinition(args.definition) }
+        applyAgentChange(targetId, stored, { definitions })
+        return { id, definitions: Object.keys(definitions) }
+      }
+      case 'assign_definition': {
+        const netlist = withAssignedDefinition(stored.netlist, stored.definitions, args.refs, args.definition)
+        applyAgentChange(targetId, stored, { netlist })
+        return { parts: netlist.components.map((c) => ({ ref: c.ref, definition: c.definition })) }
       }
       case 'set_values': {
         const netlist = withValues(stored.netlist, args.values)
@@ -826,128 +848,129 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        <div className="brand">
-          <span className="brand-icon"><Icon name="app" /></span>
-          Manhattan Layout Editor
+      {/* Same columns as the workspace below, so the project tabs start where the canvas does. */}
+      <header className={`header view-${view}`}>
+        <div className="header-start">
+          <div className="menu" ref={fileMenuRef}>
+            <button
+              className="header-button"
+              aria-haspopup="menu"
+              aria-expanded={fileMenuOpen}
+              onClick={() => setFileMenuOpen(!fileMenuOpen)}
+            >
+              <Icon name="file" />File
+            </button>
+            {fileMenuOpen && (
+              <div className="menu-list" role="menu" onClick={() => setFileMenuOpen(false)}>
+                <button onClick={() => projectFileInputRef.current!.click()} title="Open a saved project in a new tab">
+                  <Icon name="open" />Open project…
+                </button>
+                <button onClick={saveProject} title="Download this tab's project as a JSON file">
+                  <Icon name="save" />Save project…
+                </button>
+                <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
+                <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
+                <button onClick={exportLayoutDxf} title="Area to burn as closed contours in mm (board outline + copper as holes), ready to hatch in EzCad">
+                  <Icon name="export" />Export DXF
+                </button>
+              </div>
+            )}
+          </div>
+          {/* Outside the menu, so they stay mounted while the file dialog is open. */}
+          <input
+            ref={projectFileInputRef}
+            type="file"
+            accept=".json"
+            hidden
+            onChange={(e) => onProjectFileChosen(e.target.files?.[0])}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".tel,.enet,.json,.net,.txt"
+            hidden
+            onChange={(e) => onFileChosen(e.target.files?.[0])}
+          />
         </div>
-        <div className="menu" ref={fileMenuRef}>
-          <button
-            className="header-button"
-            aria-haspopup="menu"
-            aria-expanded={fileMenuOpen}
-            onClick={() => setFileMenuOpen(!fileMenuOpen)}
-          >
-            <Icon name="file" />File
-          </button>
-          {fileMenuOpen && (
-            <div className="menu-list" role="menu" onClick={() => setFileMenuOpen(false)}>
-              <button onClick={() => projectFileInputRef.current!.click()} title="Open a saved project in a new tab">
-                <Icon name="open" />Open project…
+        <div className="header-main">
+          <div className="project-tabs" role="tablist">
+            {tabs.map((tab) => (
+              <div key={tab.id} className={tab.id === activeId ? 'project-tab active' : 'project-tab'}>
+                <button
+                  role="tab"
+                  aria-selected={tab.id === activeId}
+                  className="tab-name"
+                  onClick={() => switchTab(tab.id)}
+                  title={tab.name}
+                >
+                  <Icon name="file" />
+                  <span>{tab.name}</span>
+                </button>
+                <button className="tab-close" onClick={() => closeTab(tab.id)} title="Close project" aria-label={`Close ${tab.name}`}>
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button className="icon-button" onClick={addTab} title="Open a new project in a new tab" aria-label="New project tab">
+              <Icon name="plus" />
+            </button>
+          </div>
+          <div className="header-actions">
+            <div className="view-switch" role="group" aria-label="View">
+              <button className={view === 'schematic' ? 'active' : ''} aria-pressed={view === 'schematic'} onClick={() => showView('schematic')}>
+                <Icon name="schematic" />Schematic
               </button>
-              <button onClick={saveProject} title="Download this tab's project as a JSON file">
-                <Icon name="save" />Save project…
-              </button>
-              <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
-              <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
-              <button onClick={exportLayoutDxf} title="Area to burn as closed contours in mm (board outline + copper as holes), ready to hatch in EzCad">
-                <Icon name="export" />Export DXF
-              </button>
-            </div>
-        )}
-      </div>
-      {/* Outside the menu, so they stay mounted while the file dialog is open. */}
-        <input
-          ref={projectFileInputRef}
-          type="file"
-          accept=".json"
-          hidden
-          onChange={(e) => onProjectFileChosen(e.target.files?.[0])}
-        />
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".tel,.enet,.json,.net,.txt"
-          hidden
-          onChange={(e) => onFileChosen(e.target.files?.[0])}
-        />
-        <div className="project-tabs" role="tablist">
-          {tabs.map((tab) => (
-            <div key={tab.id} className={tab.id === activeId ? 'project-tab active' : 'project-tab'}>
               <button
-                role="tab"
-                aria-selected={tab.id === activeId}
-                className="tab-name"
-                onClick={() => switchTab(tab.id)}
-                title={tab.name}
+                className={view === 'split' ? 'active' : ''}
+                aria-pressed={view === 'split'}
+                onClick={() => showView('split')}
+                title="Schematic and PCB side by side"
               >
-                <Icon name="file" />
-                <span>{tab.name}</span>
+                <Icon name="split" />Split
               </button>
-              <button className="tab-close" onClick={() => closeTab(tab.id)} title="Close project" aria-label={`Close ${tab.name}`}>
-                ✕
+              <button className={view === 'layout' ? 'active' : ''} aria-pressed={view === 'layout'} onClick={() => showView('layout')}>
+                <Icon name="grid" />PCB
               </button>
             </div>
-          ))}
-          <button className="icon-button" onClick={addTab} title="Open a new project in a new tab" aria-label="New project tab">
-            <Icon name="plus" />
-          </button>
-        </div>
-        <div className="header-actions">
-          <div className="view-switch" role="group" aria-label="View">
-            <button className={view === 'schematic' ? 'active' : ''} aria-pressed={view === 'schematic'} onClick={() => showView('schematic')}>
-              <Icon name="schematic" />Schematic
+            <span className="separator" />
+            <div className="button-group">
+              <button className="icon-button" onClick={undo} title="Undo (Ctrl+Z)" aria-label="Undo"><Icon name="undo" /></button>
+              <button className="icon-button" onClick={redo} title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo"><Icon name="redo" /></button>
+            </div>
+            <span className="separator" />
+            <select
+              value={settings.strategy}
+              onChange={(e) => chooseStrategy(e.target.value)}
+              title={findStrategy(settings.strategy).description}
+              aria-label="Optimizer strategy"
+            >
+              {STRATEGIES.map((s) => (
+                <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
+              ))}
+            </select>
+            <button className="header-button" onClick={optimize} title={findStrategy(settings.strategy).description}>
+              <Icon name="optimize" />Optimize
             </button>
             <button
-              className={view === 'split' ? 'active' : ''}
-              aria-pressed={view === 'split'}
-              onClick={() => showView('split')}
-              title="Schematic and PCB side by side"
+              className="header-button"
+              onClick={() => setShowAiHelp(true)}
+              title={agentConnected ? 'AI agent connected (MCP)' : 'Let an AI assistant edit this layout (MCP)'}
             >
-              <Icon name="split" />Split
+              <Icon name="ai" />AI
+              <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
             </button>
-            <button className={view === 'layout' ? 'active' : ''} aria-pressed={view === 'layout'} onClick={() => showView('layout')}>
-              <Icon name="grid" />PCB
+            <button
+              className="icon-button"
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label="Toggle dark mode"
+            >
+              <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+            </button>
+            <button className="icon-button" onClick={() => setShowHelp(true)} title="Keyboard and mouse shortcuts" aria-label="Help">
+              <Icon name="help" />
             </button>
           </div>
-          <span className="separator" />
-          <div className="button-group">
-            <button className="icon-button" onClick={undo} title="Undo (Ctrl+Z)" aria-label="Undo"><Icon name="undo" /></button>
-            <button className="icon-button" onClick={redo} title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo"><Icon name="redo" /></button>
-          </div>
-          <span className="separator" />
-          <select
-            value={settings.strategy}
-            onChange={(e) => chooseStrategy(e.target.value)}
-            title={findStrategy(settings.strategy).description}
-            aria-label="Optimizer strategy"
-          >
-            {STRATEGIES.map((s) => (
-              <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
-            ))}
-          </select>
-          <button className="header-button" onClick={optimize} title={findStrategy(settings.strategy).description}>
-            <Icon name="optimize" />Optimize
-          </button>
-          <button
-            className="header-button"
-            onClick={() => setShowAiHelp(true)}
-            title={agentConnected ? 'AI agent connected (MCP)' : 'Let an AI assistant edit this layout (MCP)'}
-          >
-            <Icon name="ai" />AI
-            <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
-          </button>
-          <button
-            className="icon-button"
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            aria-label="Toggle dark mode"
-          >
-            <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-          </button>
-          <button className="icon-button" onClick={() => setShowHelp(true)} title="Keyboard and mouse shortcuts" aria-label="Help">
-            <Icon name="help" />
-          </button>
         </div>
       </header>
 

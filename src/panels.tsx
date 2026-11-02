@@ -302,27 +302,6 @@ function PartCard({ component }: { component: NetComponent }) {
   )
 }
 
-function PinTable({ component }: { component: NetComponent }) {
-  return (
-    <table className="pin-table">
-      <thead>
-        <tr>
-          <th>Pin</th>
-          <th>Net</th>
-        </tr>
-      </thead>
-      <tbody>
-        {component.pins.map((p) => (
-          <tr key={p.number}>
-            <td>{p.number}</td>
-            <td>{p.net || '–'}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
 interface PartPropertiesProps {
   /** With the schematic's nets. */
   netlist: Netlist
@@ -347,7 +326,6 @@ export function PartProperties({ netlist, selection, onValueChange }: PartProper
           onCommit={(value) => onValueChange(component.ref, value)}
         />
       </div>
-      <PinTable component={component} />
     </>
   )
 }
@@ -463,7 +441,6 @@ export function SelectionDetails({ netlist, layout, selection, onPlacementChange
         <span className="field-label">Rotation</span>
         <NumberField label="Rotation" value={placement.rotation} unit="°" step={15} onCommit={(r) => change({ rotation: ((r % 360) + 360) % 360 })} />
       </div>
-      <PinTable component={component} />
     </>
   )
 }

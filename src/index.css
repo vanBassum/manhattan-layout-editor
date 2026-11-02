@@ -28,6 +28,7 @@
   --shadow: var(--shadow);
   --backdrop: rgba(20, 24, 31, 0.35);
   --sch-resistor: #8a9ee6;
+  --sch-power: #e03131;
   --sch-box: #fbfbf4;
   --sch-wire: #2f8f2f;
 }
@@ -62,6 +63,7 @@
   --shadow: rgba(0, 0, 0, 0.5);
   --backdrop: rgba(0, 0, 0, 0.55);
   --sch-resistor: #4f63b8;
+  --sch-power: #c92a2a;
   --sch-box: #20242a;
   --sch-wire: #5cc45c;
 }
@@ -136,31 +138,27 @@ input:focus-visible {
   height: 100%;
 }
 
+/* Columns and padding match .workspace, so the project tabs line up with the canvas. */
 .header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
-  padding: 6px 12px;
+  gap: 8px;
+  padding: 6px 8px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  font-size: 14px;
+/* PCB view has no left panel: the File menu takes only the room it needs. */
+.header.view-layout {
+  grid-template-columns: auto minmax(0, 1fr);
 }
 
-.brand-icon {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: #fff;
+.header-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
 }
 
 .project-tabs {
@@ -431,24 +429,6 @@ input:focus-visible {
 .counts dd {
   text-align: right;
   font-variant-numeric: tabular-nums;
-}
-
-.pin-table {
-  width: 100%;
-  margin-top: 8px;
-  border-collapse: collapse;
-}
-
-.pin-table th,
-.pin-table td {
-  padding: 2px 4px;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-}
-
-.pin-table th {
-  font-weight: 600;
-  color: var(--text-muted);
 }
 
 .settings {
@@ -1410,6 +1390,11 @@ input:focus-visible {
 
 .sch-resistor {
   fill: var(--sch-resistor);
+}
+
+/* High-power parts, e.g. emitter and load resistors, as in classic hobby schematics. */
+.sch-resistor.power {
+  fill: var(--sch-power);
 }
 
 .sch-ref,

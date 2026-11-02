@@ -282,6 +282,32 @@ forward(
 )
 
 forward(
+  'get_definitions',
+  'The project\'s component definitions and which part uses which. A definition is {name, pins: [{number, name?}], ' +
+    'symbol: {pins: [{number, x, y, dx, dy}], graphics, label: {x, y}}, footprints: {<footprint name>: {shape, body: ' +
+    '{x, y, w, h}, pins: [{number, x, y, dx, dy}], leadLength, maxLeadLength, led?}}}, all in mm, y down. Symbol pin ' +
+    'ends sit on the 2.54 mm grid; (dx, dy) is the direction a wire leaves the pin. graphics are {type: "line", points}, ' +
+    '{type: "polygon", points, fill: "solid"|"none"}, {type: "rect", x, y, w, h, fill: "solid"|"body"|"power"|"open"|' +
+    '"box"|"none"} (body = resistor blue, power = red for high-power parts, box = IC body), {type: "circle", x, y, r, ' +
+    'fill}, {type: "text", x, y, text, anchor: "start"|"middle"|"end", style: "pin-number"|"mark"}. Footprint shape ' +
+    'is one of axial, radial, smd, to92, to126, trimmer, dip, row and decides how the body is drawn on the PCB.',
+)
+
+forward(
+  'set_definition',
+  'Adds or replaces a component definition in the project (format as get_definitions describes), as one undo step. ' +
+    'Copy an existing one and change it, e.g. a resistor with fill "power". Parts use it after assign_definition.',
+  { id: z.string().describe('lowercase letters, digits and dashes, e.g. "resistor-power"'), definition: z.record(z.string(), z.unknown()) },
+)
+
+forward(
+  'assign_definition',
+  'Lets parts use a definition from the project, as one undo step. Refused when the definition lacks one of a ' +
+    'part\'s pin numbers. A part whose footprint is not in the definition gets it from the built-in templates.',
+  { refs: z.array(z.string()).min(1), definition: z.string() },
+)
+
+forward(
   'update_pcb',
   'Gives the PCB layout the nets the schematic gives (like the "Update PCB" button), as one undo step. Schematic ' +
     'edits do not change the PCB until then; get_schematic lists the differing pins as "pinsNotInPcb". Islands follow ' +

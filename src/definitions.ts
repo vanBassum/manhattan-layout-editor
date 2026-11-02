@@ -122,3 +122,45 @@ export function withDefinitions(project: Project): Project {
   if (!changed && project.definitions) return project
   return { ...project, netlist: { ...project.netlist, components }, definitions }
 }
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const isPinList = (v: unknown) => Array.isArray(v) && v.every((p) => isObject(p) && typeof p.number === 'string')
+
+/** An agent's definition, checked for the parts the editor relies on; the rest is taken as given. */
+export function checkedDefinition(data: unknown): ComponentDefinition {
+  if (!isObject(data)) throw new Error('"definition" must be an object')
+  const { name, pins, symbol, footprints } = data
+  if (typeof name !== 'string' || name === '') throw new Error('definition needs a "name"')
+  if (!isPinList(pins)) throw new Error('"pins" must be a list of {number, name?}')
+  if (!isObject(symbol) || !isPinList(symbol.pins) || !Array.isArray(symbol.graphics) || !isObject(symbol.label)) {
+    throw new Error('"symbol" needs "pins" ({number, x, y, dx, dy}), "graphics" and "label" ({x, y})')
+  }
+  if (!isObject(footprints) || !Object.values(footprints).every((f) => isObject(f) && isPinList(f.pins) && isObject(f.body))) {
+    throw new Error('"footprints" must map footprint names to {shape, body, pins, leadLength, maxLeadLength}')
+  }
+  const numbers = (pins as { number: string }[]).map((p) => p.number)
+  const symbolNumbers = new Set((symbol.pins as { number: string }[]).map((p) => p.number))
+  const missing = numbers.filter((n) => !symbolNumbers.has(n))
+  if (missing.length) throw new Error(`symbol has no pin ${missing.join(', ')}`)
+  return data as unknown as ComponentDefinition
+}
+
+/** The netlist with `refs` using definition `id`; refused for a part whose pins the definition does not have. */
+export function withAssignedDefinition(netlist: Netlist, definitions: Definitions | undefined, refs: unknown, id: unknown): Netlist {
+  if (typeof id !== 'string' || !definitions?.[id]) throw new Error(`Unknown definition "${String(id)}"`)
+  if (!Array.isArray(refs) || refs.length === 0) throw new Error('"refs" must list component references')
+  const wanted = new Set(refs.map(String))
+  const known = new Set(netlist.components.map((c) => c.ref))
+  const unknown = [...wanted].filter((ref) => !known.has(ref))
+  if (unknown.length) throw new Error(`Unknown component ${unknown.join(', ')}`)
+  return {
+    ...netlist,
+    components: netlist.components.map((component) => {
+      if (!wanted.has(component.ref)) return component
+      if (!hasPins(definitions[id].symbol, component)) {
+        throw new Error(`${component.ref}: definition "${id}" lacks some of its pins (${component.pins.map((p) => p.number).join(', ')})`)
+      }
+      return { ...component, definition: id }
+    }),
+  }
+}

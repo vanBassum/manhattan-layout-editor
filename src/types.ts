@@ -35,11 +35,14 @@ export interface SymbolPinDefinition extends Point {
   dy: number
 }
 
-/** Fills: solid = drawing colour, body = resistor colour, open = background, box = IC body, none = outline only. */
+/**
+ * Fills: solid = drawing colour, body = resistor colour, power = red body of a high-power part,
+ * open = background, box = IC body, none = outline only.
+ */
 export type SymbolGraphic =
   | { type: 'line'; points: [number, number][] }
   | { type: 'polygon'; points: [number, number][]; fill: 'solid' | 'none' }
-  | { type: 'rect'; x: number; y: number; w: number; h: number; fill: 'solid' | 'body' | 'open' | 'box' | 'none' }
+  | { type: 'rect'; x: number; y: number; w: number; h: number; fill: 'solid' | 'body' | 'power' | 'open' | 'box' | 'none' }
   | { type: 'circle'; x: number; y: number; r: number; fill: 'solid' | 'none' }
   | { type: 'text'; x: number; y: number; text: string; anchor: 'start' | 'middle' | 'end'; style: 'pin-number' | 'mark' }
 

@@ -88,7 +88,14 @@ function LabelMark({ label, direction, className, onPointerDown, onDoubleClick }
   )
 }
 
-const FILL_CLASS = { solid: 'sch-fill', body: 'sch-resistor', open: 'sch-plate-open', box: 'sch-box', none: 'sch-outline' } as const
+const FILL_CLASS = {
+  solid: 'sch-fill',
+  body: 'sch-resistor',
+  power: 'sch-resistor power',
+  open: 'sch-plate-open',
+  box: 'sch-box',
+  none: 'sch-outline',
+} as const
 const pointList = (points: [number, number][]) => points.map((p) => p.join(',')).join(' ')
 
 /** One drawing element of a symbol definition. */
