@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import example from './examples/multivibrator.manhattan.json?raw'
 import { buildProjectNetlist } from './definitions'
 import { projectFromFile } from './projectStore'
-import { pinEnds, projectSchematic, withPlacementChanges } from './schematic'
+import { pinEnds, projectSchematic, withPlacementChanges, withTidyWires, type FullSchematic } from './schematic'
+import type { BuiltNetlist } from './types'
 
 describe('withPlacementChanges', () => {
   it('moves a label on a moved pin to the new pin end, and gives it no other fields', () => {
@@ -19,5 +20,67 @@ describe('withPlacementChanges', () => {
     const after = withPlacementChanges({ ...schematic, labels: [...schematic.labels, label] }, built, [moved])
 
     expect(after.labels.at(-1)).toEqual({ x: newEnd.x, y: newEnd.y, name: 'TEST' })
+  })
+})
+
+describe('withTidyWires', () => {
+  const noParts: BuiltNetlist = { components: [], nets: [] }
+  const wiresOnly = (wires: FullSchematic['wires'], labels: FullSchematic['labels'] = []): FullSchematic => ({ placements: [], wires, labels })
+
+  it('splits wires lying over each other into pieces that meet end to end', () => {
+    const schematic = wiresOnly([
+      { x1: 0, y1: 0, x2: 10.16, y2: 0 },
+      { x1: 5.08, y1: 0, x2: 15.24, y2: 0 },
+    ])
+
+    const { schematic: tidy, selectedWires } = withTidyWires(schematic, noParts, [1])
+
+    expect(tidy.wires).toEqual([
+      { x1: 0, y1: 0, x2: 5.08, y2: 0 },
+      { x1: 5.08, y1: 0, x2: 10.16, y2: 0 },
+      { x1: 10.16, y1: 0, x2: 15.24, y2: 0 },
+    ])
+    expect(selectedWires).toEqual([1, 2])
+  })
+
+  it('removes a wire folded back on itself, and a stub left loose, but keeps ends that were loose before', () => {
+    const schematic = wiresOnly(
+      [
+        // From label A to label B, then folded back past B to a loose end at 15.24.
+        { x1: 0, y1: 0, x2: 20.32, y2: 0 },
+        { x1: 20.32, y1: 0, x2: 15.24, y2: 0 },
+        // A stub hanging off A.
+        { x1: 0, y1: 0, x2: 0, y2: 5.08 },
+        // A wire someone left loose on purpose.
+        { x1: 30.48, y1: 0, x2: 30.48, y2: 5.08 },
+      ],
+      [
+        { x: 0, y: 0, name: 'A' },
+        { x: 15.24, y: 0, name: 'B' },
+        { x: 30.48, y: 0, name: 'C' },
+      ],
+    )
+
+    const { schematic: tidy } = withTidyWires(schematic, noParts, [], [{ x: 30.48, y: 5.08 }])
+
+    expect(tidy.wires).toEqual([
+      { x1: 0, y1: 0, x2: 15.24, y2: 0 },
+      { x1: 30.48, y1: 0, x2: 30.48, y2: 5.08 },
+    ])
+  })
+
+  it('takes float noise off wire ends, so wires that should line up do', () => {
+    const schematic = wiresOnly([
+      { x1: 0, y1: 22.860000000000003, x2: 5.08, y2: 22.86 },
+      { x1: 5.08, y1: 22.86, x2: 10.16, y2: 22.86 },
+    ])
+
+    const { schematic: tidy, changed } = withTidyWires(schematic, noParts, [])
+
+    expect(changed).toBe(true)
+    expect(tidy.wires).toEqual([
+      { x1: 0, y1: 22.86, x2: 5.08, y2: 22.86 },
+      { x1: 5.08, y1: 22.86, x2: 10.16, y2: 22.86 },
+    ])
   })
 })

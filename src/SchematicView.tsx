@@ -12,6 +12,7 @@ import {
   SCHEMATIC_GRID,
   labelSymbol,
   withSchematicMoved,
+  looseWireEnds,
   withTidyWires,
   type FullSchematic,
   type SchematicNets,
@@ -553,8 +554,13 @@ export function SchematicView({
   /** After a drag: folded-up wires go, and the selection follows the wires and points that moved. */
   const finishMove = (drag: Extract<Drag, { kind: 'selection' }>) => {
     const moving = selectedWiring(drag.moving)
-    const { schematic: tidy, selectedWires } = withTidyWires(schematic, moving.wires)
-    if (tidy.wires.length !== schematic.wires.length) onChange(tidy)
+    // Where the drag kept every connection, it should leave no loose end that was not there before.
+    const baseLoose = looseWireEnds(drag.base, netlist)
+    const allowedLooseEnds = drag.keepConnections
+      ? [...baseLoose, ...baseLoose.map((p) => ({ x: p.x + drag.delta.x, y: p.y + drag.delta.y }))]
+      : undefined
+    const { schematic: tidy, selectedWires, changed } = withTidyWires(schematic, netlist, moving.wires, allowedLooseEnds)
+    if (changed) onChange(tidy)
     if (drag.moving !== selection) return
     const { x: dx, y: dy } = drag.delta
     const points = moving.points.map((p) => ({ x: p.x + dx, y: p.y + dy }))

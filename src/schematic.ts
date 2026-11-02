@@ -30,6 +30,12 @@ export interface FullSchematic {
 /** Map key of a point; coordinates are on the grid, so rounding only removes float noise. */
 export const pointKey = (p: Point) => `${Math.round(p.x * 1000) / 1000},${Math.round(p.y * 1000) / 1000}`
 
+/**
+ * The value rounded to a millionth of a mm. Sums like 10.16 + 12.7 give 22.860000000000003; a wire
+ * end with that noise is no longer exactly in line with one at 22.86, and stops being straight.
+ */
+const withoutFloatNoise = (v: number) => Math.round(v * 1e6) / 1e6
+
 const samePoint = (a: Point, b: Point) => pointKey(a) === pointKey(b)
 const wireEnds = (w: Wire): [Point, Point] => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]
 const isHorizontal = (w: Wire) => w.y1 === w.y2 && w.x1 !== w.x2
@@ -59,7 +65,7 @@ export function pinEnds(component: BuiltComponent, placement: SchematicPlacement
     const pin = byNumber.get(number)!
     const at = placedOffset(pin, placement)
     const direction = placedOffset({ x: pin.dx, y: pin.dy }, placement)
-    return { x: placement.x + at.x, y: placement.y + at.y, dx: Math.round(direction.x), dy: Math.round(direction.y) }
+    return { x: withoutFloatNoise(placement.x + at.x), y: withoutFloatNoise(placement.y + at.y), dx: Math.round(direction.x), dy: Math.round(direction.y) }
   })
 }
 
@@ -268,7 +274,7 @@ const wireBetween = (a: Point, b: Point): Wire => ({ x1: a.x, y1: a.y, x2: b.x, 
  */
 export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist, move: SchematicMove): FullSchematic {
   const { wiring, delta, keepConnections } = move
-  const shift = (p: Point): Point => ({ x: p.x + delta.x, y: p.y + delta.y })
+  const shift = (p: Point): Point => ({ x: withoutFloatNoise(p.x + delta.x), y: withoutFloatNoise(p.y + delta.y) })
   const components = new Map(built.components.map((c) => [c.ref, c]))
   const oldPlacements = new Map(schematic.placements.map((p) => [p.ref, p]))
   const changedRefs = new Set(move.placements.map((p) => p.ref))
@@ -302,7 +308,7 @@ export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist
     const direct = attachedTo(p)
     if (direct) return direct
     const host = carried.find(({ wire }) => onWireInterior(p, wire))
-    return host && { x: p.x + host.d.x, y: p.y + host.d.y }
+    return host && { x: withoutFloatNoise(p.x + host.d.x), y: withoutFloatNoise(p.y + host.d.y) }
   }
 
   // Things that can sit on the middle of a wire and must stay connected to it when it bends.
@@ -377,25 +383,112 @@ export function withPlacementChanges(schematic: FullSchematic, built: BuiltNetli
   return withSchematicMoved(schematic, built, { placements: changed, wiring: NO_WIRING, delta: { x: 0, y: 0 }, keepConnections: true })
 }
 
-/**
- * The schematic without zero-length wires (a drag can fold one up) and without exact duplicates,
- * with the selected wire indices renumbered to match.
- */
-export function withTidyWires(schematic: FullSchematic, selectedWires: number[]): { schematic: FullSchematic; selectedWires: number[] } {
-  const seen = new Set<string>()
-  const newIndex = new Map<number, number>()
-  const wires: Wire[] = []
-  schematic.wires.forEach((w, i) => {
-    const [a, b] = [pointKey({ x: w.x1, y: w.y1 }), pointKey({ x: w.x2, y: w.y2 })]
-    const key = a < b ? `${a}|${b}` : `${b}|${a}`
-    if (a === b || seen.has(key)) return
-    seen.add(key)
-    newIndex.set(i, wires.length)
-    wires.push(w)
-  })
-  const renumbered = selectedWires.flatMap((i) => (newIndex.has(i) ? [newIndex.get(i)!] : []))
-  return { schematic: { ...schematic, wires }, selectedWires: renumbered }
+/** A wire after tidying, with the indices of the wires it came from. */
+interface TidyWire {
+  wire: Wire
+  sources: number[]
 }
+
+/** The line a horizontal or vertical wire lies on, and the stretch of that line it covers. */
+function wireLine(w: Wire): { key: string; from: number; to: number } | undefined {
+  if (isHorizontal(w)) return { key: `h${pointKey({ x: 0, y: w.y1 })}`, from: Math.min(w.x1, w.x2), to: Math.max(w.x1, w.x2) }
+  if (isVertical(w)) return { key: `v${pointKey({ x: w.x1, y: 0 })}`, from: Math.min(w.y1, w.y2), to: Math.max(w.y1, w.y2) }
+  return undefined
+}
+
+/**
+ * Wires that lie over each other on one line, split at all their ends into pieces that do not
+ * overlap. Otherwise the end of one in the middle of the other reads as a junction.
+ */
+function withoutOverlaps(wires: Wire[]): TidyWire[] {
+  const byLine = new Map<string, number[]>()
+  wires.forEach((w, i) => {
+    const line = wireLine(w)
+    if (line) byLine.set(line.key, [...(byLine.get(line.key) ?? []), i])
+  })
+  const result: TidyWire[] = []
+  wires.forEach((w, i) => {
+    const line = wireLine(w)
+    if (!line) return result.push({ wire: w, sources: [i] })
+    const onLine = byLine.get(line.key)!
+    // The whole line is split when its first wire comes along.
+    if (onLine[0] !== i) return
+    const spans = onLine.map((k) => ({ k, ...wireLine(wires[k])! }))
+    const stops = [...new Set(spans.flatMap((s) => [s.from, s.to]))].sort((a, b) => a - b)
+    for (let n = 0; n + 1 < stops.length; n++) {
+      const [from, to] = [stops[n], stops[n + 1]]
+      const sources = spans.filter((s) => s.from <= from && to <= s.to).map((s) => s.k)
+      if (sources.length === 0) continue
+      const whole = spans.find((s) => s.from === from && s.to === to)
+      if (sources.length === 1 && whole) {
+        result.push({ wire: wires[whole.k], sources })
+        continue
+      }
+      const wire = isHorizontal(w) ? { x1: from, y1: w.y1, x2: to, y2: w.y1 } : { x1: w.x1, y1: from, x2: w.x1, y2: to }
+      result.push({ wire, sources })
+    }
+  })
+  return result
+}
+
+/** Wire ends that connect to nothing: no other wire, pin or label there. */
+function looseEnds(wires: Wire[], connectionPoints: Set<string>): Point[] {
+  const endCount = new Map<string, number>()
+  for (const p of wires.flatMap(wireEnds)) endCount.set(pointKey(p), (endCount.get(pointKey(p)) ?? 0) + 1)
+  return wires
+    .flatMap(wireEnds)
+    .filter((p) => endCount.get(pointKey(p)) === 1 && !connectionPoints.has(pointKey(p)) && !wires.some((w) => onWireInterior(p, w)))
+}
+
+/** Pin ends and labels: what a wire end can connect to besides other wires. */
+function connectionPoints(schematic: FullSchematic, built: BuiltNetlist): Set<string> {
+  const pins = built.components.flatMap((component, i) => pinEnds(component, schematic.placements[i]))
+  return new Set([...pins, ...schematic.labels].map(pointKey))
+}
+
+/** The schematic's wire ends that connect to nothing. */
+export function looseWireEnds(schematic: FullSchematic, built: BuiltNetlist): Point[] {
+  return looseEnds(schematic.wires, connectionPoints(schematic, built))
+}
+
+/**
+ * The schematic with its wires tidied after a drag, with the selected wire indices renumbered to
+ * match. Ends lose float noise; zero-length wires and duplicates go; wires lying over each other
+ * become pieces that do not overlap. With `allowedLooseEnds`, wires that end loose anywhere else go
+ * too, repeatedly: a drag that keeps connections leaves such ends only where a wire folded back on
+ * itself or was left behind.
+ */
+export function withTidyWires(
+  schematic: FullSchematic,
+  built: BuiltNetlist,
+  selectedWires: number[],
+  allowedLooseEnds?: Point[],
+): { schematic: FullSchematic; selectedWires: number[]; changed: boolean } {
+  const rounded = schematic.wires.map((w) => ({
+    x1: withoutFloatNoise(w.x1),
+    y1: withoutFloatNoise(w.y1),
+    x2: withoutFloatNoise(w.x2),
+    y2: withoutFloatNoise(w.y2),
+  }))
+  let tidy = withoutOverlaps(rounded).filter(({ wire }) => !samePoint({ x: wire.x1, y: wire.y1 }, { x: wire.x2, y: wire.y2 }))
+  if (allowedLooseEnds) {
+    const connections = connectionPoints(schematic, built)
+    for (const p of allowedLooseEnds) connections.add(pointKey(p))
+    for (;;) {
+      const loose = new Set(looseEnds(tidy.map((t) => t.wire), connections).map(pointKey))
+      const kept = tidy.filter(({ wire }) => !wireEnds(wire).some((p) => loose.has(pointKey(p))))
+      if (kept.length === tidy.length) break
+      tidy = kept
+    }
+  }
+  const wires = tidy.map((t) => t.wire)
+  const changed = wires.length !== schematic.wires.length || wires.some((w, i) => !sameWire(w, schematic.wires[i]))
+  const selected = new Set(selectedWires)
+  const renumbered = tidy.flatMap((t, i) => (t.sources.some((k) => selected.has(k)) ? [i] : []))
+  return { schematic: { ...schematic, wires }, selectedWires: renumbered, changed }
+}
+
+const sameWire = (a: Wire, b: Wire) => a.x1 === b.x1 && a.y1 === b.y1 && a.x2 === b.x2 && a.y2 === b.y2
 
 /** An agent's placements, checked and snapped to the grid, rotation in quarter turns. */
 export function agentPlacements(netlist: Netlist, placements: unknown): SchematicPlacement[] {
