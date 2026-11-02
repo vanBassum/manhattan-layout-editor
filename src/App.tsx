@@ -73,6 +73,7 @@ import { SchematicView, type SchematicTool } from './SchematicView'
 import type { Layout, Netlist, Placement, Project, Selection, Settings } from './types'
 import type { IconName } from './panels'
 import { ProjectTabs } from './ProjectTabs'
+import { NO_HISTORY, snapshotOf, stepHistory, withEdit, type History, type Snapshot } from './undoHistory'
 
 /** Which views are shown: one of them, or both side by side. */
 type ViewMode = 'schematic' | 'split' | 'layout'
@@ -98,7 +99,6 @@ const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title
   { id: 'label', icon: 'label', label: 'Label', title: 'Label (L): click a point to name its net; labels with the same name are connected. Double-click a label to rename it' },
 ]
 
-const UNDO_LIMIT = 100
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
 const LAYERS_KEY = 'manhattan-layout-editor/layers'
@@ -265,21 +265,6 @@ function agentLayoutEdit(command: string, args: Record<string, unknown>, current
   }
 }
 
-/** What one undo step restores. */
-type Snapshot = Pick<Project, 'netlist' | 'layout' | 'schematic' | 'definitions'>
-
-const snapshotOf = (project: Project): Snapshot => ({
-  netlist: project.netlist,
-  layout: project.layout,
-  schematic: project.schematic,
-  definitions: project.definitions,
-})
-
-interface History {
-  undo: Snapshot[]
-  redo: Snapshot[]
-}
-
 export function App() {
   const [initialTabs] = useState(loadTabs)
   const [tabs, setTabs] = useState<ProjectTab[]>(initialTabs.tabs)
@@ -313,8 +298,8 @@ export function App() {
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const projectFileInputRef = useRef<HTMLInputElement>(null)
-  const undoStack = useRef<Snapshot[]>([])
-  const redoStack = useRef<Snapshot[]>([])
+  /** Undo history of the shown tab. */
+  const history = useRef<History>(NO_HISTORY)
   /** Undo history of the tabs that are not shown, so switching back keeps it. */
   const parkedHistory = useRef(new Map<string, History>())
   const [agentConnected, setAgentConnected] = useState(false)
@@ -353,11 +338,6 @@ export function App() {
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
 
-  const replaceLayout = (next: Layout) => {
-    projectRef.current = { ...projectRef.current, layout: next }
-    setProject(projectRef.current)
-  }
-
   const restore = (snapshot: Snapshot) => {
     projectRef.current = { ...projectRef.current, ...snapshot }
     setProject(projectRef.current)
@@ -365,32 +345,18 @@ export function App() {
 
   /** Call right before changing the layout or schematic, so the change can be undone. */
   const rememberEdit = () => {
-    undoStack.current = [...undoStack.current.slice(-(UNDO_LIMIT - 1)), snapshotOf(projectRef.current)]
-    redoStack.current = []
+    history.current = withEdit(history.current, snapshotOf(projectRef.current))
   }
 
-  const undo = () => {
-    const previous = undoStack.current.pop()
-    if (!previous) return
-    redoStack.current.push(snapshotOf(projectRef.current))
-    restore(previous)
+  const stepShownTab = (direction: 'undo' | 'redo') => {
+    const stepped = stepHistory(history.current, snapshotOf(projectRef.current), direction)
+    if (!stepped) return
+    history.current = stepped.history
+    restore(stepped.restored)
     setSelection(null)
   }
-
-  const redo = () => {
-    const next = redoStack.current.pop()
-    if (!next) return
-    undoStack.current.push(snapshotOf(projectRef.current))
-    restore(next)
-    setSelection(null)
-  }
-
-  /** Applies an agent's edit like any other edit (undoable) and reports what is still wrong. */
-  const applyAgentEdit = (next: Layout) => {
-    rememberEdit()
-    replaceLayout(next)
-    return { problems: findProblems(asBuilt(projectRef.current)) }
-  }
+  const undo = () => stepShownTab('undo')
+  const redo = () => stepShownTab('redo')
 
   /** The tab an agent command is for: its "project" argument (tab id or name), else the shown tab. */
   const agentTarget = (project: unknown): string => {
@@ -405,39 +371,27 @@ export function App() {
     throw new Error(`${byName.length > 1 ? 'Several' : 'No'} projects named "${wanted}"; use the id. Open: ${known}`)
   }
 
-  /** Changes a tab that is not shown: straight in storage, with its own undo history. */
-  const editHiddenTab = (id: string, stored: Project, next: Layout) => {
-    const history = parkedHistory.current.get(id) ?? { undo: [], redo: [] }
-    parkedHistory.current.set(id, { undo: [...history.undo.slice(-(UNDO_LIMIT - 1)), snapshotOf(stored)], redo: [] })
-    const updated = { ...stored, layout: next }
+  /** Undo or redo on a tab that is not shown: straight in storage, with its own history. Returns the tab's project. */
+  const stepHiddenTab = (id: string, stored: Project, direction: 'undo' | 'redo'): Project => {
+    const stepped = stepHistory(parkedHistory.current.get(id) ?? NO_HISTORY, snapshotOf(stored), direction)
+    if (!stepped) return stored
+    parkedHistory.current.set(id, stepped.history)
+    const updated = { ...stored, ...stepped.restored }
     writeProject(id, updated)
-    return { problems: findProblems(asBuilt(updated)) }
+    return updated
   }
 
-  const undoHiddenTab = (id: string, stored: Project, direction: 'undo' | 'redo') => {
-    const history = parkedHistory.current.get(id) ?? { undo: [], redo: [] }
-    const from = direction === 'undo' ? history.undo : history.redo
-    const to = direction === 'undo' ? history.redo : history.undo
-    const restored = from.pop()
-    const updated = restored ? { ...stored, ...restored } : stored
-    if (restored) {
-      to.push(snapshotOf(stored))
-      parkedHistory.current.set(id, history)
-      writeProject(id, updated)
-    }
-    return { problems: findProblems(asBuilt(updated)) }
-  }
-
-  /** An undoable agent change to the netlist or schematic of the shown tab or a hidden one. */
-  const applyAgentChange = (id: string, stored: Project, changes: Partial<Snapshot>) => {
+  /** An undoable agent change to the shown tab or a hidden one. Returns the changed project. */
+  const applyAgentChange = (id: string, stored: Project, changes: Partial<Snapshot>): Project => {
     if (id === activeIdRef.current) {
       rememberEdit()
       restore({ ...snapshotOf(projectRef.current), ...changes })
-      return
+      return projectRef.current
     }
-    const history = parkedHistory.current.get(id) ?? { undo: [], redo: [] }
-    parkedHistory.current.set(id, { undo: [...history.undo.slice(-(UNDO_LIMIT - 1)), snapshotOf(stored)], redo: [] })
-    writeProject(id, { ...stored, ...changes })
+    parkedHistory.current.set(id, withEdit(parkedHistory.current.get(id) ?? NO_HISTORY, snapshotOf(stored)))
+    const updated = { ...stored, ...changes }
+    writeProject(id, updated)
+    return updated
   }
 
   const handleAgentCommand = useRef<(command: string, args: Record<string, unknown>) => unknown>(() => undefined)
@@ -461,11 +415,11 @@ export function App() {
         return canvasToPng(svg, bounds).then((png) => ({ png }))
       }
       case 'undo':
-      case 'redo':
-        if (!shown) return undoHiddenTab(targetId, stored, command)
-        if (command === 'undo') undo()
-        else redo()
+      case 'redo': {
+        if (!shown) return { problems: findProblems(asBuilt(stepHiddenTab(targetId, stored, command))) }
+        stepShownTab(command)
         return { problems: findProblems(asBuilt(projectRef.current)) }
+      }
       case 'get_schematic':
         return describeSchematic(stored)
       case 'set_schematic':
@@ -482,8 +436,7 @@ export function App() {
         return describeSchematic({ ...stored, schematic: next })
       }
       case 'update_pcb': {
-        const updated = withSchematicNets(stored)
-        applyAgentChange(targetId, stored, snapshotOf(updated))
+        const updated = applyAgentChange(targetId, stored, snapshotOf(withSchematicNets(stored)))
         return { problems: findProblems(asBuilt(updated)) }
       }
       case 'get_definitions':
@@ -509,10 +462,9 @@ export function App() {
         return { components: netlist.components.map((c) => ({ ref: c.ref, value: c.value })) }
       }
     }
-    const next = agentLayoutEdit(command, args, current, stored.netlist)
-    if (!shown) return editHiddenTab(targetId, stored, next)
-    if (command === 'run_optimizer') setFitRequest((n) => n + 1)
-    return applyAgentEdit(next)
+    const updated = applyAgentChange(targetId, stored, { layout: agentLayoutEdit(command, args, current, stored.netlist) })
+    if (shown && command === 'run_optimizer') setFitRequest((n) => n + 1)
+    return { problems: findProblems(asBuilt(updated)) }
   }
 
   useEffect(
@@ -564,10 +516,8 @@ export function App() {
   /** Saves the shown project and its undo history, then shows `id` with its own. */
   const showTab = (id: string, next: Project) => {
     writeProject(activeId, projectRef.current)
-    parkedHistory.current.set(activeId, { undo: undoStack.current, redo: redoStack.current })
-    const history = parkedHistory.current.get(id)
-    undoStack.current = history?.undo ?? []
-    redoStack.current = history?.redo ?? []
+    parkedHistory.current.set(activeId, history.current)
+    history.current = parkedHistory.current.get(id) ?? NO_HISTORY
     parkedHistory.current.delete(id)
     projectRef.current = next
     setProject(next)
@@ -738,8 +688,7 @@ export function App() {
       const fresh = [{ id, name: created.name }]
       setTabs(fresh)
       writeTabs(fresh)
-      undoStack.current = []
-      redoStack.current = []
+      history.current = NO_HISTORY
       projectRef.current = created
       setProject(created)
       setSelection(null)
@@ -794,8 +743,7 @@ export function App() {
     try {
       setProject((p) => projectFromNetlist(name, text, p, keepLayout))
       // Old layouts belong to the old netlist.
-      undoStack.current = []
-      redoStack.current = []
+      history.current = NO_HISTORY
       setSelection(null)
       setError('')
       setFitRequest((n) => n + 1)
