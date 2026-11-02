@@ -1,7 +1,7 @@
 import { boundsOf, inflate, rectsOverlap, segmentsCross } from '../geometry'
-import { bodyBounds, componentGeometry, defaultLeadEnds, onCopper, solderPoint, toLocal, toWorld, type Geometry } from '../layout'
+import { bodyBounds, defaultLeadEnds, onCopper, solderPoint, toLocal, toWorld, type Geometry } from '../layout'
 import { isRealNet, naturalCompare } from '../netlist'
-import type { Island, NetComponent, Netlist, Placement, Point, Rect, Settings } from '../types'
+import type { BuiltComponent, BuiltNetlist, Island, NetComponent, Netlist, Placement, Point, Rect, Settings } from '../types'
 
 export function componentNets(component: NetComponent): string[] {
   return [...new Set(component.pins.map((p) => p.net).filter(isRealNet))].sort(naturalCompare)
@@ -39,7 +39,7 @@ export function spiralOffsets(radius: number, step: number): Point[] {
 
 /** A component placed by the optimizer, with its unbent lead ends in world coordinates. */
 export interface PlacedPart {
-  component: NetComponent
+  component: BuiltComponent
   geometry: Geometry
   placement: Placement
   ends: Point[]
@@ -66,18 +66,18 @@ const SEARCH_RADII = [15, 30, 60, 120, 240]
  * Busy nets (ground, supply) connect almost everything, so a shared net counts for less the more
  * pins it has. Two parts sharing a private two-pin net are the most closely related.
  */
-function placementOrder(netlist: Netlist): NetComponent[] {
+function placementOrder(netlist: BuiltNetlist): BuiltComponent[] {
   const pinCounts = netPinCounts(netlist)
   const netWeight = (net: string) => 1 / Math.max(1, (pinCounts.get(net) ?? 2) - 1)
-  const link = (a: NetComponent, b: NetComponent) => {
+  const link = (a: BuiltComponent, b: BuiltComponent) => {
     const nets = new Set(componentNets(b))
     return componentNets(a).reduce((sum, net) => sum + (nets.has(net) ? netWeight(net) : 0), 0)
   }
-  const totalLink = (c: NetComponent, others: NetComponent[]) =>
+  const totalLink = (c: BuiltComponent, others: BuiltComponent[]) =>
     others.reduce((sum, o) => sum + (o === c ? 0 : link(c, o)), 0)
   const remaining = [...netlist.components].sort((a, b) => b.pins.length - a.pins.length || naturalCompare(a.ref, b.ref))
 
-  const order: NetComponent[] = []
+  const order: BuiltComponent[] = []
   let first = 0
   for (let k = 1; k < remaining.length; k++) {
     if (totalLink(remaining[k], remaining) > totalLink(remaining[first], remaining)) first = k
@@ -104,14 +104,14 @@ export interface PlacementOptions {
  * crossing of those connections. Bodies plus leads never overlap and keep `settings.clearance`
  * apart; the search radius grows until a free spot is found, so that always holds.
  */
-export function placeComponents(netlist: Netlist, settings: Settings, options: PlacementOptions = {}): PlacedPart[] {
+export function placeComponents(netlist: BuiltNetlist, settings: Settings, options: PlacementOptions = {}): PlacedPart[] {
   const { step = 1, rotations = ROTATIONS } = options
   const placed: PlacedPart[] = []
   const netEnds = new Map<string, Point[]>()
   const connections: [Point, Point][] = []
 
   for (const component of placementOrder(netlist)) {
-    const geometry = componentGeometry(component)
+    const { geometry } = component
     const localEnds = defaultLeadEnds(geometry)
     const nets = component.pins.map((p) => (isRealNet(p.net) ? p.net : null))
     const target = placementTarget(nets, netEnds, placed, step)
@@ -162,13 +162,13 @@ export function placeComponents(netlist: Netlist, settings: Settings, options: P
  * first). Same collision rules as placeComponents; each lead that misses its island is bent onto
  * it, and a lead may never end on another net's copper.
  */
-export function placeOnIslands(netlist: Netlist, islands: Island[], settings: Settings): Placement[] {
+export function placeOnIslands(netlist: BuiltNetlist, islands: Island[], settings: Settings): Placement[] {
   const islandsByNet = new Map(islands.map((i) => [i.net, i]))
   const placed: PlacedPart[] = []
   const placements: Placement[] = []
 
   for (const component of placementOrder(netlist)) {
-    const geometry = componentGeometry(component)
+    const { geometry } = component
     const localEnds = defaultLeadEnds(geometry)
     const limit = leadLimit(geometry, settings)
     const nets = component.pins.map((p) => (isRealNet(p.net) ? p.net : null))

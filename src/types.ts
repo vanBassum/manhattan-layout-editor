@@ -13,14 +13,18 @@ export interface NetComponent {
   /** Package name as given by the netlist, e.g. "TO-126-3_L7.6-W2.7-P2.30-L". May be empty. */
   footprint: string
   pins: Pin[]
-  /** Key into the project's `definitions`. Missing until the project is first saved: then a built-in template is picked. */
+  /** Key into the project's `definitions`. Missing for a new part until withDefinitions picks one. */
   definition?: string
-  /**
-   * Resolved from the definition by `buildNetlist`, only on a built netlist and never stored:
-   * the footprint geometry for the chosen footprint and the schematic symbol.
-   */
-  geometry?: Geometry
-  symbol?: SymbolDefinition
+}
+
+/**
+ * A part as `buildNetlist` makes it: the footprint chosen in the editor applied, and the footprint
+ * geometry and schematic symbol taken from its definition. Never stored. Drawing, checks and
+ * optimizers take built parts, so they cannot be handed a part without its definition applied.
+ */
+export interface BuiltComponent extends NetComponent {
+  geometry: Geometry
+  symbol: SymbolDefinition
 }
 
 // ---------- Component definitions ----------
@@ -85,6 +89,10 @@ export interface ComponentDefinition {
 export interface Netlist {
   components: NetComponent[]
   nets: string[]
+}
+
+export interface BuiltNetlist extends Netlist {
+  components: BuiltComponent[]
 }
 
 export interface Point {
@@ -209,6 +217,11 @@ export interface Project {
   /** The project's own component definitions, keyed by the id in each component's `definition`. */
   definitions?: Record<string, ComponentDefinition>
   settings: Settings
+}
+
+/** A project with its netlist built (see BuiltComponent), as checks and agent edits read it. */
+export interface BuiltProject extends Project {
+  netlist: BuiltNetlist
 }
 
 /**

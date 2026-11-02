@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { Canvas, type Layers } from './Canvas'
 import { findSpacingViolations, findSplitNets } from './layout'
 import { canvasToPng } from './screenshot'
-import type { Layout, Netlist, Rect } from './types'
+import type { BuiltNetlist, Layout, Rect } from './types'
 
 const SHOWN = { visible: true, opacity: 1 }
 const ALL_LAYERS: Layers = { islands: SHOWN, parts: SHOWN, netLabels: SHOWN, leads: SHOWN, grid: SHOWN }
@@ -13,7 +13,7 @@ const ignore = () => {}
  * Screenshot of a project that is not on screen: draws it with the same Canvas, off-screen, so
  * the picture matches what the editor would show for that tab.
  */
-export async function screenshotHidden(netlist: Netlist, layout: Layout, isolation: number, bounds: Rect): Promise<string> {
+export async function screenshotHidden(netlist: BuiltNetlist, layout: Layout, isolation: number, bounds: Rect): Promise<string> {
   const host = document.createElement('div')
   host.style.cssText = 'position: fixed; left: -10000px; top: 0; width: 800px; height: 600px; display: flex'
   host.setAttribute('aria-hidden', 'true')

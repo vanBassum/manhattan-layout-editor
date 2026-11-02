@@ -3,7 +3,7 @@
 // such a layout becomes the islands its cuts gave, which every editing mode can work on.
 
 import { buildNetlist } from './definitions'
-import { componentGeometry, defaultLeadEnds, toWorld } from './layout'
+import { defaultLeadEnds, toWorld } from './layout'
 import { islandsFromCuts } from './raster'
 import type { CutBoard, Layout, Project } from './types'
 
@@ -22,7 +22,7 @@ export function withoutCutLines(project: Project): Project {
   const leadEnds = layout.placements.flatMap((placement) => {
     const component = components.get(placement.ref)
     if (!component) return []
-    const defaults = defaultLeadEnds(componentGeometry(component))
+    const defaults = defaultLeadEnds(component.geometry)
     return component.pins.map((pin, k) => ({ net: pin.net, end: toWorld(placement.leads?.[pin.number] ?? defaults[k], placement) }))
   })
   // Copper no lead reaches had no net; it is left out.

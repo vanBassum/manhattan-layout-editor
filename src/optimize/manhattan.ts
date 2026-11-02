@@ -1,7 +1,7 @@
 import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid } from '../geometry'
 import { onCopper, solderPoint, toLocal, toWorld } from '../layout'
 import { isRealNet, naturalCompare } from '../netlist'
-import type { Island, Netlist, Point, Rect, Settings } from '../types'
+import type { BuiltNetlist, Island, Point, Rect, Settings } from '../types'
 import type { Strategy } from './index'
 import { leadCost, leadLimit, netPinCounts, placeComponents, spiralOffsets, type PlacedPart } from './common'
 
@@ -52,7 +52,7 @@ const median = (values: number[]) => {
  * goes where its leads reach it most easily without touching other leads or pads, and leads are
  * bent onto their pad. Ground leads solder straight to the board.
  */
-function manhattanLayout(netlist: Netlist, settings: Settings) {
+function manhattanLayout(netlist: BuiltNetlist, settings: Settings) {
   const pinCounts = netPinCounts(netlist)
   const busiest = [...netlist.nets].sort((a, b) => (pinCounts.get(b) ?? 0) - (pinCounts.get(a) ?? 0))[0]
   const ground = netlist.nets.find((net) => GROUND_NAMES.test(net)) ?? busiest

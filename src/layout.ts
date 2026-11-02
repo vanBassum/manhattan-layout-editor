@@ -1,7 +1,7 @@
 import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint } from './geometry'
 import { footprintPinCount } from './footprints'
 import { isRealNet } from './netlist'
-import type { Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
+import type { BuiltComponent, BuiltNetlist, Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
 
 const PITCH = 2.54
 const ISLAND_WIDTH = 12
@@ -184,11 +184,6 @@ function defaultLeadLength(shape: Shape, footprint: string, body: Rect): number 
   return PITCH
 }
 
-/** The part's footprint geometry: from its definition on a built netlist, else the built-in template. */
-export function componentGeometry(component: NetComponent): Geometry {
-  return component.geometry ?? generatedGeometry(component)
-}
-
 /** The built-in footprint template, read from the footprint name (and reference and pin count when it says too little). */
 export function generatedGeometry(component: NetComponent): Geometry {
   const shape = shapeOf(component)
@@ -271,12 +266,12 @@ function contactIslands(islands: Island[], p: Point, isolation: number): Island[
 
 /** Leads keep their shape relative to the body; the netlist decides which island each should reach. */
 export function analyzeLeads(
-  component: NetComponent,
+  component: BuiltComponent,
   placement: Placement,
   islands: Island[],
   isolation: number,
-  geometry = componentGeometry(component),
 ): LeadInfo[] {
+  const { geometry } = component
   const defaults = defaultLeadEnds(geometry)
   return component.pins.map((pin, k) => {
     const anchor = toWorld(geometry.anchors[k], placement)
@@ -295,7 +290,7 @@ export function analyzeLeads(
  * Grid placement. Islands and placements from `previous` whose net/ref still exist are kept as-is,
  * so re-importing an edited netlist does not destroy manual work.
  */
-export function createLayout(netlist: Netlist, previous?: Layout): Layout {
+export function createLayout(netlist: BuiltNetlist, previous?: Layout): Layout {
   const keptIslands = (previous?.islands ?? []).filter((i) => netlist.nets.includes(i.net))
   const components = new Map(netlist.components.map((c) => [c.ref, c]))
   const keptPlacements = (previous?.placements ?? []).flatMap((p) => {
@@ -324,7 +319,7 @@ export function createLayout(netlist: Netlist, previous?: Layout): Layout {
   }))
 
   const newParts = netlist.components.filter((c) => !keptPlacements.some((p) => p.ref === c.ref))
-  const bodies = newParts.map((c) => componentGeometry(c).body)
+  const bodies = newParts.map((c) => c.geometry.body)
   const cellWidth = Math.max(10, ...bodies.map((b) => b.w + 4)) + PART_SPACING
   const cellHeight = Math.max(6, ...bodies.map((b) => b.h)) + PART_SPACING
   const partColumns = Math.max(1, Math.ceil(Math.sqrt(newParts.length)))
@@ -344,7 +339,7 @@ export function createLayout(netlist: Netlist, previous?: Layout): Layout {
  * disappeared moves over to the new net that took most of its pins, so renaming a net or joining
  * two keeps the copper; parts and nets that are new get a spot on the grid.
  */
-export function followNetlist(layout: Layout, before: Netlist, after: Netlist): Layout {
+export function followNetlist(layout: Layout, before: Netlist, after: BuiltNetlist): Layout {
   const pinsOf = (netlist: Netlist) => {
     const pins = new Map<string, Set<string>>()
     for (const c of netlist.components) {

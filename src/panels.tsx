@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LayerName, LayerView } from './Canvas'
-import { componentGeometry } from './layout'
 import type { SchematicLayer } from './SchematicView'
 import { labelSymbol } from './schematic'
 import { selectedRefs, selectedWiring, toggleSelected } from './selection'
-import type { LabelSymbol, Layout, NetComponent, NetLabel, Netlist, Placement, Selection } from './types'
+import type { BuiltComponent, BuiltNetlist, LabelSymbol, Layout, NetLabel, Placement, Selection } from './types'
 
 const ICON_PATHS = {
   app: 'M4 4h6v6H4z M14 14h6v6h-6z M10 7h4v10 M7 10v7h7',
@@ -166,7 +165,7 @@ export function LayerToggles<Name extends string>({ info, layers, onChange, opac
 }
 
 interface ComponentListProps {
-  netlist: Netlist
+  netlist: BuiltNetlist
   selection: Selection
   onSelect: (selection: Selection) => void
   /** The PCB list has an Issues filter and a footprint button; the schematic list only searches. */
@@ -180,9 +179,9 @@ interface ComponentListProps {
 const NO_ISSUES: ReadonlySet<string> = new Set()
 
 /** Short package description for the component list, e.g. "TO-92", "1206" or "Radial". */
-function packageLabel(component: NetComponent): string {
+function packageLabel(component: BuiltComponent): string {
   const chip = component.footprint.match(/(0201|0402|0603|0805|1206|1210|2512)/)?.[1]
-  switch (componentGeometry(component).shape) {
+  switch (component.geometry.shape) {
     case 'smd': return chip ?? 'SMD'
     case 'to92': return 'TO-92'
     case 'to126': return 'TO-126'
@@ -338,7 +337,7 @@ function MultiSelection({ refs, nets }: { refs: string[]; nets: string[] }) {
   )
 }
 
-function PartCard({ component }: { component: NetComponent }) {
+function PartCard({ component }: { component: BuiltComponent }) {
   return (
     <div className="selection-card">
       <span className={`kind-badge large kind-${refPrefix(component.ref).charAt(0)}`} aria-hidden="true">
@@ -354,7 +353,7 @@ function PartCard({ component }: { component: NetComponent }) {
 
 interface PartPropertiesProps {
   /** With the schematic's nets. */
-  netlist: Netlist
+  netlist: BuiltNetlist
   /** The schematic's labels, which a selection names by index. */
   labels: NetLabel[]
   selection: Selection
@@ -448,7 +447,7 @@ export function SchematicCheck({ shorts, openPins, pinsNotInPcb, onUpdatePcb }: 
 }
 
 interface SelectionDetailsProps {
-  netlist: Netlist
+  netlist: BuiltNetlist
   layout: Layout
   selection: Selection
   onPlacementChange: (ref: string, changes: Partial<Pick<Placement, 'x' | 'y' | 'rotation'>>) => void

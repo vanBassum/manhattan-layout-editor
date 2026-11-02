@@ -4,10 +4,10 @@
 import { buildNetlist, withAssignedDefinition } from './definitions'
 import { footprintPinCount } from './footprints'
 import { boundsOf } from './geometry'
-import { analyzeLeads, bodyBounds, changeFootprints, componentGeometry, createLayout, findSpacingViolations, findSplitNets, toLocal, toWorld } from './layout'
+import { analyzeLeads, bodyBounds, changeFootprints, createLayout, findSpacingViolations, findSplitNets, toLocal, toWorld } from './layout'
 import { isRealNet, naturalCompare } from './netlist'
 import { agentPlacements, completeSchematic, pinEnds } from './schematic'
-import type { Island, Layout, NetComponent, NetLabel, Netlist, Pin, Placement, Point, Project, Rect, Schematic } from './types'
+import type { BuiltComponent, BuiltProject, Island, Layout, NetLabel, Netlist, Pin, Placement, Point, Project, Rect, Schematic } from './types'
 
 const round = (v: number) => Math.round(v * 100) / 100
 const roundPoint = (p: Point) => ({ x: round(p.x), y: round(p.y) })
@@ -20,7 +20,7 @@ export interface Problems {
   splitNets: string[]
 }
 
-export function findProblems(project: Project): Problems {
+export function findProblems(project: BuiltProject): Problems {
   const problems: Problems = {
     openPins: [],
     shortedPins: [],
@@ -37,7 +37,7 @@ export function findProblems(project: Project): Problems {
   return problems
 }
 
-function placedComponents(project: Project) {
+function placedComponents(project: BuiltProject) {
   return project.layout.placements.flatMap((placement) => {
     const component = project.netlist.components.find((c) => c.ref === placement.ref)
     return component ? [{ component, placement }] : []
@@ -45,9 +45,9 @@ function placedComponents(project: Project) {
 }
 
 /** Bounding box of all copper and components. */
-export function layoutBounds(project: Project): Rect | null {
+export function layoutBounds(project: BuiltProject): Rect | null {
   const parts = placedComponents(project).map(({ component, placement }) => {
-    const geometry = componentGeometry(component)
+    const { geometry } = component
     return bodyBounds(geometry, placement, geometry.anchors)
   })
   const lead = placedComponents(project).flatMap(({ component, placement }) =>
@@ -56,7 +56,7 @@ export function layoutBounds(project: Project): Rect | null {
   return boundsOf([...project.layout.islands.flatMap((i) => i.rects), ...parts, ...lead])
 }
 
-export function describeProject(project: Project) {
+export function describeProject(project: BuiltProject) {
   const { netlist, layout, settings } = project
   return {
     project: { guid: project.guid, name: project.name },
@@ -76,10 +76,10 @@ export function describeProject(project: Project) {
       }
     }),
     components: placedComponents(project).map(({ component, placement }) => {
-      const geometry = componentGeometry(component)
+      const { geometry } = component
       const { x, y, w, h } = geometry.body
       const corners = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }]
-      const leads = analyzeLeads(component, placement, layout.islands, settings.isolation, geometry)
+      const leads = analyzeLeads(component, placement, layout.islands, settings.isolation)
       return {
         ref: component.ref,
         value: component.value,
@@ -122,13 +122,13 @@ function numberArg(args: Args, name: string): number {
 
 const optionalNumberArg = (args: Args, name: string) => (args[name] === undefined ? undefined : numberArg(args, name))
 
-function requireComponent(project: Project, ref: string): { component: NetComponent; placement: Placement } {
+function requireComponent(project: BuiltProject, ref: string): { component: BuiltComponent; placement: Placement } {
   const found = placedComponents(project).find(({ component }) => component.ref === ref)
   if (!found) throw new Error(`No component "${ref}". Known: ${project.netlist.components.map((c) => c.ref).join(', ')}`)
   return found
 }
 
-function requireIsland(project: Project, net: string): Island {
+function requireIsland(project: BuiltProject, net: string): Island {
   const island = project.layout.islands.find((i) => i.net === net)
   if (!island) throw new Error(`No island for net "${net}". Known: ${project.layout.islands.map((i) => i.net).join(', ')}`)
   return island
@@ -144,7 +144,7 @@ const replaceIsland = (layout: Layout, island: Island): Layout => ({
   islands: layout.islands.map((i) => (i.net === island.net ? island : i)),
 })
 
-export function moveComponent(project: Project, args: Args): Layout {
+export function moveComponent(project: BuiltProject, args: Args): Layout {
   const { placement } = requireComponent(project, stringArg(args, 'ref'))
   return replacePlacement(project.layout, {
     ...placement,
@@ -154,7 +154,7 @@ export function moveComponent(project: Project, args: Args): Layout {
   })
 }
 
-export function setLeadEnd(project: Project, args: Args): Layout {
+export function setLeadEnd(project: BuiltProject, args: Args): Layout {
   const { component, placement } = requireComponent(project, stringArg(args, 'ref'))
   const pin = stringArg(args, 'pin')
   if (!component.pins.some((p) => p.number === pin)) {
@@ -164,12 +164,12 @@ export function setLeadEnd(project: Project, args: Args): Layout {
   return replacePlacement(project.layout, { ...placement, leads: { ...placement.leads, [pin]: end } })
 }
 
-export function resetLeads(project: Project, args: Args): Layout {
+export function resetLeads(project: BuiltProject, args: Args): Layout {
   const { placement } = requireComponent(project, stringArg(args, 'ref'))
   return replacePlacement(project.layout, { ...placement, leads: undefined })
 }
 
-export function setIsland(project: Project, args: Args): Layout {
+export function setIsland(project: BuiltProject, args: Args): Layout {
   const island = requireIsland(project, stringArg(args, 'net'))
   const rects = args.rects
   if (!Array.isArray(rects) || rects.length === 0) throw new Error('"rects" must be a non-empty array')
@@ -181,7 +181,7 @@ export function setIsland(project: Project, args: Args): Layout {
   return replaceIsland(project.layout, { ...island, rects: parsed })
 }
 
-export function moveIsland(project: Project, args: Args): Layout {
+export function moveIsland(project: BuiltProject, args: Args): Layout {
   const island = requireIsland(project, stringArg(args, 'net'))
   const dx = numberArg(args, 'dx')
   const dy = numberArg(args, 'dy')
@@ -193,7 +193,7 @@ export function moveIsland(project: Project, args: Args): Layout {
  * `imported` is the netlist without footprint choices. Library footprints must match each part's pin
  * count; other footprint names cannot be checked and are accepted as given.
  */
-export function setFootprint(project: Project, imported: Netlist, args: Args): Layout {
+export function setFootprint(project: BuiltProject, imported: Netlist, args: Args): Layout {
   const refs = args.refs
   if (!Array.isArray(refs) || refs.length === 0 || refs.some((ref) => typeof ref !== 'string')) {
     throw new Error('"refs" must be a non-empty array of component references')
@@ -244,14 +244,14 @@ export function addComponent(project: Project, args: Args): Pick<Project, 'netli
   let netlist: Netlist = { components, nets: [...nets].sort(naturalCompare) }
   // Refuses a definition that lacks one of the pins.
   if (definitionId !== undefined) netlist = withAssignedDefinition(netlist, project.definitions, [ref], definitionId)
-  const layout = createLayout(netlist, project.layout)
+  const built = buildNetlist(netlist, project.layout.placements, project.definitions)
+  const layout = createLayout(built, project.layout)
 
   const placed = args.x === undefined && args.y === undefined ? [] : agentPlacements(netlist, [{ ...args, ref }])
   let schematic: Schematic | undefined =
     project.schematic || placed.length > 0 ? { ...project.schematic, placements: [...(project.schematic?.placements ?? []), ...placed] } : undefined
   // A schematic without labels of its own labels every pin from the netlist already.
   if (schematic?.labels) {
-    const built = buildNetlist(netlist, layout.placements, project.definitions)
     const full = completeSchematic(built, schematic)
     const index = built.components.findIndex((c) => c.ref === ref)
     const ends = pinEnds(built.components[index], full.placements[index])
@@ -261,7 +261,7 @@ export function addComponent(project: Project, args: Args): Pick<Project, 'netli
   return { netlist, layout, schematic }
 }
 
-const BATCH_EDITS: Record<string, (project: Project, args: Args) => Layout> = {
+const BATCH_EDITS: Record<string, (project: BuiltProject, args: Args) => Layout> = {
   move_component: moveComponent,
   set_lead_end: setLeadEnd,
   reset_leads: resetLeads,
@@ -270,7 +270,7 @@ const BATCH_EDITS: Record<string, (project: Project, args: Args) => Layout> = {
 }
 
 /** Applies several edits in order, each seeing the result of the previous one. All or nothing. */
-export function applyBatch(project: Project, args: Args): Layout {
+export function applyBatch(project: BuiltProject, args: Args): Layout {
   const edits = args.edits
   if (!Array.isArray(edits) || edits.length === 0) throw new Error('"edits" must be a non-empty array')
   let layout = project.layout

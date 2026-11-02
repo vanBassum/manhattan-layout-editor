@@ -1,18 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { BodyShape } from './Canvas'
+import { buildNetlist } from './definitions'
 import { FOOTPRINT_LIBRARY, type FootprintCategory, type LibraryFootprint } from './footprints'
 import { boundsOf } from './geometry'
-import { componentGeometry, defaultLeadEnds } from './layout'
+import { defaultLeadEnds } from './layout'
 import { Icon } from './panels'
-import type { NetComponent, Netlist, Point, Rect } from './types'
+import type { BuiltComponent, BuiltNetlist, NetComponent, Netlist, Point, Project, Rect } from './types'
 
 /** A library footprint, or each part's own footprint from the netlist. */
 type Choice = LibraryFootprint | 'netlist'
 
 interface FootprintGroup {
   footprint: string
-  parts: NetComponent[]
+  parts: BuiltComponent[]
 }
+
+/** The part as the editor would build it with `footprint`: from its definition where that has the footprint. */
+const builtWith = (part: NetComponent, footprint: string, definitions: Project['definitions']): BuiltComponent =>
+  buildNetlist({ components: [{ ...part, footprint }], nets: [] }, [], definitions).components[0]
 
 const CATEGORY_TABS: ('All' | FootprintCategory)[] = ['All', 'Resistors', 'Capacitors', 'Transistors', 'Diodes']
 const COPPER = '#d9945a'
@@ -21,8 +26,8 @@ const PAD_HEIGHT = 3
 /** How far the outer pads reach beyond the outermost lead ends. */
 const PAD_OVERHANG = 1.5
 
-function groupByFootprint(components: NetComponent[]): FootprintGroup[] {
-  const groups = new Map<string, NetComponent[]>()
+function groupByFootprint(components: BuiltComponent[]): FootprintGroup[] {
+  const groups = new Map<string, BuiltComponent[]>()
   for (const c of components) {
     const parts = groups.get(c.footprint)
     if (parts) parts.push(c)
@@ -57,8 +62,8 @@ function padsFor(ends: Point[], isolation: number): Rect[] {
   })
 }
 
-function drawingOf(component: NetComponent, isolation?: number) {
-  const geometry = componentGeometry(component)
+function drawingOf(component: BuiltComponent, isolation?: number) {
+  const { geometry } = component
   const ends = defaultLeadEnds(geometry)
   const pads = isolation === undefined ? [] : padsFor(ends, isolation)
   const bounds = boundsOf([geometry.body, ...pads, ...ends.map((e) => ({ ...e, w: 0, h: 0 }))])!
@@ -66,7 +71,7 @@ function drawingOf(component: NetComponent, isolation?: number) {
 }
 
 interface FootprintDrawingProps {
-  component: NetComponent
+  component: BuiltComponent
   /** Draws copper pads with this isolation gap between them. */
   isolation?: number
   /** Area to show, so drawings side by side share one scale; defaults to the drawing's own bounds. */
@@ -98,8 +103,8 @@ function FootprintDrawing({ component, isolation, frame, className }: FootprintD
   )
 }
 
-function sizeText(component: NetComponent): string {
-  const { body } = componentGeometry(component)
+function sizeText(component: BuiltComponent): string {
+  const { body } = component.geometry
   return `${mm(body.w)} × ${mm(body.h)} mm body, ${component.pins.length} pins`
 }
 
@@ -120,16 +125,18 @@ function GroupCheckbox({ checked, mixed, onChange, label }: { checked: boolean; 
 
 interface FootprintDialogProps {
   /** Components as built, so each shows its current footprint. */
-  built: Netlist
+  built: BuiltNetlist
   /** Components as imported, for going back to the netlist footprint. */
   imported: Netlist
+  /** The project's definitions, which decide what a part looks like with another footprint. */
+  definitions: Project['definitions']
   initialRefs: string[]
   isolation: number
   onApply: (refs: ReadonlySet<string>, footprint: string | undefined) => void
   onClose: () => void
 }
 
-export function FootprintDialog({ built, imported, initialRefs, isolation, onApply, onClose }: FootprintDialogProps) {
+export function FootprintDialog({ built, imported, definitions, initialRefs, isolation, onApply, onClose }: FootprintDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   useEffect(() => dialogRef.current?.showModal(), [])
 
@@ -143,6 +150,7 @@ export function FootprintDialog({ built, imported, initialRefs, isolation, onApp
   const checkedParts = groups.flatMap((g) => g.parts.filter((c) => checked.has(c.ref)))
   const checkedGroups = groups.filter((g) => g.parts.some((c) => checked.has(c.ref)))
   const pinCounts = new Set(checkedParts.map((c) => c.pins.length))
+  const importedByRef = new Map(imported.components.map((c) => [c.ref, c]))
   const netlistFootprints = new Map(imported.components.map((c) => [c.ref, c.footprint]))
 
   const targetOf = (part: NetComponent, target: Choice) =>
@@ -181,7 +189,8 @@ export function FootprintDialog({ built, imported, initialRefs, isolation, onApp
   }
 
   const currentPart = checkedParts[0]
-  const newPart = currentPart && choice ? { ...currentPart, footprint: targetOf(currentPart, choice) } : undefined
+  const newPart =
+    currentPart && choice ? builtWith(importedByRef.get(currentPart.ref) ?? currentPart, targetOf(currentPart, choice), definitions) : undefined
   // Both previews share one frame, so their sizes compare at a glance.
   const previewFrame = currentPart
     ? boundsOf([currentPart, newPart].flatMap((c) => (c ? [drawingOf(c, isolation).bounds] : [])))!
@@ -290,7 +299,11 @@ export function FootprintDialog({ built, imported, initialRefs, isolation, onApp
                 >
                   <FootprintDrawing
                     className="card-preview"
-                    component={{ ref: 'X1', value: '', footprint: f.id, pins: Array.from({ length: f.pins }, (_, k) => ({ number: String(k + 1), net: '' })) }}
+                    component={builtWith(
+                      { ref: 'X1', value: '', footprint: '', pins: Array.from({ length: f.pins }, (_, k) => ({ number: String(k + 1), net: '' })) },
+                      f.id,
+                      undefined,
+                    )}
                   />
                   <span className="card-label">{f.label}</span>
                   <span className="card-description">{reason ?? f.description}</span>

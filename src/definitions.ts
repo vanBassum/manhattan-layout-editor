@@ -1,6 +1,6 @@
 import { generatedGeometry, withFootprintChoices, type Geometry } from './layout'
 import { symbolTemplate } from './schematicSymbols'
-import type { ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, SymbolDefinition } from './types'
+import type { BuiltNetlist, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, SymbolDefinition } from './types'
 
 // A part's symbol and footprints come from the project's own definitions. Parts without one get a
 // built-in template, which is copied into the project when it is loaded or saved; until then the
@@ -45,35 +45,10 @@ const hasPins = (symbol: SymbolDefinition, component: NetComponent) => {
   return component.pins.every((p) => numbers.has(p.number))
 }
 
-/** The part's symbol: from its definition on a built netlist, else the built-in template. */
-export function componentSymbol(component: NetComponent): SymbolDefinition {
-  return component.symbol && hasPins(component.symbol, component) ? component.symbol : symbolTemplate(component).symbol
-}
-
 /** The definition a part refers to, if it exists and has all the part's pins. */
 function definitionOf(component: NetComponent, definitions: Definitions | undefined): ComponentDefinition | undefined {
   const definition = component.definition ? definitions?.[component.definition] : undefined
   return definition && hasPins(definition.symbol, component) ? definition : undefined
-}
-
-/**
- * The netlist as built: footprint choices applied, and each part's geometry and symbol taken from
- * its definition. This is what drawing, checks and optimizers work on; it is never stored.
- */
-export function buildNetlist(netlist: Netlist, placements: Placement[], definitions: Definitions | undefined): Netlist {
-  const chosen = withFootprintChoices(netlist, placements)
-  return {
-    ...chosen,
-    components: chosen.components.map((component) => {
-      const definition = definitionOf(component, definitions)
-      const footprint = definition?.footprints[component.footprint]
-      return {
-        ...component,
-        geometry: footprint && geometryFromFootprint(footprint, component),
-        symbol: definition?.symbol,
-      }
-    }),
-  }
 }
 
 /** The built-in template for a part, with no footprints yet; the id is shared by every part that fits it. */
@@ -93,6 +68,40 @@ function templateDefinition(component: NetComponent): { id: string; definition: 
 }
 
 /**
+ * The definition a part uses: its own when it fits, else the project's definition for the built-in
+ * template the part fits, else that template. withDefinitions stores exactly this choice, so a part
+ * looks the same before and after its project is saved.
+ */
+function resolvedDefinition(component: NetComponent, definitions: Definitions | undefined): { id: string; definition: ComponentDefinition } {
+  const own = definitionOf(component, definitions)
+  if (own) return { id: component.definition!, definition: own }
+  const template = templateDefinition(component)
+  // A same-named definition that does not fit this part (other pins) gets a part-specific twin.
+  const fits = !definitions?.[template.id] || definitionOf({ ...component, definition: template.id }, definitions)
+  const id = fits ? template.id : `${template.id}-${component.ref.toLowerCase()}`
+  return { id, definition: definitions?.[id] ?? template.definition }
+}
+
+/**
+ * The netlist as built: footprint choices applied, and each part's geometry and symbol taken from
+ * its definition. This is what drawing, checks and optimizers work on; it is never stored.
+ */
+export function buildNetlist(netlist: Netlist, placements: Placement[], definitions: Definitions | undefined): BuiltNetlist {
+  const chosen = withFootprintChoices(netlist, placements)
+  return {
+    ...chosen,
+    components: chosen.components.map((component) => {
+      const { definition } = resolvedDefinition(component, definitions)
+      const stored = definition.footprints[component.footprint]
+      // A footprint the definition does not have yet comes from the template, as withDefinitions will
+      // add it. One that lacks some of the part's pins cannot be used for it, so the template stands in.
+      const geometry = (stored && geometryFromFootprint(stored, component)) ?? generatedGeometry(component)
+      return { ...component, geometry, symbol: definition.symbol }
+    }),
+  }
+}
+
+/**
  * The project with a definition for every part and every footprint in use, taken from the
  * built-in templates where the project has none yet. Existing definitions are never changed.
  */
@@ -101,13 +110,10 @@ export function withDefinitions(project: Project): Project {
   const chosenFootprints = new Map(project.layout.placements.map((p) => [p.ref, p.footprint]))
   let changed = false
   const components = project.netlist.components.map((component) => {
-    let id = definitionOf(component, definitions) ? component.definition! : undefined
-    if (id === undefined) {
-      const template = templateDefinition(component)
-      // A same-named definition that does not fit this part (other pins) gets a part-specific twin.
-      const fits = !definitions[template.id] || definitionOf({ ...component, definition: template.id }, definitions)
-      id = fits ? template.id : `${template.id}-${component.ref.toLowerCase()}`
-      definitions[id] ??= template.definition
+    const { id, definition } = resolvedDefinition(component, definitions)
+    if (!definitions[id]) {
+      definitions[id] = definition
+      changed = true
     }
     for (const name of new Set([component.footprint, chosenFootprints.get(component.ref) ?? component.footprint])) {
       if (definitions[id].footprints[name]) continue

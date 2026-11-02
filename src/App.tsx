@@ -76,7 +76,7 @@ import {
   type FullSchematic,
 } from './schematic'
 import { SchematicView, type SchematicLayers, type SchematicTool } from './SchematicView'
-import type { Layout, NetLabel, Netlist, Placement, Project, SchematicPlacement, Selection, Settings } from './types'
+import type { BuiltProject, Layout, NetLabel, Netlist, Placement, Project, SchematicPlacement, Selection, Settings } from './types'
 import type { IconName } from './panels'
 import { ProjectTabs } from './ProjectTabs'
 import { NO_HISTORY, snapshotOf, stepHistory, withEdit, type History, type Snapshot } from './undoHistory'
@@ -196,14 +196,16 @@ function projectFromNetlist(name: string, text: string, current: Project, keepLa
         })),
       }
     : imported
+  const previousLayout = keepLayout ? current.layout : undefined
+  const definitions = keepLayout ? current.definitions : undefined
   return withDefinitions({
     guid: current.guid,
     name,
     netlist,
-    layout: createLayout(netlist, keepLayout ? current.layout : undefined),
+    layout: createLayout(buildNetlist(netlist, previousLayout?.placements ?? [], definitions), previousLayout),
     // Symbols stay where they were; wires and labels start over from the imported nets.
     schematic: keepLayout && current.schematic ? { placements: current.schematic.placements } : undefined,
-    definitions: keepLayout ? current.definitions : undefined,
+    definitions,
     settings: keepLayout ? current.settings : DEFAULT_SETTINGS,
   })
 }
@@ -221,7 +223,8 @@ function schematicNetsOf(project: Project) {
 /** The project with the PCB brought in line with the schematic: its nets, and islands that follow them. */
 function withSchematicNets(project: Project): Project {
   const { netlist } = schematicNetsOf(project)
-  return { ...project, netlist, layout: followNetlist(project.layout, project.netlist, netlist) }
+  const built = buildNetlist(netlist, project.layout.placements, project.definitions)
+  return { ...project, netlist, layout: followNetlist(project.layout, project.netlist, built) }
 }
 
 /** What an agent needs to draw wires: every pin end with its schematic net, the wires and labels, shorts, and what the PCB does not have yet. */
@@ -249,13 +252,13 @@ function describeSchematic(project: Project) {
 }
 
 /** The project with the editor's footprint choices applied: what drawing, checks and optimizers should see. */
-const asBuilt = (project: Project): Project => ({
+const asBuilt = (project: Project): BuiltProject => ({
   ...project,
   netlist: buildNetlist(project.netlist, project.layout.placements, project.definitions),
 })
 
 /** The layout after an agent's edit command. `current` is as built; `imported` is the netlist as imported. */
-function agentLayoutEdit(command: string, args: Record<string, unknown>, current: Project, imported: Netlist): Layout {
+function agentLayoutEdit(command: string, args: Record<string, unknown>, current: BuiltProject, imported: Netlist): Layout {
   switch (command) {
     case 'move_component':
       return moveComponent(current, args)
@@ -1450,6 +1453,7 @@ export function App() {
         <FootprintDialog
           built={builtNetlist}
           imported={netlist}
+          definitions={project.definitions}
           initialRefs={footprintDialogRefs}
           isolation={settings.isolation}
           onApply={applyFootprint}

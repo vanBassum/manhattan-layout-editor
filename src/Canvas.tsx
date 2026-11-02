@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from './geometry'
-import { analyzeLeads, bodyBounds, componentGeometry, toLocal, toWorld as toWorldPoint, type Geometry, type PinStatus } from './layout'
+import { analyzeLeads, bodyBounds, toLocal, toWorld as toWorldPoint, type Geometry, type PinStatus } from './layout'
 import { findCuts, MIN_RECT_SIZE, moveCut, type Cut } from './cuts'
 import { islandEdges, moveIslandEdge, type IslandEdge } from './raster'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
-import type { Island, Layout, Netlist, Placement, Point, Rect, Selection } from './types'
+import type { BuiltNetlist, Island, Layout, Placement, Point, Rect, Selection } from './types'
 import { gridPitch, Rulers, useViewport, ViewportGrid, type View } from './viewport'
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
@@ -96,7 +96,7 @@ export function layerOpacities(layers: Record<string, LayerView>): CSSProperties
 }
 
 interface Props {
-  netlist: Netlist
+  netlist: BuiltNetlist
   layout: Layout
   onLayoutChange: (update: (layout: Layout) => Layout) => void
   /** Called once per drag, just before its first change, so the drag can be undone as a whole. */
@@ -332,13 +332,12 @@ export function Canvas(props: Props) {
       layout.placements.flatMap((placement) => {
         const component = componentsByRef.get(placement.ref)
         if (!component) return []
-        const geometry = componentGeometry(component)
         return [
           {
             component,
             placement,
-            geometry,
-            leads: analyzeLeads(component, placement, layout.islands, isolation, geometry),
+            geometry: component.geometry,
+            leads: analyzeLeads(component, placement, layout.islands, isolation),
           },
         ]
       }),

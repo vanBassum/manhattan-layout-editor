@@ -16,7 +16,6 @@ import {
   type FullSchematic,
   type SchematicNets,
 } from './schematic'
-import { componentSymbol } from './definitions'
 import type { PinEnd } from './schematic'
 import type { SymbolGraphic } from './types'
 import {
@@ -31,7 +30,7 @@ import {
   toggleSchematicItem,
   type SchematicItem,
 } from './selection'
-import type { NetComponent, NetLabel, Netlist, Point, Rect, SchematicPlacement, Selection, Wire, WiringSelection } from './types'
+import type { BuiltComponent, BuiltNetlist, NetLabel, Point, Rect, SchematicPlacement, Selection, Wire, WiringSelection } from './types'
 import { gridPitch, useViewport, ViewportGrid, type View } from './viewport'
 import { layerOpacities, type LayerView } from './Canvas'
 
@@ -257,14 +256,14 @@ function SymbolHitShape({ graphic }: { graphic: SymbolGraphic }) {
 }
 
 /** Where the part's reference and value text starts, relative to its origin: moved by hand, or the symbol's own spot. */
-const textOffsetOf = (component: NetComponent, placement: SchematicPlacement): Point =>
-  placement.textOffset ?? rotatePoint(componentSymbol(component).label, placement.rotation)
+const textOffsetOf = (component: BuiltComponent, placement: SchematicPlacement): Point =>
+  placement.textOffset ?? rotatePoint(component.symbol.label, placement.rotation)
 
 /** Reference and value text moves in quarter grid steps: finer than parts, so it can be fitted between wires. */
 const TEXT_STEP = SCHEMATIC_GRID / 4
 
 interface PartProps {
-  component: NetComponent
+  component: BuiltComponent
   placement: SchematicPlacement
   pins: PinEnd[]
   selected: boolean
@@ -275,7 +274,7 @@ interface PartProps {
 
 /** The body rotates with the part; reference and value stay upright. Unconnected pins get an open circle. */
 function SchematicPart({ component, placement, pins, selected, onPointerDown, onTextPointerDown }: PartProps) {
-  const symbol = componentSymbol(component)
+  const { symbol } = component
   const { x, y, rotation } = placement
   const mirrored = placement.mirrored ?? false
   const textOffset = textOffsetOf(component, placement)
@@ -302,7 +301,7 @@ function SchematicPart({ component, placement, pins, selected, onPointerDown, on
 
 interface Props {
   /** As built, with the nets the schematic gives. */
-  netlist: Netlist
+  netlist: BuiltNetlist
   schematic: FullSchematic
   nets: SchematicNets
   onChange: (next: FullSchematic) => void
@@ -500,7 +499,7 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
   }
 
   /** Pressing a part's text selects the part; dragging moves only the text. */
-  const pressPartText = (e: ReactPointerEvent, component: NetComponent, placement: SchematicPlacement) => {
+  const pressPartText = (e: ReactPointerEvent, component: BuiltComponent, placement: SchematicPlacement) => {
     if (!selectToolOnly(e)) return
     e.stopPropagation()
     onSelect({ kind: 'part', ref: placement.ref })

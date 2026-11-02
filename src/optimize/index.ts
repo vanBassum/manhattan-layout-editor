@@ -1,4 +1,4 @@
-import type { Layout, Netlist, Settings } from '../types'
+import type { BuiltNetlist, Layout, Settings } from '../types'
 import { knifeStrategy } from './knife'
 import { manhattanStrategy } from './manhattan'
 
@@ -10,7 +10,7 @@ export interface Strategy {
   id: string
   label: string
   description: string
-  run: (netlist: Netlist, settings: Settings) => Layout
+  run: (netlist: BuiltNetlist, settings: Settings) => Layout
 }
 
 export const STRATEGIES: Strategy[] = [knifeStrategy, manhattanStrategy]

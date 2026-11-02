@@ -1,8 +1,7 @@
 import { rotatePoint, snapToGrid } from './geometry'
 import { isRealNet, naturalCompare } from './netlist'
-import { componentSymbol } from './definitions'
 import { NO_WIRING } from './selection'
-import type { LabelSymbol, NetComponent, NetLabel, Netlist, Point, Schematic, SchematicPlacement, Wire, WiringSelection } from './types'
+import type { BuiltComponent, BuiltNetlist, LabelSymbol, NetLabel, Netlist, Point, Schematic, SchematicPlacement, Wire, WiringSelection } from './types'
 
 /** A pin end in schematic coordinates, with the direction a wire leaves it. */
 export interface PinEnd extends Point {
@@ -51,9 +50,9 @@ export function flipped(placement: SchematicPlacement, axis: 'horizontal' | 'ver
 }
 
 /** Where a placed component's pins end, in the component's pin order, with their outward direction. */
-export function pinEnds(component: NetComponent, placement: SchematicPlacement): PinEnd[] {
-  // componentSymbol only returns a symbol that has every pin of the part.
-  const byNumber = new Map(componentSymbol(component).pins.map((p) => [p.number, p]))
+export function pinEnds(component: BuiltComponent, placement: SchematicPlacement): PinEnd[] {
+  // A built part's symbol has every pin of the part.
+  const byNumber = new Map(component.symbol.pins.map((p) => [p.number, p]))
   return component.pins.map(({ number }) => {
     const pin = byNumber.get(number)!
     const at = placedOffset(pin, placement)
@@ -86,7 +85,7 @@ function completePlacements(netlist: Netlist, schematic: Schematic | undefined):
  * gets a label with its net, so the schematic says exactly what the imported netlist says.
  * `built` is the netlist with footprint choices applied: a transistor's pins depend on its package.
  */
-export function completeSchematic(built: Netlist, schematic: Schematic | undefined): FullSchematic {
+export function completeSchematic(built: BuiltNetlist, schematic: Schematic | undefined): FullSchematic {
   const placements = completePlacements(built, schematic)
   const labels =
     schematic?.labels ??
@@ -152,7 +151,7 @@ export interface SchematicNets {
  * after its label; an unlabelled net of two or more pins after its first pin (e.g. "R4.2"), and a
  * pin connected to nothing gets no net.
  */
-export function deriveNets(netlist: Netlist, built: Netlist, schematic: FullSchematic): SchematicNets {
+export function deriveNets(netlist: Netlist, built: BuiltNetlist, schematic: FullSchematic): SchematicNets {
   const { find, union } = unionFind()
   const { wires, labels } = schematic
   const pins = built.components.flatMap((component, i) =>
@@ -265,7 +264,7 @@ const wireBetween = (a: Point, b: Point): Wire => ({ x1: a.x, y1: a.y, x2: b.x, 
  * The schematic after a move or drag. Every wire stays at its index, so a selection of wires still
  * names the same wires; wires that a drag adds (bends, bridges) come after them.
  */
-export function withSchematicMoved(schematic: FullSchematic, built: Netlist, move: SchematicMove): FullSchematic {
+export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist, move: SchematicMove): FullSchematic {
   const { wiring, delta, keepConnections } = move
   const shift = (p: Point): Point => ({ x: p.x + delta.x, y: p.y + delta.y })
   const components = new Map(built.components.map((c) => [c.ref, c]))
@@ -371,7 +370,7 @@ export function withSchematicMoved(schematic: FullSchematic, built: Netlist, mov
  * The schematic with some parts moved or rotated, dragging the wiring along: wire ends and labels on
  * their pins go with them and wires stay horizontal and vertical.
  */
-export function withPlacementChanges(schematic: FullSchematic, built: Netlist, changed: SchematicPlacement[]): FullSchematic {
+export function withPlacementChanges(schematic: FullSchematic, built: BuiltNetlist, changed: SchematicPlacement[]): FullSchematic {
   return withSchematicMoved(schematic, built, { placements: changed, wiring: NO_WIRING, delta: { x: 0, y: 0 }, keepConnections: true })
 }
 

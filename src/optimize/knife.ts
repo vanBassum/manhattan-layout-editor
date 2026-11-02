@@ -1,6 +1,6 @@
 import { snapToGrid } from '../geometry'
 import { naturalCompare } from '../netlist'
-import type { Island, Netlist, Settings } from '../types'
+import type { BuiltNetlist, Island, Netlist, Settings } from '../types'
 import type { Strategy } from './index'
 import { componentNets, netPinCounts, placeOnIslands } from './common'
 
@@ -20,7 +20,7 @@ const MAX_RAILS = 3
  * nets become full-width rails, and nets that share parts are neighbors. Components are then
  * placed onto the strips with the shared collision-free placer.
  */
-function knifeLayout(netlist: Netlist, settings: Settings) {
+function knifeLayout(netlist: BuiltNetlist, settings: Settings) {
   const pinCounts = netPinCounts(netlist)
   const pins = (net: string) => pinCounts.get(net) ?? 1
 
