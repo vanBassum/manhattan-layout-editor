@@ -363,7 +363,8 @@ export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist
     labels: schematic.labels.map((l, i) => {
       if (selectedLabels.has(i)) return { ...l, ...shift(l) }
       const to = keepConnections ? follow(l) : undefined
-      return to ? { ...l, ...to } : l
+      // Only the position: a point that follows a pin is that pin's end, which also carries its direction.
+      return to ? { ...l, x: to.x, y: to.y } : l
     }),
   }
 }
