@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
-import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectsOverlap, snapToGrid } from './geometry'
+import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from './geometry'
 import { analyzeLeads, bodyBounds, componentGeometry, toLocal, toWorld as toWorldPoint, type Geometry, type PinStatus } from './layout'
 import { findCuts, MIN_RECT_SIZE, moveCut, type Cut } from './cuts'
 import { islandEdges, moveIslandEdge, type IslandEdge } from './raster'
-import { addToSelection, isSelected, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
+import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
 import type { Island, Layout, Netlist, Placement, Point, Rect, Selection } from './types'
 import { gridPitch, Rulers, useViewport, ViewportGrid, type View } from './viewport'
 
@@ -307,12 +307,6 @@ function moveGroup(layout: Layout, drag: GroupDrag, dx: number, dy: number): Lay
     }),
   }
 }
-
-function rectBetween(a: Point, b: Point): Rect {
-  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }
-}
-
-const isToggleClick = (e: ReactPointerEvent) => e.shiftKey || e.ctrlKey || e.metaKey
 
 export function Canvas(props: Props) {
   const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode, editMode } = props

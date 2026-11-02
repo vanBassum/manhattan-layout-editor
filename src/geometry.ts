@@ -9,6 +9,11 @@ export function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w - eps && b.x < a.x + a.w - eps && a.y < b.y + b.h - eps && b.y < a.y + a.h - eps
 }
 
+/** The rectangle with corners `a` and `b`, in any order. */
+export function rectBetween(a: Point, b: Point): Rect {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }
+}
+
 export function rectContains(r: Rect, p: Point): boolean {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
 }

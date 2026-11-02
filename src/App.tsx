@@ -85,7 +85,8 @@ const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title
     icon: 'select',
     label: 'Select',
     title:
-      'Select (V): drag parts. Drag from a pin end to draw a wire (Shift: from a wire end). Drag a wire end to move it, ' +
+      'Select (V): drag parts; drag empty space to select, Shift+click or Shift+drag adds. ' +
+      'Drag from a pin end to draw a wire (Shift: from a wire end). Drag a wire end to move it, ' +
       'a wire sideways to shift it. Click a wire or label and press Del to remove it',
   },
   {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { boundsOf, inflate, rotatePoint, snapToGrid } from './geometry'
+import { boundsOf, inflate, rectBetween, rectsOverlap, rotatePoint, snapToGrid } from './geometry'
 import {
   CELL_HEIGHT,
   CELL_WIDTH,
@@ -19,8 +19,8 @@ import {
 import { componentSymbol } from './definitions'
 import type { PinEnd } from './schematic'
 import type { SymbolGraphic } from './types'
-import { selectedRefs } from './selection'
-import type { NetComponent, NetLabel, Netlist, Point, SchematicPlacement, Selection } from './types'
+import { addToSelection, isToggleClick, selectedRefs, selectionOf, toggleSelected } from './selection'
+import type { NetComponent, NetLabel, Netlist, Point, Rect, SchematicPlacement, Selection } from './types'
 import { gridPitch, useViewport, ViewportGrid, type View } from './viewport'
 
 /**
@@ -54,8 +54,21 @@ const draftPath = (draft: WireDraft) => {
 
 type Drag =
   | { kind: 'pan'; startX: number; startY: number; view: View }
-  /** Moves are applied to `base`, the schematic at the start: only what was on the pins then goes along. */
-  | { kind: 'part'; ref: string; start: Point; origin: SchematicPlacement; base: FullSchematic; moved: boolean }
+  | { kind: 'marquee'; start: Point; startX: number; startY: number; additive: boolean }
+  /**
+   * The pressed part, or the whole selection when it is part of one. Moves are applied to `base`,
+   * the schematic at the start: only what was on the pins then goes along. A press that ends
+   * without moving selects `pressed` alone, or with `toggle` set, toggles it in the selection.
+   */
+  | {
+      kind: 'parts'
+      pressed: string
+      toggle: boolean
+      start: Point
+      origins: SchematicPlacement[]
+      base: FullSchematic
+      moved: boolean
+    }
   /** A press that starts or continues a wire draft: dragging finishes it on release, a click keeps drawing. */
   | { kind: 'draw'; startX: number; startY: number; moved: boolean }
   | { kind: 'wire-end'; index: number; end: 1 | 2; startX: number; startY: number; base: FullSchematic; moved: boolean }
@@ -71,6 +84,12 @@ interface Grab {
 }
 
 const snapPoint = (p: Point): Point => ({ x: snapToGrid(p.x, SCHEMATIC_GRID), y: snapToGrid(p.y, SCHEMATIC_GRID) })
+
+/** Where a part can be grabbed, and what a selection rectangle must touch: its pin ends with some margin. */
+function partArea(pins: PinEnd[]): Rect | null {
+  const bounds = boundsOf(pins.map((p) => ({ x: p.x, y: p.y, w: 0, h: 0 })))
+  return bounds && inflate(bounds, 2)
+}
 
 const isGround = (name: string) => /^(GND|AGND|DGND|PGND|VSS|0)$/i.test(name)
 const isSupply = (name: string) => /^(V\+|V-|VCC|VDD|VEE|[+-]?\d+(\.\d+)?V)$/i.test(name)
@@ -168,8 +187,7 @@ interface PartProps {
 function SchematicPart({ component, placement, pins, selected, onPointerDown }: PartProps) {
   const symbol = componentSymbol(component)
   const { x, y, rotation } = placement
-  const pinBounds = boundsOf(pins.map((p) => ({ x: p.x, y: p.y, w: 0, h: 0 })))
-  const hitArea = pinBounds && inflate(pinBounds, 2)
+  const hitArea = partArea(pins)
   const labelOffset = rotatePoint(symbol.label, rotation)
   const label = { x: x + labelOffset.x, y: y + labelOffset.y }
   return (
@@ -208,6 +226,7 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
   const [item, setItem] = useState<Item | null>(null)
   const [draft, setDraft] = useState<WireDraft | null>(null)
   const [overPoint, setOverPoint] = useState(false)
+  const [marquee, setMarquee] = useState<Rect | null>(null)
   const { view, setView, size, fitTo } = useViewport(svgRef)
   const highlightedRefs = new Set(selectedRefs(selection))
 
@@ -338,9 +357,10 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
       onChange({ ...schematic, labels: [...schematic.labels, { ...at, name }] })
       return
     }
-    if (e.button === 0) {
-      onSelect(null)
-      setItem(null)
+    // As on the PCB: the left button draws a selection rectangle, the middle button pans.
+    if (e.button === 0 && tool === 'select') {
+      beginDrag(e, { kind: 'marquee', start: toWorld(e), startX: e.clientX, startY: e.clientY, additive: isToggleClick(e) })
+      return
     }
     beginDrag(e, { kind: 'pan', startX: e.clientX, startY: e.clientY, view })
   }
@@ -348,11 +368,16 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
   /** In the label tool everything acts as background. */
   const selectToolOnly = (e: ReactPointerEvent) => e.button === 0 && tool === 'select'
 
+  /** Pressing a part of a multi-selection drags the whole group; otherwise the part alone. */
   const onPartPointerDown = (e: ReactPointerEvent, placement: SchematicPlacement) => {
     if (!selectToolOnly(e)) return
     e.stopPropagation()
-    onSelect({ kind: 'part', ref: placement.ref })
-    beginDrag(e, { kind: 'part', ref: placement.ref, start: toWorld(e), origin: placement, base: schematic, moved: false })
+    const pressed = placement.ref
+    const toggle = isToggleClick(e)
+    const group = selection?.kind === 'multi' && selection.refs.includes(pressed) ? selection.refs : [pressed]
+    if (group.length === 1 && !toggle) onSelect({ kind: 'part', ref: pressed })
+    const origins = schematic.placements.filter((p) => group.includes(p.ref))
+    beginDrag(e, { kind: 'parts', pressed, toggle, start: toWorld(e), origins, base: schematic, moved: false })
   }
 
   const onWirePointerDown = (e: ReactPointerEvent, index: number) => {
@@ -389,6 +414,10 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
       setView({ ...drag.view, ox: drag.view.ox + e.clientX - drag.startX, oy: drag.view.oy + e.clientY - drag.startY })
       return
     }
+    if (drag.kind === 'marquee') {
+      setMarquee(rectBetween(drag.start, p))
+      return
+    }
     if (drag.kind === 'draw' || drag.kind === 'wire-end') {
       if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) <= CLICK_TOLERANCE_PX) return
       if (drag.kind === 'wire-end' && !drag.moved) {
@@ -413,15 +442,40 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
       return
     }
     // A part rotated mid-drag (Space) keeps its new rotation; `base` still maps its old pin ends.
-    const rotation = schematic.placements.find((p) => p.ref === drag.ref)?.rotation ?? drag.origin.rotation
-    const moved = { ...drag.origin, rotation, ...snapPoint({ x: drag.origin.x + dx, y: drag.origin.y + dy }) }
-    onChange(withPlacementChanges(drag.base, netlist, [moved]))
+    const rotations = new Map(schematic.placements.map((p) => [p.ref, p.rotation]))
+    const moved = drag.origins.map((origin) => ({
+      ...origin,
+      rotation: rotations.get(origin.ref) ?? origin.rotation,
+      ...snapPoint({ x: origin.x + dx, y: origin.y + dy }),
+    }))
+    onChange(withPlacementChanges(drag.base, netlist, moved))
+  }
+
+  const finishMarquee = (drag: Extract<Drag, { kind: 'marquee' }>, e: ReactPointerEvent) => {
+    setMarquee(null)
+    if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) <= CLICK_TOLERANCE_PX) {
+      if (drag.additive) return
+      onSelect(null)
+      setItem(null)
+      return
+    }
+    const area = rectBetween(drag.start, toWorld(e))
+    const refs = parts.filter(({ pins }) => {
+      const partBounds = partArea(pins)
+      return partBounds !== null && rectsOverlap(partBounds, area)
+    }).map(({ placement }) => placement.ref)
+    onSelect(drag.additive ? addToSelection(selection, refs, []) : selectionOf(refs, []))
   }
 
   const onPointerUp = (e: ReactPointerEvent) => {
     const drag = dragRef.current
     dragRef.current = null
     svgRef.current!.releasePointerCapture(e.pointerId)
+    if (drag?.kind === 'marquee') finishMarquee(drag, e)
+    if (drag?.kind === 'parts' && !drag.moved) {
+      const part = { kind: 'part', ref: drag.pressed } as const
+      onSelect(drag.toggle ? toggleSelected(selection, part) : part)
+    }
     if (drag?.kind !== 'draw' || !draft) return
     // A drag draws one wire; a click in the wire tool goes on corner by corner. In the select
     // tool a click on a pin end is not meant as drawing.
@@ -531,6 +585,18 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
             )
           })}
           {preview && <polyline className="sch-wire preview" points={preview.map((q) => `${q.x},${q.y}`).join(' ')} />}
+          {marquee && (
+            <rect
+              className="marquee"
+              x={marquee.x}
+              y={marquee.y}
+              width={marquee.w}
+              height={marquee.h}
+              strokeWidth={px}
+              strokeDasharray={`${4 * px} ${3 * px}`}
+              pointerEvents="none"
+            />
+          )}
         </g>
       </svg>
       {nets.conflicts.length > 0 && (

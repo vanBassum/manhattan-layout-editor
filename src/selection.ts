@@ -33,6 +33,9 @@ export function addToSelection(selection: Selection, refs: string[], nets: strin
   return selectionOf(allRefs, allNets)
 }
 
+/** Shift, Ctrl or Cmd held: a click toggles the item, a selection rectangle adds to the selection. */
+export const isToggleClick = (e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => e.shiftKey || e.ctrlKey || e.metaKey
+
 /** Shift/Ctrl+click: adds the item to the selection, or takes it out again. */
 export function toggleSelected(selection: Selection, item: SingleSelection): Selection {
   // Keeps the clicked rectangle of an island, so its resize handles appear where you clicked.
