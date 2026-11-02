@@ -362,6 +362,41 @@ export function createLayout(netlist: Netlist, previous?: Layout): Layout {
   return { islands: [...keptIslands, ...newIslands], placements: [...keptPlacements, ...newPlacements] }
 }
 
+/**
+ * The layout after the netlist's connections changed (in the schematic). An island whose net
+ * disappeared moves over to the new net that took most of its pins, so renaming a net or joining
+ * two keeps the copper; parts and nets that are new get a spot on the grid.
+ */
+export function followNetlist(layout: Layout, before: Netlist, after: Netlist): Layout {
+  const pinsOf = (netlist: Netlist) => {
+    const pins = new Map<string, Set<string>>()
+    for (const c of netlist.components) {
+      for (const p of c.pins) if (isRealNet(p.net)) pins.set(p.net, (pins.get(p.net) ?? new Set()).add(`${c.ref}.${p.number}`))
+    }
+    return pins
+  }
+  const sameNets = after.components.every((c, i) => c.pins.every((p, k) => p.net === before.components[i]?.pins[k]?.net))
+  if (sameNets && after.components.length === before.components.length) return layout
+  const oldPins = pinsOf(before)
+  const newPins = pinsOf(after)
+  const kept = new Set(layout.islands.map((i) => i.net).filter((net) => newPins.has(net)))
+  const renamed = new Map<string, string>()
+  for (const island of layout.islands) {
+    if (kept.has(island.net)) continue
+    const pins = oldPins.get(island.net) ?? new Set<string>()
+    let best: string | undefined
+    let bestShared = 0
+    for (const [net, netPins] of newPins) {
+      if (kept.has(net) || [...renamed.values()].includes(net)) continue
+      const shared = [...netPins].filter((p) => pins.has(p)).length
+      if (shared > bestShared) [best, bestShared] = [net, shared]
+    }
+    if (best) renamed.set(island.net, best)
+  }
+  const islands = layout.islands.map((i) => (renamed.has(i.net) ? { ...i, net: renamed.get(i.net)! } : i))
+  return { ...layout, ...createLayout(after, { ...layout, islands }) }
+}
+
 // ---------- Footprint choices ----------
 
 /** The netlist as built: footprints chosen in the editor replace the netlist's own. */

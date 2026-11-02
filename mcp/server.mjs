@@ -258,17 +258,46 @@ forward(
 )
 
 forward(
+  'get_schematic',
+  'The schematic, which decides the nets: every part with its placement and each pin end (x, y in mm, y down, ' +
+    '2.54 mm grid) with the net it is on now, all wires (straight segments x1,y1-x2,y2), all net labels (x, y, name) ' +
+    'and "shorts": wire groups that carry two different label names. A wire connects where its end meets a pin end, ' +
+    'another wire end, or lands on another wire (T-join); crossing wires do not connect. Labels with the same name ' +
+    'are connected wherever they are. An unlabelled net is named after its first pin, e.g. "R4.2".',
+)
+
+forward(
   'set_schematic',
-  'Places component symbols on the schematic (the editor\'s Schematic view), as one undo step. x/y is the symbol ' +
-    'origin in mm, y points down; it is snapped to the 2.54 mm grid. rotation is 0, 90, 180 or 270 degrees clockwise. ' +
-    'Symbols are drawn with their pins at multiples of 2.54 mm from the origin: two-pin parts horizontal (pin 1 left; ' +
-    'diodes have the cathode, pin 1, on the right), transistors with the base left and collector up (emitter down), ' +
-    'trimmers with the wiper pin pointing down. Components not listed keep their place. Wires are not drawn yet.',
+  'Places component symbols on the schematic, as one undo step. x/y is the symbol origin in mm, y points down; it ' +
+    'is snapped to the 2.54 mm grid. rotation is 0, 90, 180 or 270 degrees clockwise. Symbols are drawn with their ' +
+    'pins at multiples of 2.54 mm from the origin: two-pin parts horizontal (pin 1 left; diodes have the cathode, ' +
+    'pin 1, on the right), NPN transistors with the base left, collector up and emitter down (PNP: emitter up), ' +
+    'trimmers with the wiper pin pointing down. Wire ends and labels on a moved part\'s pins go along. Components ' +
+    'not listed keep their place. Returns the schematic as get_schematic does.',
   {
     placements: z
       .array(z.object({ ref: z.string(), x: z.number(), y: z.number(), rotation: z.number().optional() }))
       .min(1),
   },
+)
+
+const gridPoint = z.tuple([z.number(), z.number()]).describe('[x, y] in mm')
+
+forward(
+  'set_wires',
+  'Replaces ALL wires of the schematic, as one undo step. Each wire is a polyline [[x, y], [x, y], ...] whose steps ' +
+    'are horizontal or vertical; points snap to the 2.54 mm grid. Start and end wires on pin ends from get_schematic. ' +
+    'The nets follow from the wires and labels, and the PCB layout follows the nets. Returns the schematic as ' +
+    'get_schematic does; check "shorts" and each pin\'s net.',
+  { wires: z.array(z.array(gridPoint).min(2)) },
+)
+
+forward(
+  'set_labels',
+  'Replaces ALL net labels of the schematic, as one undo step. A label names the net at its point; labels with the ' +
+    'same name are connected. GND (and AGND, VSS, ...) is drawn as a ground symbol. Keep labels for supply, ground, ' +
+    'inputs and outputs; nets that are fully wired need none. Returns the schematic as get_schematic does.',
+  { labels: z.array(z.object({ x: z.number(), y: z.number(), name: z.string().min(1) })) },
 )
 
 forward(

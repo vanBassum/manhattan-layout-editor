@@ -29,6 +29,7 @@
   --backdrop: rgba(20, 24, 31, 0.35);
   --sch-resistor: #8a9ee6;
   --sch-box: #fbfbf4;
+  --sch-wire: #2f8f2f;
 }
 
 :root[data-theme='dark'] {
@@ -62,6 +63,7 @@
   --backdrop: rgba(0, 0, 0, 0.55);
   --sch-resistor: #4f63b8;
   --sch-box: #20242a;
+  --sch-wire: #5cc45c;
 }
 
 * {
@@ -1464,4 +1466,81 @@ input:focus-visible {
 
 .sch-part.selected .sch-fill {
   fill: var(--accent);
+}
+
+/* Schematic and PCB panes: one fills the area, or both side by side in split view. */
+.canvas-panes {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-height: 0;
+}
+
+.canvas-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.schematic.tool-wire,
+.schematic.tool-label {
+  cursor: crosshair;
+}
+
+.sch-wire {
+  stroke: var(--sch-wire);
+  stroke-width: 0.3;
+  stroke-linecap: round;
+}
+
+.sch-wire.preview {
+  stroke-dasharray: 0.8 0.6;
+  pointer-events: none;
+}
+
+.sch-wire-hit {
+  stroke: transparent;
+}
+
+.sch-wire-item.selected .sch-wire,
+.sch-label.selected .sch-line {
+  stroke: var(--accent);
+  stroke-width: 0.5;
+}
+
+.sch-label.selected .sch-net,
+.sch-label.selected .sch-fill {
+  fill: var(--accent);
+  font-weight: 700;
+}
+
+.sch-label.conflict .sch-net,
+.sch-label.conflict .sch-fill,
+.sch-label.conflict .sch-label-dot {
+  fill: var(--error);
+}
+
+.sch-label-dot,
+.sch-junction {
+  fill: var(--sch-wire);
+}
+
+.sch-open-pin {
+  fill: var(--canvas-bg);
+  stroke: var(--warn);
+  stroke-width: 0.2;
+}
+
+.schematic-conflicts {
+  position: absolute;
+  left: 26px;
+  bottom: 8px;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  background: var(--error-soft);
+  color: var(--error);
+  font-size: 12px;
 }

@@ -28,6 +28,9 @@ const ICON_PATHS = {
   convert: 'M4 8h14l-3-3 M20 16H6l3 3',
   plus: 'M12 5v14 M5 12h14',
   schematic: 'M2 12h4 M6 9h8v6H6z M14 12h4 M18 7v10 M20 9v6',
+  split: 'M3 5h18v14H3z M12 5v14',
+  wire: 'M4 18h6V6h10 M4 18a1.5 1.5 0 1 0 0.01 0 M20 6a1.5 1.5 0 1 0 0.01 0',
+  label: 'M4 7h11l5 5-5 5H4z M8 12h.01',
   sun: 'M12 8a4 4 0 1 1 0 8a4 4 0 1 1 0-8 M12 2v2 M12 20v2 M4.9 4.9l1.4 1.4 M17.7 17.7l1.4 1.4 M2 12h2 M20 12h2 M4.9 19.1l1.4-1.4 M17.7 6.3l1.4-1.4',
   moon: 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z',
   cut: 'M6 4a2 2 0 1 1 0 4a2 2 0 1 1 0-4 M6 16a2 2 0 1 1 0 4a2 2 0 1 1 0-4 M7.5 7.5L20 18 M7.5 16.5L20 6',
@@ -461,6 +464,10 @@ const SHORTCUTS: [string, string][] = [
   ['Ctrl+Z / Ctrl+Y', 'Undo / redo'],
   ['Middle-drag, wheel', 'Pan, zoom'],
   ['F', 'Fit the board in view'],
+  ['W (schematic)', 'Wire tool: drag from point to point'],
+  ['L (schematic)', 'Label tool: click a point to name its net'],
+  ['Del (schematic)', 'Remove the selected wire or label'],
+  ['Double-click a label', 'Rename it'],
 ]
 
 export function HelpDialog({ onClose }: { onClose: () => void }) {

@@ -95,8 +95,26 @@ export interface SchematicPlacement {
   rotation: number
 }
 
+/** A straight wire between two grid points. It connects where an end meets a pin, another end, or lands on a wire. */
+export interface Wire {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
+/** A net name at a point. Labels with the same name are connected, wherever they are. */
+export interface NetLabel {
+  x: number
+  y: number
+  name: string
+}
+
 export interface Schematic {
   placements: SchematicPlacement[]
+  wires?: Wire[]
+  /** Missing until the schematic is first edited: then every pin gets a label with its net from the imported netlist. */
+  labels?: NetLabel[]
 }
 
 export interface Project {

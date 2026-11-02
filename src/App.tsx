@@ -11,6 +11,7 @@ import {
   changeFootprints,
   chooseResistors,
   createLayout,
+  followNetlist,
   findSpacingViolations,
   findSplitNets,
   fromCutLayout,
@@ -43,9 +44,29 @@ import {
 import { canvasToPng } from './screenshot'
 import { selectedRefs, selectionOf } from './selection'
 import { screenshotHidden } from './hiddenScreenshot'
-import { completeSchematic, withAgentPlacements } from './schematic'
-import { SchematicView } from './SchematicView'
-import type { Layout, Netlist, Placement, Project, SchematicPlacement, Selection, Settings } from './types'
+import {
+  agentPlacements,
+  completeSchematic,
+  deriveNets,
+  labelsFromAgent,
+  pinEnds,
+  wiresFromPolylines,
+  withPlacementChanges,
+  type FullSchematic,
+} from './schematic'
+import { SchematicView, type SchematicTool } from './SchematicView'
+import type { Layout, Netlist, Placement, Project, Selection, Settings } from './types'
+import type { IconName } from './panels'
+
+/** Which views are shown: one of them, or both side by side. */
+type ViewMode = 'schematic' | 'split' | 'layout'
+type Pane = 'schematic' | 'layout'
+
+const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title: string }[] = [
+  { id: 'select', icon: 'select', label: 'Select', title: 'Select (V): drag parts; click a wire or label and press Del to remove it' },
+  { id: 'wire', icon: 'wire', label: 'Wire', title: 'Wire (W): drag from point to point; it connects where it meets a pin, a wire end or lands on a wire' },
+  { id: 'label', icon: 'label', label: 'Label', title: 'Label (L): click a point to name its net; labels with the same name are connected. Double-click a label to rename it' },
+]
 
 const UNDO_LIMIT = 100
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
@@ -100,8 +121,43 @@ function projectFromNetlist(name: string, text: string, current: Project, keepLa
     name,
     netlist,
     layout: createLayout(netlist, keepLayout ? current.layout : undefined),
-    schematic: keepLayout ? current.schematic : undefined,
+    // Symbols stay where they were; wires and labels start over from the imported nets.
+    schematic: keepLayout && current.schematic ? { placements: current.schematic.placements } : undefined,
     settings: keepLayout ? current.settings : DEFAULT_SETTINGS,
+  }
+}
+
+/** The project's schematic with every part placed; `project` is as stored, without footprint choices applied. */
+const fullSchematicOf = (project: Project): FullSchematic =>
+  completeSchematic(withFootprintChoices(project.netlist, project.layout.placements), project.schematic)
+
+/** The project with an edited schematic: its nets follow from the schematic, and the layout follows the nets. */
+function withSchematic(project: Project, schematic: FullSchematic): Project {
+  const built = withFootprintChoices(project.netlist, project.layout.placements)
+  const { netlist } = deriveNets(project.netlist, built, schematic)
+  return { ...project, schematic, netlist, layout: followNetlist(project.layout, project.netlist, netlist) }
+}
+
+/** What an agent needs to draw wires: every pin end with its net, the wires and labels, and shorts. */
+function describeSchematic(project: Project) {
+  const built = withFootprintChoices(project.netlist, project.layout.placements)
+  const schematic = fullSchematicOf(project)
+  const { conflicts } = deriveNets(project.netlist, built, schematic)
+  return {
+    units: 'mm; x to the right, y down; grid 2.54',
+    parts: built.components.map((component, i) => ({
+      value: component.value,
+      ...schematic.placements[i],
+      pins: pinEnds(component, schematic.placements[i]).map((end, k) => ({
+        pin: component.pins[k].number,
+        net: component.pins[k].net,
+        x: end.x,
+        y: end.y,
+      })),
+    })),
+    wires: schematic.wires,
+    labels: schematic.labels,
+    shorts: conflicts.map((c) => c.names),
   }
 }
 
@@ -169,7 +225,14 @@ export function App() {
   const [selection, setSelection] = useState<Selection>(null)
   const [tool, setTool] = useState<Tool>('select')
   const [moveMode, setMoveMode] = useState<MoveMode>('part')
-  const [view, setView] = useState<'layout' | 'schematic'>('layout')
+  const [view, setView] = useState<ViewMode>('layout')
+  /** The pane last clicked in; keyboard shortcuts act on it when both are shown. */
+  const [activePane, setActivePane] = useState<Pane>('layout')
+  const [schematicTool, setSchematicTool] = useState<SchematicTool>('select')
+  const showView = (mode: ViewMode) => {
+    setView(mode)
+    if (mode !== 'split') setActivePane(mode)
+  }
   const [fitRequest, setFitRequest] = useState(1)
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -195,7 +258,8 @@ export function App() {
   const [layers, setLayersState] = useState<Layers>(loadLayers)
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => withFootprintChoices(netlist, layout.placements), [netlist, layout.placements])
-  const schematicPlacements = useMemo(() => completeSchematic(netlist, project.schematic), [netlist, project.schematic])
+  const fullSchematic = useMemo(() => completeSchematic(builtNetlist, project.schematic), [builtNetlist, project.schematic])
+  const schematicNets = useMemo(() => deriveNets(netlist, builtNetlist, fullSchematic), [netlist, builtNetlist, fullSchematic])
 
   // Latest project, also between a change and the next render: agent commands can arrive back to back.
   const projectRef = useRef(project)
@@ -302,9 +366,9 @@ export function App() {
       case 'screenshot': {
         const bounds = layoutBounds(current)
         if (!bounds) throw new Error('Nothing to draw')
-        if (!shown) return screenshotHidden(current.netlist, current.layout, current.settings.isolation, bounds).then((png) => ({ png }))
-        const svg = document.querySelector<SVGSVGElement>('svg.canvas')
-        if (!svg) throw new Error('Nothing to draw')
+        // The layout is not on screen for another tab, or while only the schematic is shown.
+        const svg = shown ? document.querySelector<SVGSVGElement>('svg.canvas') : null
+        if (!svg) return screenshotHidden(current.netlist, current.layout, current.settings.isolation, bounds).then((png) => ({ png }))
         return canvasToPng(svg, bounds).then((png) => ({ png }))
       }
       case 'undo':
@@ -313,10 +377,21 @@ export function App() {
         if (command === 'undo') undo()
         else redo()
         return { problems: findProblems(asBuilt(projectRef.current)) }
-      case 'set_schematic': {
-        const schematic = withAgentPlacements(stored.netlist, stored.schematic, args.placements)
-        applyAgentChange(targetId, stored, { schematic })
-        return { placed: schematic.placements }
+      case 'get_schematic':
+        return describeSchematic(stored)
+      case 'set_schematic':
+      case 'set_wires':
+      case 'set_labels': {
+        const schematic = fullSchematicOf(stored)
+        const next =
+          command === 'set_wires'
+            ? { ...schematic, wires: wiresFromPolylines(args.wires) }
+            : command === 'set_labels'
+              ? { ...schematic, labels: labelsFromAgent(args.labels) }
+              : withPlacementChanges(schematic, current.netlist, agentPlacements(stored.netlist, args.placements))
+        const updated = withSchematic(stored, next)
+        applyAgentChange(targetId, stored, snapshotOf(updated))
+        return describeSchematic(updated)
       }
       case 'set_values': {
         const netlist = withValues(stored.netlist, args.values)
@@ -499,21 +574,18 @@ export function App() {
   // Rotate and reset leads act on every selected part, each in place.
   const refsToEdit = selectedRefs(selection)
 
-  const changeSchematic = (update: (placements: SchematicPlacement[]) => SchematicPlacement[]) =>
-    setProject((p) => ({ ...p, schematic: { placements: update(completeSchematic(p.netlist, p.schematic)) } }))
+  const changeSchematic = (next: FullSchematic) => setProject((p) => withSchematic(p, next))
 
-  const moveSchematicPart = (ref: string, x: number, y: number) =>
-    changeSchematic((placements) => placements.map((p) => (p.ref === ref ? { ...p, x, y } : p)))
-
-  const rotateSelected = (degrees: number) => {
+  const rotateSelected = (degrees: number, pane: Pane) => {
     if (refsToEdit.length === 0) return
     rememberEdit()
-    if (view === 'schematic') {
+    if (pane === 'schematic') {
       // Symbols only turn in quarter turns, so their pins stay on the grid.
       const quarterTurns = Math.max(1, Math.round(degrees / 90)) * 90
-      changeSchematic((placements) =>
-        placements.map((p) => (refsToEdit.includes(p.ref) ? { ...p, rotation: (p.rotation + quarterTurns) % 360 } : p)),
-      )
+      const rotated = fullSchematic.placements
+        .filter((p) => refsToEdit.includes(p.ref))
+        .map((p) => ({ ...p, rotation: (p.rotation + quarterTurns) % 360 }))
+      changeSchematic(withPlacementChanges(fullSchematic, builtNetlist, rotated))
       return
     }
     setLayout((l) => ({
@@ -660,11 +732,15 @@ export function App() {
     else if (e.key === ' ') {
       // Also stops a focused button from being clicked by the same key press.
       e.preventDefault()
-      if (!e.repeat) rotateSelected(e.shiftKey ? 15 : 90)
+      if (!e.repeat) rotateSelected(e.shiftKey ? 15 : 90, activePane)
     } else if (e.key === 'Delete' || e.key === 'Backspace') removeRect()
     else if (e.key === 'Escape') setSelection(null)
     else if (e.key === 'f' || e.key === 'F') setFitRequest((n) => n + 1)
-    else if (e.key === 'v' || e.key === 'V') setTool('select')
+    else if (e.key === 'v' || e.key === 'V') {
+      setTool('select')
+      setSchematicTool('select')
+    } else if (e.key === 'w' || e.key === 'W') setSchematicTool('wire')
+    else if (e.key === 'l' || e.key === 'L') setSchematicTool('label')
     else if (e.key === 'h' || e.key === 'H') setTool('pan')
     else if ((e.key === 'c' || e.key === 'C') && editMode === 'cuts') setTool('cut')
     else if (e.key === 'm' || e.key === 'M') setMoveMode((mode) => (mode === 'part' ? 'body' : 'part'))
@@ -706,11 +782,19 @@ export function App() {
         </div>
         <div className="header-actions">
           <div className="view-switch" role="group" aria-label="View">
-            <button className={view === 'layout' ? 'active' : ''} aria-pressed={view === 'layout'} onClick={() => setView('layout')}>
-              <Icon name="grid" />Layout
-            </button>
-            <button className={view === 'schematic' ? 'active' : ''} aria-pressed={view === 'schematic'} onClick={() => setView('schematic')}>
+            <button className={view === 'schematic' ? 'active' : ''} aria-pressed={view === 'schematic'} onClick={() => showView('schematic')}>
               <Icon name="schematic" />Schematic
+            </button>
+            <button
+              className={view === 'split' ? 'active' : ''}
+              aria-pressed={view === 'split'}
+              onClick={() => showView('split')}
+              title="Schematic and PCB side by side"
+            >
+              <Icon name="split" />Split
+            </button>
+            <button className={view === 'layout' ? 'active' : ''} aria-pressed={view === 'layout'} onClick={() => showView('layout')}>
+              <Icon name="grid" />PCB
             </button>
           </div>
           <span className="separator" />
@@ -856,108 +940,140 @@ export function App() {
         </aside>
 
         <main className="canvas-area">
-          {view === 'layout' && (
-            <nav className="tool-rail" aria-label="Tools">
-              <div className="rail-group" role="group" aria-label="View">
-                <button
-                  className={tool === 'select' ? 'rail-button active' : 'rail-button'}
-                  onClick={() => setTool('select')}
-                  aria-pressed={tool === 'select'}
-                  title="Select (V): drag empty space to select, Shift+drag adds"
-                >
-                  <Icon name="select" />Select
-                </button>
-                <button
-                  className={tool === 'pan' ? 'rail-button active' : 'rail-button'}
-                  onClick={() => setTool('pan')}
-                  aria-pressed={tool === 'pan'}
-                  title="Pan (H): drag empty space to move the view; middle mouse always pans"
-                >
-                  <Icon name="pan" />Pan
-                </button>
-                <button className="rail-button" onClick={() => setFitRequest((n) => n + 1)} title="Fit the board in view (F)">
-                  <Icon name="fit" />Fit
-                </button>
-              </div>
-              <div className="rail-group" role="group" aria-label="Component">
-                <button
-                  className={moveMode === 'body' ? 'rail-button active' : 'rail-button'}
-                  onClick={() => setMoveMode(moveMode === 'body' ? 'part' : 'body')}
-                  aria-pressed={moveMode === 'body'}
-                  title={
-                    'Anchor leads (M). On: dragging a part moves only its body, lead ends stay where they are soldered. ' +
-                    'Off: the leads move along. Shift+drag always takes the leads along.'
-                  }
-                >
-                  <Icon name="moveBody" />Anchor
-                </button>
-                <button className="rail-button" onClick={() => rotateSelected(90)} disabled={refsToEdit.length === 0} title="Rotate: Space = 90°, Shift+Space = 15°">
-                  <Icon name="rotate" />Rotate
-                </button>
-                <button className="rail-button" onClick={resetLeads} disabled={refsToEdit.length === 0} title="Straighten the selected parts' leads">
-                  <Icon name="leads" />Leads
-                </button>
-                <button className="rail-button" onClick={openFootprintDialog} disabled={refsToEdit.length === 0} title="Choose another footprint for the selected parts">
-                  <Icon name="convert" />Footprint
-                </button>
-              </div>
-              <div className="rail-group" role="group" aria-label="Copper">
-                {editMode === 'cuts' ? (
-                  <button
-                    className={activeTool === 'cut' ? 'rail-button active' : 'rail-button'}
-                    onClick={() => setTool('cut')}
-                    aria-pressed={activeTool === 'cut'}
-                    title="Cut (C): drag to draw a cut line on the grid. Drag a cut to move it, double-click it to remove it."
-                  >
-                    <Icon name="cut" />Cut
-                  </button>
-                ) : (
-                  <>
-                    <button className="rail-button" onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
-                      <Icon name="addRect" />Add rect
-                    </button>
-                    <button className="rail-button" onClick={removeRect} disabled={!canRemoveRect} title="Remove the selected rectangle (Del)">
-                      <Icon name="removeRect" />Del rect
-                    </button>
-                  </>
-                )}
-              </div>
-            </nav>
-          )}
           {error && (
             <div className="error-banner" role="alert">
               {error}
               <button className="icon-button" onClick={() => setError('')} aria-label="Dismiss">✕</button>
             </div>
           )}
-          <div className="canvas-frame">
-            {view === 'schematic' ? (
-              <SchematicView
-                netlist={builtNetlist}
-                placements={schematicPlacements}
-                onMovePart={moveSchematicPart}
-                onBeginEdit={rememberEdit}
-                selection={selection}
-                onSelect={setSelection}
-                fitRequest={fitRequest}
-              />
-            ) : (
-              <Canvas
-                netlist={builtNetlist}
-                layout={layout}
-                onLayoutChange={setLayout}
-                onBeginEdit={rememberEdit}
-                selection={selection}
-                onSelect={setSelection}
-                snap={settings.snap}
-                isolation={settings.isolation}
-                problemNets={problemNets}
-                fitRequest={fitRequest}
-                layers={layers}
-                tool={activeTool}
-                moveMode={moveMode}
-                editMode={editMode}
-              />
+          <div className="canvas-panes">
+            {view !== 'layout' && (
+              <section className="canvas-pane" onPointerDownCapture={() => setActivePane('schematic')}>
+                <nav className="tool-rail" aria-label="Schematic tools">
+                  <div className="rail-group" role="group" aria-label="Tools">
+                    {SCHEMATIC_TOOLS.map(({ id, icon, label, title }) => (
+                      <button
+                        key={id}
+                        className={schematicTool === id ? 'rail-button active' : 'rail-button'}
+                        onClick={() => setSchematicTool(id)}
+                        aria-pressed={schematicTool === id}
+                        title={title}
+                      >
+                        <Icon name={icon} />{label}
+                      </button>
+                    ))}
+                    <button className="rail-button" onClick={() => setFitRequest((n) => n + 1)} title="Fit the schematic in view (F)">
+                      <Icon name="fit" />Fit
+                    </button>
+                  </div>
+                  <div className="rail-group" role="group" aria-label="Component">
+                    <button className="rail-button" onClick={() => rotateSelected(90, 'schematic')} disabled={refsToEdit.length === 0} title="Rotate a quarter turn (Space)">
+                      <Icon name="rotate" />Rotate
+                    </button>
+                  </div>
+                </nav>
+                <div className="canvas-frame">
+                  <SchematicView
+                    netlist={builtNetlist}
+                    schematic={fullSchematic}
+                    nets={schematicNets}
+                    onChange={changeSchematic}
+                    onBeginEdit={rememberEdit}
+                    selection={selection}
+                    onSelect={setSelection}
+                    tool={schematicTool}
+                    fitRequest={fitRequest}
+                  />
+                </div>
+              </section>
+            )}
+            {view !== 'schematic' && (
+              <section className="canvas-pane" onPointerDownCapture={() => setActivePane('layout')}>
+                <nav className="tool-rail" aria-label="Tools">
+                  <div className="rail-group" role="group" aria-label="View">
+                    <button
+                      className={tool === 'select' ? 'rail-button active' : 'rail-button'}
+                      onClick={() => setTool('select')}
+                      aria-pressed={tool === 'select'}
+                      title="Select (V): drag empty space to select, Shift+drag adds"
+                    >
+                      <Icon name="select" />Select
+                    </button>
+                    <button
+                      className={tool === 'pan' ? 'rail-button active' : 'rail-button'}
+                      onClick={() => setTool('pan')}
+                      aria-pressed={tool === 'pan'}
+                      title="Pan (H): drag empty space to move the view; middle mouse always pans"
+                    >
+                      <Icon name="pan" />Pan
+                    </button>
+                    <button className="rail-button" onClick={() => setFitRequest((n) => n + 1)} title="Fit the board in view (F)">
+                      <Icon name="fit" />Fit
+                    </button>
+                  </div>
+                  <div className="rail-group" role="group" aria-label="Component">
+                    <button
+                      className={moveMode === 'body' ? 'rail-button active' : 'rail-button'}
+                      onClick={() => setMoveMode(moveMode === 'body' ? 'part' : 'body')}
+                      aria-pressed={moveMode === 'body'}
+                      title={
+                        'Anchor leads (M). On: dragging a part moves only its body, lead ends stay where they are soldered. ' +
+                        'Off: the leads move along. Shift+drag always takes the leads along.'
+                      }
+                    >
+                      <Icon name="moveBody" />Anchor
+                    </button>
+                    <button className="rail-button" onClick={() => rotateSelected(90, 'layout')} disabled={refsToEdit.length === 0} title="Rotate: Space = 90°, Shift+Space = 15°">
+                      <Icon name="rotate" />Rotate
+                    </button>
+                    <button className="rail-button" onClick={resetLeads} disabled={refsToEdit.length === 0} title="Straighten the selected parts' leads">
+                      <Icon name="leads" />Leads
+                    </button>
+                    <button className="rail-button" onClick={openFootprintDialog} disabled={refsToEdit.length === 0} title="Choose another footprint for the selected parts">
+                      <Icon name="convert" />Footprint
+                    </button>
+                  </div>
+                  <div className="rail-group" role="group" aria-label="Copper">
+                    {editMode === 'cuts' ? (
+                      <button
+                        className={activeTool === 'cut' ? 'rail-button active' : 'rail-button'}
+                        onClick={() => setTool('cut')}
+                        aria-pressed={activeTool === 'cut'}
+                        title="Cut (C): drag to draw a cut line on the grid. Drag a cut to move it, double-click it to remove it."
+                      >
+                        <Icon name="cut" />Cut
+                      </button>
+                    ) : (
+                      <>
+                        <button className="rail-button" onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
+                          <Icon name="addRect" />Add rect
+                        </button>
+                        <button className="rail-button" onClick={removeRect} disabled={!canRemoveRect} title="Remove the selected rectangle (Del)">
+                          <Icon name="removeRect" />Del rect
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </nav>
+                <div className="canvas-frame">
+                  <Canvas
+                    netlist={builtNetlist}
+                    layout={layout}
+                    onLayoutChange={setLayout}
+                    onBeginEdit={rememberEdit}
+                    selection={selection}
+                    onSelect={setSelection}
+                    snap={settings.snap}
+                    isolation={settings.isolation}
+                    problemNets={problemNets}
+                    fitRequest={fitRequest}
+                    layers={layers}
+                    tool={activeTool}
+                    moveMode={moveMode}
+                    editMode={editMode}
+                  />
+                </div>
+              </section>
             )}
           </div>
         </main>
