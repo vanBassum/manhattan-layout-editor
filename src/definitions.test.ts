@@ -92,6 +92,16 @@ describe('buildNetlist', () => {
   })
 })
 
+describe('diode footprints', () => {
+  it('mark the cathode (pin 1) with a band, and keep it through a saved definition', () => {
+    const diode: NetComponent = { ref: 'D1', value: '1N4148', footprint: 'DO-35_BD1.9-L3.8-P7.62', pins: [{ number: '1', net: 'A' }, { number: '2', net: 'B' }] }
+    const project = projectWith([diode])
+    expect(build(project).components[0].geometry.band).toBe(true)
+    expect(build(withDefinitions(project)).components[0].geometry.band).toBe(true)
+    expect(build(projectWith([resistor()])).components[0].geometry.band).toBe(false)
+  })
+})
+
 describe('checkedDefinition', () => {
   it('refuses a footprint without every pin of the symbol', () => {
     const onePin = { ...ODD_FOOTPRINT, pins: [ODD_FOOTPRINT.pins[0]] }

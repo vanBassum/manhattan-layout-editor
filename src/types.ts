@@ -76,6 +76,8 @@ export interface FootprintDefinition {
   maxLeadLength: number
   /** Drawn in LED colour. */
   led?: boolean
+  /** A band on the body at pin 1, the way a diode marks its cathode. */
+  band?: boolean
 }
 
 export interface ComponentDefinition {

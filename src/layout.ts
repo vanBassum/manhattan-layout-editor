@@ -53,6 +53,8 @@ export interface Geometry {
   maxLeadLength: number
   /** Drawn in its own color: an LED has the same round body as a capacitor can. */
   led: boolean
+  /** Drawn with a band at pin 1: a diode's cathode. */
+  band: boolean
 }
 
 const isLed = (component: NetComponent) =>
@@ -194,6 +196,8 @@ export function generatedGeometry(component: NetComponent): Geometry {
     leadLength: defaultLeadLength(shape, component.footprint, leads.body),
     maxLeadLength: MAX_LEAD_LENGTH[shape],
     led: isLed(component),
+    // Diode templates number the cathode 1 (see schematicSymbols.ts); an LED shows it by its colour.
+    band: /^D\d/i.test(component.ref) && !isLed(component),
   }
 }
 

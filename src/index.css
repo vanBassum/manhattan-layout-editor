@@ -756,6 +756,12 @@ input:focus-visible {
   pointer-events: none;
 }
 
+/* The cathode ring printed on a diode body. */
+.cathode-band {
+  fill: #e8e8e8;
+  pointer-events: none;
+}
+
 .part-value {
   font-size: 1px;
   fill: var(--canvas-text);

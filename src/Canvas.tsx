@@ -260,8 +260,29 @@ export function BodyShape({ geometry, stroke, strokeWidth }: { geometry: Geometr
         </>
       )
     default:
-      return <rect x={x} y={y} width={w} height={h} rx={geometry.shape === 'axial' ? 0.8 : 0.3} {...style} />
+      return (
+        <>
+          <rect x={x} y={y} width={w} height={h} rx={geometry.shape === 'axial' ? 0.8 : 0.3} {...style} />
+          {geometry.band && <CathodeBand geometry={geometry} />}
+        </>
+      )
   }
+}
+
+/** A light band across the body at the end where pin 1 (the cathode) leaves it. */
+function CathodeBand({ geometry }: { geometry: Geometry }) {
+  const { x, y, w, h } = geometry.body
+  const pin1 = geometry.anchors[0]
+  const alongX = w >= h
+  const thickness = Math.max(alongX ? w : h, 1) * 0.16
+  // Inset from the end so the band sits on the body, not on its rounded corner.
+  const inset = (alongX ? w : h) * 0.08
+  if (alongX) {
+    const bx = pin1.x < x + w / 2 ? x + inset : x + w - inset - thickness
+    return <rect className="cathode-band" x={bx} y={y} width={thickness} height={h} />
+  }
+  const by = pin1.y < y + h / 2 ? y + inset : y + h - inset - thickness
+  return <rect className="cathode-band" x={x} y={by} width={w} height={thickness} />
 }
 
 /** The ground plane goes underneath the pads glued onto it. */

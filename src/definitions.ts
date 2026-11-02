@@ -22,6 +22,7 @@ function footprintFromGeometry(geometry: Geometry, component: NetComponent): Foo
     leadLength: geometry.leadLength,
     maxLeadLength: geometry.maxLeadLength,
     ...(geometry.led ? { led: true } : {}),
+    ...(geometry.band ? { band: true } : {}),
   }
 }
 
@@ -38,6 +39,7 @@ function geometryFromFootprint(footprint: FootprintDefinition, component: NetCom
     leadLength: footprint.leadLength,
     maxLeadLength: footprint.maxLeadLength,
     led: footprint.led ?? false,
+    band: footprint.band ?? false,
   }
 }
 
