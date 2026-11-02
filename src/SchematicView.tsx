@@ -33,6 +33,7 @@ function straightWire(start: Point, end: Point): Wire {
 }
 
 const isGround = (name: string) => /^(GND|AGND|DGND|PGND|VSS|0)$/i.test(name)
+const isSupply = (name: string) => /^(V\+|V-|VCC|VDD|VEE|[+-]?\d+(\.\d+)?V)$/i.test(name)
 
 interface LabelProps {
   label: NetLabel
@@ -54,6 +55,20 @@ function LabelMark({ label, direction, className, onPointerDown, onDoubleClick }
         <rect className="sch-hit" x={x - 1.6} y={y} width={3.2} height={3.4} />
         <polyline className="sch-line" points={`${x},${y} ${x},${stubEnd}`} />
         <rect className="sch-fill" x={x - 1.52} y={stubEnd} width={3.04} height={0.6} />
+      </g>
+    )
+  }
+  if (isSupply(name)) {
+    // A supply port as in the reference drawing: a stub up to a bar, the name above it.
+    const barY = y - 2.54
+    return (
+      <g className={className} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}>
+        <rect className="sch-hit" x={x - 1.8} y={barY - 2} width={3.6} height={4.6} />
+        <polyline className="sch-line" points={`${x},${y} ${x},${barY}`} />
+        <rect className="sch-fill" x={x - 1.52} y={barY - 0.3} width={3.04} height={0.6} />
+        <text className="sch-net" x={x} y={barY - 0.9} textAnchor="middle">
+          {name}
+        </text>
       </g>
     )
   }
