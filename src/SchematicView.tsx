@@ -165,9 +165,9 @@ function LabelMark({ label, direction, className, onPointerDown, onDoubleClick }
   const textX = x + direction.x * 0.6
   const textY = horizontal ? y + 0.45 : y + direction.y * 1.2 + (direction.y > 0 ? 0.9 : 0)
   const anchor = horizontal ? (direction.x > 0 ? 'start' : 'end') : 'middle'
+  // No dot on the point: on a wire it would look like a junction. The name alone marks the label.
   return (
     <g className={className} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}>
-      <circle className="sch-label-dot" cx={x} cy={y} r={0.35} />
       <text className="sch-net" x={textX} y={textY} textAnchor={anchor}>
         {name}
       </text>
@@ -213,6 +213,26 @@ function SymbolShape({ graphic, mirrored }: { graphic: SymbolGraphic; mirrored: 
   }
 }
 
+/**
+ * An invisible copy of a symbol element that catches the pointer: the shape itself plus a margin
+ * along its outline. Following the drawing instead of a box around the pins keeps a big symbol
+ * (a transistor) from covering a small one placed close to it.
+ */
+function SymbolHitShape({ graphic }: { graphic: SymbolGraphic }) {
+  switch (graphic.type) {
+    case 'line':
+      return <polyline className="sch-hit-shape" points={pointList(graphic.points)} fill="none" />
+    case 'polygon':
+      return <polygon className="sch-hit-shape" points={pointList(graphic.points)} />
+    case 'rect':
+      return <rect className="sch-hit-shape" x={graphic.x} y={graphic.y} width={graphic.w} height={graphic.h} />
+    case 'circle':
+      return <circle className="sch-hit-shape" cx={graphic.x} cy={graphic.y} r={graphic.r} />
+    case 'text':
+      return null
+  }
+}
+
 interface PartProps {
   component: NetComponent
   placement: SchematicPlacement
@@ -226,14 +246,15 @@ function SchematicPart({ component, placement, pins, selected, onPointerDown }: 
   const symbol = componentSymbol(component)
   const { x, y, rotation } = placement
   const mirrored = placement.mirrored ?? false
-  const hitArea = partArea(pins)
   const labelOffset = rotatePoint(symbol.label, rotation)
   const label = { x: x + labelOffset.x, y: y + labelOffset.y }
   return (
     <g className={selected ? 'sch-part selected' : 'sch-part'} onPointerDown={onPointerDown}>
       <title>{`${component.ref} ${component.value}`}</title>
-      {hitArea && <rect className="sch-hit" x={hitArea.x} y={hitArea.y} width={hitArea.w} height={hitArea.h} />}
       <g transform={`translate(${x} ${y}) rotate(${rotation})${mirrored ? ' scale(-1 1)' : ''}`}>
+        {symbol.graphics.map((graphic, k) => (
+          <SymbolHitShape key={`hit${k}`} graphic={graphic} />
+        ))}
         {symbol.graphics.map((graphic, k) => (
           <SymbolShape key={k} graphic={graphic} mirrored={mirrored} />
         ))}
@@ -608,6 +629,13 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
 
   const pinDirections = new Map(parts.flatMap(({ pins }) => pins.map((pin) => [pointKey(pin), { x: pin.dx, y: pin.dy }] as const)))
   const conflictPoints = new Set(nets.conflicts.flatMap((c) => c.points.map(pointKey)))
+  /** Which way a label's name points: away from its pin, above a horizontal wire, else to the right. */
+  const labelDirection = (label: NetLabel): Point => {
+    const pin = pinDirections.get(pointKey(label))
+    if (pin) return pin
+    const onHorizontalWire = schematic.wires.some((w) => w.y1 === w.y2 && w.y1 === label.y && Math.min(w.x1, w.x2) <= label.x && label.x <= Math.max(w.x1, w.x2))
+    return onHorizontalWire ? { x: 0, y: -1 } : { x: 1, y: 0 }
+  }
   const px = 1 / view.scale
   const pitch = gridPitch(view.scale, GRID_PITCHES_MM)
   const preview = draft && draftPath(draft)
@@ -663,7 +691,7 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
               <LabelMark
                 key={k}
                 label={label}
-                direction={pinDirections.get(pointKey(label)) ?? { x: 1, y: 0 }}
+                direction={labelDirection(label)}
                 className={['sch-label', selected && 'selected', conflict && 'conflict'].filter(Boolean).join(' ')}
                 onPointerDown={(e) => pressItem(e, { kind: 'label', index: k })}
                 onDoubleClick={() => renameLabel(k)}

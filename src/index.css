@@ -1474,6 +1474,17 @@ input:focus-visible {
   fill: transparent;
 }
 
+/* A symbol's own shapes, filled and widened by about 0.5 mm on each side, catch the pointer. */
+.sch-hit-shape {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 1;
+}
+
+polyline.sch-hit-shape {
+  fill: none;
+}
+
 .sch-part.selected .sch-line,
 .sch-part.selected .sch-outline,
 .sch-part.selected .sch-box,
@@ -1544,12 +1555,10 @@ input:focus-visible {
 }
 
 .sch-label.conflict .sch-net,
-.sch-label.conflict .sch-fill,
-.sch-label.conflict .sch-label-dot {
+.sch-label.conflict .sch-fill {
   fill: var(--error);
 }
 
-.sch-label-dot,
 .sch-junction {
   fill: var(--sch-wire);
 }
