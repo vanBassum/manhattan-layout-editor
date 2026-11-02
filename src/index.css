@@ -1554,6 +1554,13 @@ input:focus-visible {
   fill: var(--sch-wire);
 }
 
+/* A selected wire corner or junction: a hollow handle around the point. */
+.sch-point.selected {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.25;
+}
+
 .sch-open-pin {
   fill: var(--canvas-bg);
   stroke: var(--warn);

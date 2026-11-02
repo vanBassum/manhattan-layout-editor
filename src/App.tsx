@@ -90,9 +90,9 @@ const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title
     icon: 'select',
     label: 'Select',
     title:
-      'Select (V): drag parts; drag empty space to select, Shift+click or Shift+drag adds. ' +
-      'Drag from a pin end to draw a wire (Shift: from a wire end). Drag a wire end to move it, ' +
-      'a wire sideways to shift it. Click a wire or label and press Del to remove it',
+      'Select (V): click parts, wires, labels and wire corners; Shift+click adds. Drag empty space to the right to ' +
+      'select what lies inside, to the left for what it touches. Dragging the selection keeps its connections; ' +
+      'Shift+drag moves it alone. Drag from a pin end to draw a wire (Shift: from a wire end). Del removes wires and labels',
   },
   {
     id: 'wire',
@@ -397,6 +397,8 @@ export function App() {
     if (id === activeIdRef.current) {
       rememberEdit()
       restore({ ...snapshotOf(projectRef.current), ...changes })
+      // A selection names schematic wires and labels by index; new ones mean other things.
+      if (changes.schematic) setSelection(null)
       return projectRef.current
     }
     parkedHistory.current.set(id, withEdit(parkedHistory.current.get(id) ?? NO_HISTORY, snapshotOf(stored)))
@@ -832,8 +834,10 @@ export function App() {
     setProject((p) => ({ ...p, netlist: withValues(p.netlist, [{ ref, value }]) }))
   }
 
-  const selectAll = () =>
-    setSelection(selectionOf(layout.placements.map((p) => p.ref), layout.islands.map((i) => i.net)))
+  const selectAll = () => {
+    const wiring = { wires: fullSchematic.wires.map((_, i) => i), labels: fullSchematic.labels.map((_, i) => i), points: [] }
+    setSelection(selectionOf(layout.placements.map((p) => p.ref), layout.islands.map((i) => i.net), wiring))
+  }
 
   const selectedIsland = selection?.kind === 'island' ? layout.islands.find((i) => i.net === selection.net) : undefined
   const canRemoveRect = selectedIsland !== undefined && selectedIsland.rects.length > 1

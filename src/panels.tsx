@@ -574,9 +574,12 @@ const SHORTCUTS: [string, string][] = [
   ['X / Y (schematic)', 'Mirror the selected symbols left to right / top to bottom'],
   ['Space while drawing', 'Flip which leg of the wire comes first'],
   ['Drag from a pin end', 'Draw a wire without switching tools (Shift: from a wire end)'],
-  ['Drag a wire', 'Its end: move that end. Its middle: shift it sideways'],
+  ['Drag right / left (schematic)', 'Select what lies inside the rectangle / what it touches'],
+  ['Drag (schematic)', 'Drag the selection; wires around it stretch along, connections stay'],
+  ['Shift+drag (schematic)', 'Move only the selection; connections across its edge break'],
+  ['Drag a wire, a corner', 'A wire alone shifts sideways; a corner or junction takes its wire ends along'],
   ['L (schematic)', 'Label tool: click a point to name its net'],
-  ['Del (schematic)', 'Remove the selected wire or label'],
+  ['Del (schematic)', 'Remove the selected wires and labels'],
   ['Double-click a label', 'Rename it'],
 ]
 
