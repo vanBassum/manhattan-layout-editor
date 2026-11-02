@@ -28,14 +28,30 @@ export interface FullSchematic {
 /** Map key of a point; coordinates are on the grid, so rounding only removes float noise. */
 export const pointKey = (p: Point) => `${Math.round(p.x * 1000) / 1000},${Math.round(p.y * 1000) / 1000}`
 
+/** A point of the symbol, relative to the placement's origin: mirrored first, then rotated. */
+function placedOffset(p: Point, placement: SchematicPlacement): Point {
+  return rotatePoint(placement.mirrored ? { x: -p.x, y: p.y } : p, placement.rotation)
+}
+
+/**
+ * The placement flipped on screen, around its origin. A horizontal flip turns the rotation the other
+ * way; a vertical flip is a horizontal one plus half a turn.
+ */
+export function flipped(placement: SchematicPlacement, axis: 'horizontal' | 'vertical'): SchematicPlacement {
+  const { mirrored, ...rest } = placement
+  const turn = axis === 'horizontal' ? 360 : 540
+  const rotation = (turn - placement.rotation) % 360
+  return mirrored ? { ...rest, rotation } : { ...rest, rotation, mirrored: true }
+}
+
 /** Where a placed component's pins end, in the component's pin order, with their outward direction. */
 export function pinEnds(component: NetComponent, placement: SchematicPlacement): PinEnd[] {
   // componentSymbol only returns a symbol that has every pin of the part.
   const byNumber = new Map(componentSymbol(component).pins.map((p) => [p.number, p]))
   return component.pins.map(({ number }) => {
     const pin = byNumber.get(number)!
-    const at = rotatePoint(pin, placement.rotation)
-    const direction = rotatePoint({ x: pin.dx, y: pin.dy }, placement.rotation)
+    const at = placedOffset(pin, placement)
+    const direction = placedOffset({ x: pin.dx, y: pin.dy }, placement)
     return { x: placement.x + at.x, y: placement.y + at.y, dx: Math.round(direction.x), dy: Math.round(direction.y) }
   })
 }
@@ -227,11 +243,13 @@ export function agentPlacements(netlist: Netlist, placements: unknown): Schemati
   const refs = new Set(netlist.components.map((c) => c.ref))
   const updates = new Map<string, SchematicPlacement>()
   for (const item of placements as Partial<SchematicPlacement>[]) {
-    const { ref, x, y, rotation = 0 } = item
+    const { ref, x, y, rotation = 0, mirrored = false } = item
     if (typeof ref !== 'string' || !refs.has(ref)) throw new Error(`Unknown component "${String(ref)}"`)
     if (typeof x !== 'number' || typeof y !== 'number') throw new Error(`${ref}: x and y must be numbers`)
     if (rotation % 90 !== 0) throw new Error(`${ref}: rotation must be a multiple of 90`)
-    updates.set(ref, { ref, x: snapToGrid(x, SCHEMATIC_GRID), y: snapToGrid(y, SCHEMATIC_GRID), rotation: ((rotation % 360) + 360) % 360 })
+    if (typeof mirrored !== 'boolean') throw new Error(`${ref}: mirrored must be true or false`)
+    const placement = { ref, x: snapToGrid(x, SCHEMATIC_GRID), y: snapToGrid(y, SCHEMATIC_GRID), rotation: ((rotation % 360) + 360) % 360 }
+    updates.set(ref, mirrored ? { ...placement, mirrored } : placement)
   }
   return [...updates.values()]
 }

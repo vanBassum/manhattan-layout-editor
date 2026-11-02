@@ -275,14 +275,17 @@ forward(
 forward(
   'set_schematic',
   'Places component symbols on the schematic, as one undo step. x/y is the symbol origin in mm, y points down; it ' +
-    'is snapped to the 2.54 mm grid. rotation is 0, 90, 180 or 270 degrees clockwise. Symbols are drawn with their ' +
+    'is snapped to the 2.54 mm grid. rotation is 0, 90, 180 or 270 degrees clockwise. mirrored: true mirrors the ' +
+    'symbol left to right before it is rotated (a vertical flip is mirrored plus 180). Symbols are drawn with their ' +
     'pins at multiples of 2.54 mm from the origin: two-pin parts horizontal (pin 1 left; diodes have the cathode, ' +
     'pin 1, on the right), NPN transistors with the base left, collector up and emitter down (PNP: emitter up), ' +
     'trimmers with the wiper pin pointing down. Wire ends and labels on a moved part\'s pins go along. Components ' +
     'not listed keep their place. Returns the schematic as get_schematic does.',
   {
     placements: z
-      .array(z.object({ ref: z.string(), x: z.number(), y: z.number(), rotation: z.number().optional() }))
+      .array(
+        z.object({ ref: z.string(), x: z.number(), y: z.number(), rotation: z.number().optional(), mirrored: z.boolean().optional() }),
+      )
       .min(1),
   },
 )

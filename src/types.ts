@@ -158,6 +158,8 @@ export interface SchematicPlacement {
   x: number
   y: number
   rotation: number
+  /** Mirrored left to right before rotating. Missing means not mirrored. */
+  mirrored?: boolean
 }
 
 /** A straight wire between two grid points. It connects where an end meets a pin, another end, or lands on a wire. */

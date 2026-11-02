@@ -62,6 +62,7 @@ import {
   agentPlacements,
   completeSchematic,
   deriveNets,
+  flipped,
   labelsFromAgent,
   pinEnds,
   pinsWithOtherNet,
@@ -789,6 +790,14 @@ export function App() {
     }))
   }
 
+  /** Mirrors each selected symbol in place; wires and labels on its pins go along. */
+  const flipSelected = (axis: 'horizontal' | 'vertical') => {
+    if (refsToEdit.length === 0) return
+    rememberEdit()
+    const flippedParts = fullSchematic.placements.filter((p) => refsToEdit.includes(p.ref)).map((p) => flipped(p, axis))
+    changeSchematic(withPlacementChanges(fullSchematic, builtNetlist, flippedParts))
+  }
+
   const resetLeads = () => {
     if (refsToEdit.length === 0) return
     rememberEdit()
@@ -918,6 +927,8 @@ export function App() {
     } else if (e.key === 'w' || e.key === 'W') setSchematicTool('wire')
     else if (e.key === 'l' || e.key === 'L') setSchematicTool('label')
     else if (e.key === 'h' || e.key === 'H') setTool('pan')
+    else if ((e.key === 'x' || e.key === 'X') && activePane === 'schematic') flipSelected('horizontal')
+    else if ((e.key === 'y' || e.key === 'Y') && activePane === 'schematic') flipSelected('vertical')
     else if (e.key === 'm' || e.key === 'M') setMoveMode((mode) => (mode === 'part' ? 'body' : 'part'))
   }
   useEffect(() => {
@@ -1107,6 +1118,12 @@ export function App() {
                   <div className="rail-group" role="group" aria-label="Component">
                     <button className="rail-button" onClick={() => rotateSelected(90, 'schematic')} disabled={refsToEdit.length === 0} title="Rotate a quarter turn (Space)">
                       <Icon name="rotate" />Rotate
+                    </button>
+                    <button className="rail-button" onClick={() => flipSelected('horizontal')} disabled={refsToEdit.length === 0} title="Mirror left to right (X)">
+                      <Icon name="flipHorizontal" />Flip H
+                    </button>
+                    <button className="rail-button" onClick={() => flipSelected('vertical')} disabled={refsToEdit.length === 0} title="Mirror top to bottom (Y)">
+                      <Icon name="flipVertical" />Flip V
                     </button>
                   </div>
                 </nav>

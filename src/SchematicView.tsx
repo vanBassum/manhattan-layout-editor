@@ -155,8 +155,10 @@ const FILL_CLASS = {
 } as const
 const pointList = (points: [number, number][]) => points.map((p) => p.join(',')).join(' ')
 
-/** One drawing element of a symbol definition. */
-function SymbolShape({ graphic }: { graphic: SymbolGraphic }) {
+const MIRRORED_ANCHOR = { start: 'end', middle: 'middle', end: 'start' } as const
+
+/** One drawing element of a symbol definition. In a mirrored symbol, text is mirrored back so it stays readable. */
+function SymbolShape({ graphic, mirrored }: { graphic: SymbolGraphic; mirrored: boolean }) {
   switch (graphic.type) {
     case 'line':
       return <polyline className="sch-line" points={pointList(graphic.points)} />
@@ -168,7 +170,13 @@ function SymbolShape({ graphic }: { graphic: SymbolGraphic }) {
       return <circle className={FILL_CLASS[graphic.fill]} cx={graphic.x} cy={graphic.y} r={graphic.r} />
     case 'text':
       return (
-        <text className={graphic.style === 'mark' ? 'sch-pin-mark' : 'sch-pin-number'} x={graphic.x} y={graphic.y} textAnchor={graphic.anchor}>
+        <text
+          className={graphic.style === 'mark' ? 'sch-pin-mark' : 'sch-pin-number'}
+          x={mirrored ? -graphic.x : graphic.x}
+          y={graphic.y}
+          textAnchor={mirrored ? MIRRORED_ANCHOR[graphic.anchor] : graphic.anchor}
+          transform={mirrored ? 'scale(-1 1)' : undefined}
+        >
           {graphic.text}
         </text>
       )
@@ -187,6 +195,7 @@ interface PartProps {
 function SchematicPart({ component, placement, pins, selected, onPointerDown }: PartProps) {
   const symbol = componentSymbol(component)
   const { x, y, rotation } = placement
+  const mirrored = placement.mirrored ?? false
   const hitArea = partArea(pins)
   const labelOffset = rotatePoint(symbol.label, rotation)
   const label = { x: x + labelOffset.x, y: y + labelOffset.y }
@@ -194,9 +203,9 @@ function SchematicPart({ component, placement, pins, selected, onPointerDown }: 
     <g className={selected ? 'sch-part selected' : 'sch-part'} onPointerDown={onPointerDown}>
       <title>{`${component.ref} ${component.value}`}</title>
       {hitArea && <rect className="sch-hit" x={hitArea.x} y={hitArea.y} width={hitArea.w} height={hitArea.h} />}
-      <g transform={`translate(${x} ${y}) rotate(${rotation})`}>
+      <g transform={`translate(${x} ${y}) rotate(${rotation})${mirrored ? ' scale(-1 1)' : ''}`}>
         {symbol.graphics.map((graphic, k) => (
-          <SymbolShape key={k} graphic={graphic} />
+          <SymbolShape key={k} graphic={graphic} mirrored={mirrored} />
         ))}
       </g>
       <text className="sch-ref" x={label.x} y={label.y}>{component.ref}</text>
@@ -441,11 +450,10 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
       onChange(withWireShifted(drag.base, drag.index, snapPoint({ x: dx, y: dy }), pinKeys))
       return
     }
-    // A part rotated mid-drag (Space) keeps its new rotation; `base` still maps its old pin ends.
-    const rotations = new Map(schematic.placements.map((p) => [p.ref, p.rotation]))
+    // A part rotated or flipped mid-drag keeps its new orientation; `base` still maps its old pin ends.
+    const current = new Map(schematic.placements.map((p) => [p.ref, p]))
     const moved = drag.origins.map((origin) => ({
-      ...origin,
-      rotation: rotations.get(origin.ref) ?? origin.rotation,
+      ...(current.get(origin.ref) ?? origin),
       ...snapPoint({ x: origin.x + dx, y: origin.y + dy }),
     }))
     onChange(withPlacementChanges(drag.base, netlist, moved))
