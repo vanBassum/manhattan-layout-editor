@@ -28,8 +28,9 @@ export type Tool = 'select' | 'pan'
  */
 export type EditMode = 'rects' | 'polygons'
 
-/** How far the + on an island edge grows the island. */
-const GROW_MM = 2.5
+/** The tab the + on an island edge pulls out: how far it sticks out, and how wide it is along the edge. */
+const TAB_DEPTH_MM = 2.5
+const TAB_WIDTH_MM = 2.5
 
 /** Part: the part moves with its bent leads. Body: lead ends stay soldered where they are. */
 export type MoveMode = 'part' | 'body'
@@ -468,13 +469,15 @@ export function Canvas(props: Props) {
     beginDrag(e, { kind: 'edge', net, edge, start: toWorld(e), islands: layout.islands })
   }
 
-  /** Grows the island outward over the full length of `edge`, as if the edge were dragged out. */
+  /** Pulls a tab out of the middle of `edge`; dragging the edge itself moves all of it. */
   const onGrowPointerDown = (e: ReactPointerEvent, net: string, edge: IslandEdge) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    const target = edge.inside === 'low' ? edge.at + GROW_MM : edge.at - GROW_MM
+    const from = Math.max(edge.from, snapToGrid((edge.from + edge.to - TAB_WIDTH_MM) / 2, snap))
+    const tab = { ...edge, from, to: Math.min(edge.to, from + TAB_WIDTH_MM) }
+    const target = edge.inside === 'low' ? edge.at + TAB_DEPTH_MM : edge.at - TAB_DEPTH_MM
     onBeginEdit()
-    onLayoutChange((l) => ({ ...l, islands: moveIslandEdge(l.islands, net, edge, target) }))
+    onLayoutChange((l) => ({ ...l, islands: moveIslandEdge(l.islands, net, tab, target) }))
     setHoveredEdge(null)
   }
 
@@ -763,7 +766,7 @@ export function Canvas(props: Props) {
               />
               {hoveredEdge === hoverKey && (
                 <g className="grow-button" onPointerDown={(e) => onGrowPointerDown(e, net, edge)}>
-                  <title>Grow the island {GROW_MM} mm on this side</title>
+                  <title>Add a {TAB_WIDTH_MM} × {TAB_DEPTH_MM} mm tab here; drag the edge to move all of it</title>
                   <circle cx={plus.x} cy={plus.y} r={7 * px} strokeWidth={px} />
                   <path
                     d={`M${plus.x - 3.5 * px} ${plus.y}h${7 * px}M${plus.x} ${plus.y - 3.5 * px}v${7 * px}`}

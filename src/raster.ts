@@ -201,15 +201,17 @@ export function islandEdges(islands: Island[], net: string): IslandEdge[] {
 }
 
 /**
- * Moves one edge of an island's outline to `target`. Growing takes the cells from whatever lies
- * there; shrinking hands them to the island across the edge, so no gap opens between nets.
- * Returns the islands unchanged when the island would disappear.
+ * Moves one edge of an island's outline, or a stretch of it (`from`..`to` narrower than the
+ * outline's edge pulls out a tab), to `target`. Growing takes the cells from whatever lies there;
+ * shrinking hands them to the island across the edge, so no gap opens between nets. Returns the
+ * islands unchanged when the island would disappear.
  */
 export function moveIslandEdge(islands: Island[], net: string, edge: IslandEdge, target: number): Island[] {
   const plain = islands.filter((island) => !island.plane)
   const k = plain.findIndex((island) => island.net === net)
   if (k === -1) return islands
-  const grid = rasterize(plain, edge.axis === 'x' ? [edge.at, target] : [], edge.axis === 'y' ? [edge.at, target] : [])
+  const [acrossLines, alongLines] = [[edge.at, target], [edge.from, edge.to]]
+  const grid = rasterize(plain, edge.axis === 'x' ? acrossLines : alongLines, edge.axis === 'y' ? acrossLines : alongLines)
   const { across, along, cell: at } = oriented(grid, edge.axis)
   const a0 = indexOf(across, edge.at)
   const a1 = indexOf(across, target)
