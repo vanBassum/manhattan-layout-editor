@@ -6,7 +6,7 @@ import { findCuts, MIN_RECT_SIZE, moveCut, type Cut } from './cuts'
 import { islandEdges, moveIslandEdge, type IslandEdge } from './raster'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
 import type { BuiltNetlist, Island, Layout, Placement, Point, Rect, Selection } from './types'
-import { gridPitch, Rulers, useViewport, ViewportGrid, type View } from './viewport'
+import { gridPitch, gridPitches, Rulers, useViewport, ViewportGrid, type View } from './viewport'
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 type Side = 'left' | 'right' | 'top' | 'bottom'
@@ -87,8 +87,9 @@ function layerClasses(layers: Layers): string {
   return ['canvas', ...classes].join(' ')
 }
 
-/** Fine grid pitches in mm; every fifth line is solid. */
-const GRID_PITCHES_MM = [1, 5, 25, 125]
+/** The finest grid pitch in mm. */
+const FINE_GRID_MM = 1
+export const DEFAULT_PCB_GRID_LINES_PER_MAJOR = 5
 
 /** CSS variables --opacity-<layer>, read by the stylesheet. */
 export function layerOpacities(layers: Record<string, LayerView>): CSSProperties {
@@ -113,6 +114,8 @@ interface Props {
   tool: Tool
   moveMode: MoveMode
   editMode: EditMode
+  /** Fine grid steps (1 mm) between two solid grid lines. */
+  gridLinesPerMajor: number
 }
 
 const OPPOSITE: Record<Side, Side> = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' }
@@ -330,7 +333,7 @@ function moveGroup(layout: Layout, drag: GroupDrag, dx: number, dy: number): Lay
 }
 
 export function Canvas(props: Props) {
-  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode, editMode } = props
+  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode, editMode, gridLinesPerMajor } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const dragChangedRef = useRef(false)
@@ -576,7 +579,7 @@ export function Canvas(props: Props) {
 
   // Sizes that should stay constant on screen, expressed in mm.
   const px = 1 / view.scale
-  const pitch = gridPitch(view.scale, GRID_PITCHES_MM)
+  const pitch = gridPitch(view.scale, gridPitches(FINE_GRID_MM, gridLinesPerMajor))
   const selectedIsland = selection?.kind === 'island' ? islandsByNet.get(selection.net) : undefined
   const selectedRectIndex = selection?.kind === 'island' ? selection.rectIndex : -1
   const highlightedNets = new Set(selectedNets(selection))
@@ -594,7 +597,7 @@ export function Canvas(props: Props) {
       onContextMenu={(e) => e.preventDefault()}
     >
       <g transform={`translate(${view.ox} ${view.oy}) scale(${view.scale})`}>
-        <ViewportGrid view={view} size={size} pitch={pitch} />
+        <ViewportGrid view={view} size={size} pitch={pitch} linesPerMajor={gridLinesPerMajor} />
 
         {planesFirst(layout.islands).map((island) => {
           const violating = problemNets.has(island.net)
@@ -821,7 +824,7 @@ export function Canvas(props: Props) {
           />
         )}
       </g>
-      <Rulers view={view} size={size} pitch={pitch} />
+      <Rulers view={view} size={size} pitch={pitch} linesPerMajor={gridLinesPerMajor} />
     </svg>
   )
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
 import { buildNetlist, buildProjectNetlist, withDefinitions } from './definitions'
 import { agentTargetId, runAgentCommand } from './agentDispatch'
-import { Canvas, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
+import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { exportDxf } from './exportDxf'
 import { errorText } from './errorText'
 import { downloadText, exportSvg } from './exportSvg'
@@ -21,6 +21,8 @@ import { findStrategy, STRATEGIES } from './optimize'
 import {
   AiHelpDialog,
   ComponentList,
+  GRID_LINES_PER_MAJOR_OPTIONS,
+  GridSettings,
   HelpDialog,
   Icon,
   LayerToggles,
@@ -31,8 +33,8 @@ import {
   SCHEMATIC_LAYERS,
   Section,
   SelectionDetails,
+  RailMenu,
   Validation,
-  ViewMenu,
   type Question,
 } from './panels'
 import { canUseFiles, compareWithFile, fileLabel, mayUse, pickFileToOpen, readFile, saveProjectFile } from './projectFiles'
@@ -107,6 +109,9 @@ const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
 const LAYERS_KEY = 'manhattan-layout-editor/layers'
 const SCHEMATIC_LAYERS_KEY = 'manhattan-layout-editor/schematic-layers'
+const PCB_GRID_KEY = 'manhattan-layout-editor/pcb-grid-lines-per-major'
+const SCHEMATIC_GRID_KEY = 'manhattan-layout-editor/schematic-grid-lines-per-major'
+const DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR = 6
 const THEME_KEY = 'manhattan-layout-editor/theme'
 const VIEW_KEY = 'manhattan-layout-editor/view'
 
@@ -123,6 +128,11 @@ function writePreference(key: string, value: string) {
   try {
     localStorage.setItem(key, value)
   } catch {}
+}
+
+function loadGridLinesPerMajor(key: string, fallback: number): number {
+  const stored = Number(readPreference(key))
+  return GRID_LINES_PER_MAJOR_OPTIONS.includes(stored) ? stored : fallback
 }
 
 function initialView(): ViewMode {
@@ -268,6 +278,10 @@ export function App() {
   const [footprintDialogRefs, setFootprintDialogRefs] = useState<string[] | null>(null)
   const [layers, setLayersState] = useState(() => loadLayerViews(LAYERS_KEY, ALL_LAYERS))
   const [schematicLayers, setSchematicLayersState] = useState(() => loadLayerViews(SCHEMATIC_LAYERS_KEY, DEFAULT_SCHEMATIC_LAYERS))
+  const [pcbGrid, setPcbGridState] = useState(() => loadGridLinesPerMajor(PCB_GRID_KEY, DEFAULT_PCB_GRID_LINES_PER_MAJOR))
+  const [schematicGrid, setSchematicGridState] = useState(() =>
+    loadGridLinesPerMajor(SCHEMATIC_GRID_KEY, DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR),
+  )
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => buildNetlist(netlist, layout.placements, project.definitions), [netlist, layout.placements, project.definitions])
   const fullSchematic = useMemo(() => completeSchematic(builtNetlist, project.schematic), [builtNetlist, project.schematic])
@@ -621,6 +635,16 @@ export function App() {
   const setSchematicLayers = (next: SchematicLayers) => {
     setSchematicLayersState(next)
     writePreference(SCHEMATIC_LAYERS_KEY, JSON.stringify(next))
+  }
+
+  const setPcbGrid = (linesPerMajor: number) => {
+    setPcbGridState(linesPerMajor)
+    writePreference(PCB_GRID_KEY, String(linesPerMajor))
+  }
+
+  const setSchematicGrid = (linesPerMajor: number) => {
+    setSchematicGridState(linesPerMajor)
+    writePreference(SCHEMATIC_GRID_KEY, String(linesPerMajor))
   }
 
   const setLayout = (update: (layout: Layout) => Layout) =>
@@ -1128,9 +1152,12 @@ export function App() {
                     </button>
                   </div>
                   <div className="rail-group view">
-                    <ViewMenu>
+                    <RailMenu icon="grid" label="Grid" title="Grid settings">
+                      <GridSettings linesPerMajor={schematicGrid} onChange={setSchematicGrid} />
+                    </RailMenu>
+                    <RailMenu icon="eye" label="View" title="Choose what is drawn">
                       <LayerToggles info={SCHEMATIC_LAYERS} layers={schematicLayers} onChange={setSchematicLayers} />
-                    </ViewMenu>
+                    </RailMenu>
                   </div>
                 </nav>
                 <div className="canvas-frame">
@@ -1145,6 +1172,7 @@ export function App() {
                     tool={schematicTool}
                     fitRequest={fitRequest}
                     layers={schematicLayers}
+                    gridLinesPerMajor={schematicGrid}
                   />
                 </div>
               </section>
@@ -1196,9 +1224,12 @@ export function App() {
                     </button>
                   </div>
                   <div className="rail-group view">
-                    <ViewMenu>
+                    <RailMenu icon="grid" label="Grid" title="Grid settings">
+                      <GridSettings linesPerMajor={pcbGrid} onChange={setPcbGrid} />
+                    </RailMenu>
+                    <RailMenu icon="eye" label="View" title="Choose what is drawn">
                       <LayerToggles info={PCB_LAYERS} layers={layers} onChange={setLayers} opacityNote=" (below 50% the layer ignores clicks)" />
-                    </ViewMenu>
+                    </RailMenu>
                   </div>
                 </nav>
                 <div className="canvas-frame">
@@ -1217,6 +1248,7 @@ export function App() {
                     tool={tool}
                     moveMode={moveMode}
                     editMode={editMode}
+                    gridLinesPerMajor={pcbGrid}
                   />
                 </div>
               </section>

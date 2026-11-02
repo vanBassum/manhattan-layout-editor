@@ -72,8 +72,15 @@ export function Section({ title, fill = false, children }: SectionProps) {
   )
 }
 
-/** A rail button that opens the pane's view options below it; a click outside closes them. */
-export function ViewMenu({ children }: { children: ReactNode }) {
+interface RailMenuProps {
+  icon: IconName
+  label: string
+  title: string
+  children: ReactNode
+}
+
+/** A rail button that opens the pane's options below it; a click outside closes them. */
+export function RailMenu({ icon, label, title, children }: RailMenuProps) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -91,11 +98,28 @@ export function ViewMenu({ children }: { children: ReactNode }) {
         aria-haspopup="true"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        title="Choose what is drawn"
+        title={title}
       >
-        <Icon name="eye" />View
+        <Icon name={icon} />{label}
       </button>
       {open && <div className="menu-list view-menu">{children}</div>}
+    </div>
+  )
+}
+
+export const GRID_LINES_PER_MAJOR_OPTIONS = [2, 4, 5, 6, 8, 10]
+
+export function GridSettings({ linesPerMajor, onChange }: { linesPerMajor: number; onChange: (linesPerMajor: number) => void }) {
+  return (
+    <div className="settings">
+      <label title="How many fine grid steps lie between two solid grid lines">
+        Solid line every
+        <select value={linesPerMajor} onChange={(e) => onChange(Number(e.target.value))}>
+          {GRID_LINES_PER_MAJOR_OPTIONS.map((n) => (
+            <option key={n} value={n}>{n} steps</option>
+          ))}
+        </select>
+      </label>
     </div>
   )
 }

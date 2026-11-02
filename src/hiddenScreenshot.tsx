@@ -1,6 +1,6 @@
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { Canvas, type Layers } from './Canvas'
+import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type Layers } from './Canvas'
 import { findSpacingViolations, findSplitNets } from './layout'
 import { canvasToPng } from './screenshot'
 import type { BuiltNetlist, Layout, Rect } from './types'
@@ -38,6 +38,7 @@ export async function screenshotHidden(netlist: BuiltNetlist, layout: Layout, is
           tool="select"
           moveMode="part"
           editMode="rects"
+          gridLinesPerMajor={DEFAULT_PCB_GRID_LINES_PER_MAJOR}
         />,
       ),
     )

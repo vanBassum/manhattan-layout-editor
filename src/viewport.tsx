@@ -74,17 +74,38 @@ export function visibleArea(view: View, size: Size): Rect {
 
 const MIN_GRID_SPACING_PX = 8
 
+/** Grid pitches from `finest` up, each the solid-line spacing of the one before, so zooming out keeps the solid lines. */
+export function gridPitches(finest: number, linesPerMajor: number): number[] {
+  return [finest, finest * linesPerMajor, finest * linesPerMajor ** 2, finest * linesPerMajor ** 3]
+}
+
 /** Finest pitch whose lines stay far enough apart to read at this zoom. */
 export function gridPitch(scale: number, pitches: readonly number[]): number {
   return pitches.find((pitch) => pitch * scale >= MIN_GRID_SPACING_PX) ?? pitches[pitches.length - 1]
 }
 
-/** Dashed fine grid with every fifth line solid, plus the origin axes when `axes` is set. Goes inside the world transform. */
-export function ViewportGrid({ view, size, pitch, axes = true }: { view: View; size: Size; pitch: number; axes?: boolean }) {
+/**
+ * Dashed fine grid with every `linesPerMajor`-th line solid, plus the origin axes when `axes` is set.
+ * Goes inside the world transform.
+ */
+export function ViewportGrid({
+  view,
+  size,
+  pitch,
+  linesPerMajor,
+  axes = true,
+}: {
+  view: View
+  size: Size
+  pitch: number
+  linesPerMajor: number
+  axes?: boolean
+}) {
   // Unique per instance: a hidden canvas for screenshots can be in the document at the same time.
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const px = 1 / view.scale
   const visible = visibleArea(view, size)
+  const major = linesPerMajor * pitch
   return (
     <>
       <defs>
@@ -97,8 +118,8 @@ export function ViewportGrid({ view, size, pitch, axes = true }: { view: View; s
             strokeDasharray={`${2 * px} ${3 * px}`}
           />
         </pattern>
-        <pattern id={`${id}-major`} width={5 * pitch} height={5 * pitch} patternUnits="userSpaceOnUse">
-          <path d={`M ${5 * pitch} 0 L 0 0 0 ${5 * pitch}`} fill="none" className="grid-major" strokeWidth={px} />
+        <pattern id={`${id}-major`} width={major} height={major} patternUnits="userSpaceOnUse">
+          <path d={`M ${major} 0 L 0 0 0 ${major}`} fill="none" className="grid-major" strokeWidth={px} />
         </pattern>
       </defs>
       <g className="grid">
@@ -126,13 +147,14 @@ function rulerTicks(from: number, to: number, pitch: number): number[] {
 
 /**
  * Millimetre rulers along the top and left edge, in screen space so they stay put while the
- * board pans under them. Labels sit on the solid (every fifth) grid lines.
+ * board pans under them. Labels sit on the solid grid lines.
  */
-export function Rulers({ view, size, pitch }: { view: View; size: Size; pitch: number }) {
+export function Rulers({ view, size, pitch, linesPerMajor }: { view: View; size: Size; pitch: number; linesPerMajor: number }) {
   const { width, height } = size
   const toScreenX = (mm: number) => view.ox + mm * view.scale
   const toScreenY = (mm: number) => view.oy + mm * view.scale
-  const isMajor = (mm: number) => Math.abs(mm / (5 * pitch) - Math.round(mm / (5 * pitch))) < 1e-6
+  const major = linesPerMajor * pitch
+  const isMajor = (mm: number) => Math.abs(mm / major - Math.round(mm / major)) < 1e-6
   const label = (mm: number) => String(Math.round(mm * 100) / 100)
   const xTicks = rulerTicks(-view.ox / view.scale, (width - view.ox) / view.scale, pitch)
   const yTicks = rulerTicks(-view.oy / view.scale, (height - view.oy) / view.scale, pitch)

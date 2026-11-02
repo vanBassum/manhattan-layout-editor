@@ -31,7 +31,7 @@ import {
   type SchematicItem,
 } from './selection'
 import type { BuiltComponent, BuiltNetlist, NetLabel, Point, Rect, SchematicPlacement, Selection, Wire, WiringSelection } from './types'
-import { gridPitch, useViewport, ViewportGrid, type View } from './viewport'
+import { gridPitch, gridPitches, useViewport, ViewportGrid, type View } from './viewport'
 import { layerOpacities, type LayerView } from './Canvas'
 
 /**
@@ -48,8 +48,6 @@ export type SchematicLayers = Record<SchematicLayer, LayerView>
 const hiddenLayerClasses = (layers: SchematicLayers) =>
   (Object.keys(layers) as SchematicLayer[]).filter((layer) => !layers[layer].visible).map((layer) => ` hide-${layer}`).join('')
 
-/** Schematic grid pitches in mm: 0.1 inch and up; every fifth line is solid. Pins sit on the finest one. */
-const GRID_PITCHES_MM = [SCHEMATIC_GRID, 12.7, 63.5, 317.5]
 
 /** A press that moves less than this (screen pixels) is a click, not a drag. */
 const CLICK_TOLERANCE_PX = 3
@@ -329,9 +327,23 @@ interface Props {
   tool: SchematicTool
   fitRequest: number
   layers: SchematicLayers
+  /** Fine grid steps (0.1 inch, where pins sit) between two solid grid lines. */
+  gridLinesPerMajor: number
 }
 
-export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit, selection, onSelect, tool, fitRequest, layers }: Props) {
+export function SchematicView({
+  netlist,
+  schematic,
+  nets,
+  onChange,
+  onBeginEdit,
+  selection,
+  onSelect,
+  tool,
+  fitRequest,
+  layers,
+  gridLinesPerMajor,
+}: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const [draft, setDraft] = useState<WireDraft | null>(null)
@@ -701,7 +713,7 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
     return onHorizontalWire ? { x: 0, y: -1 } : { x: 1, y: 0 }
   }
   const px = 1 / view.scale
-  const pitch = gridPitch(view.scale, GRID_PITCHES_MM)
+  const pitch = gridPitch(view.scale, gridPitches(SCHEMATIC_GRID, gridLinesPerMajor))
   const preview = draft && draftPath(draft)
   return (
     <div className="schematic-view">
@@ -718,7 +730,7 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
       >
         <g transform={`translate(${view.ox} ${view.oy}) scale(${view.scale})`}>
           {/* No origin axes or rulers: a schematic has no physical position, they only distract. */}
-          <ViewportGrid view={view} size={size} pitch={pitch} axes={false} />
+          <ViewportGrid view={view} size={size} pitch={pitch} linesPerMajor={gridLinesPerMajor} axes={false} />
           {schematic.wires.map((w, k) => {
             const selected = highlightedWires.has(k)
             return (
