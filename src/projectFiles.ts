@@ -15,9 +15,19 @@ declare global {
 
 interface FilePickerOptions {
   types?: { description: string; accept: Record<string, string[]> }[]
+  /** Pickers with the same id share the folder the user last picked in. */
+  id?: string
+  /** Where a picker starts until it has a folder of its own to remember. */
+  startIn?: 'documents' | 'downloads' | 'desktop'
 }
 
-const PICKER_OPTIONS: FilePickerOptions = { types: [{ description: 'Manhattan project', accept: { 'application/json': ['.json'] } }] }
+// A page cannot name a folder such as Documents\Manhattan itself. Open and Save share one id,
+// so after the first pick both start in the folder the projects are kept in.
+const PICKER_OPTIONS: FilePickerOptions = {
+  types: [{ description: 'Manhattan project', accept: { 'application/json': ['.json'] } }],
+  id: 'manhattan-projects',
+  startIn: 'documents',
+}
 
 export const canUseFiles = typeof window.showOpenFilePicker === 'function' && typeof window.showSaveFilePicker === 'function'
 
