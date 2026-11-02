@@ -237,3 +237,16 @@ function parseProtel(text: string): Netlist {
   }
   return buildNetlist([...components.values()])
 }
+
+/** The netlist with values filled in or corrected by ref, e.g. transistor types the export left out. */
+export function withValues(netlist: Netlist, values: unknown): Netlist {
+  if (!Array.isArray(values)) throw new Error('"values" must be an array')
+  const refs = new Set(netlist.components.map((c) => c.ref))
+  const changed = new Map<string, string>()
+  for (const item of values as { ref?: unknown; value?: unknown }[]) {
+    if (typeof item.ref !== 'string' || !refs.has(item.ref)) throw new Error(`Unknown component "${String(item.ref)}"`)
+    if (typeof item.value !== 'string') throw new Error(`${item.ref}: value must be a string`)
+    changed.set(item.ref, item.value.trim())
+  }
+  return { ...netlist, components: netlist.components.map((c) => (changed.has(c.ref) ? { ...c, value: changed.get(c.ref)! } : c)) }
+}

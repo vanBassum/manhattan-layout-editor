@@ -27,6 +27,7 @@ const ICON_PATHS = {
   search: 'M10 4a6 6 0 1 1 0 12a6 6 0 1 1 0-12 M15 15l5 5',
   convert: 'M4 8h14l-3-3 M20 16H6l3 3',
   plus: 'M12 5v14 M5 12h14',
+  schematic: 'M2 12h4 M6 9h8v6H6z M14 12h4 M18 7v10 M20 9v6',
   sun: 'M12 8a4 4 0 1 1 0 8a4 4 0 1 1 0-8 M12 2v2 M12 20v2 M4.9 4.9l1.4 1.4 M17.7 17.7l1.4 1.4 M2 12h2 M20 12h2 M4.9 19.1l1.4-1.4 M17.7 6.3l1.4-1.4',
   moon: 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z',
   cut: 'M6 4a2 2 0 1 1 0 4a2 2 0 1 1 0-4 M6 16a2 2 0 1 1 0 4a2 2 0 1 1 0-4 M7.5 7.5L20 18 M7.5 16.5L20 6',
@@ -238,15 +239,41 @@ function NumberField({ value, unit, step, label, onCommit }: NumberFieldProps) {
   )
 }
 
+/** Text input that commits on Enter or blur, like NumberField. */
+function TextField({ value, label, placeholder, onCommit }: { value: string; label: string; placeholder: string; onCommit: (value: string) => void }) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+
+  const commit = () => {
+    if (draft.trim() !== value) onCommit(draft.trim())
+  }
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      aria-label={label}
+      placeholder={placeholder}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit()
+        if (e.key === 'Escape') setDraft(value)
+      }}
+    />
+  )
+}
+
 interface SelectionDetailsProps {
   netlist: Netlist
   layout: Layout
   selection: Selection
   onPlacementChange: (ref: string, changes: Partial<Pick<Placement, 'x' | 'y' | 'rotation'>>) => void
+  onValueChange: (ref: string, value: string) => void
   onChangeFootprint: () => void
 }
 
-export function SelectionDetails({ netlist, layout, selection, onPlacementChange, onChangeFootprint }: SelectionDetailsProps) {
+export function SelectionDetails({ netlist, layout, selection, onPlacementChange, onValueChange, onChangeFootprint }: SelectionDetailsProps) {
   if (selection?.kind === 'multi') {
     return (
       <dl className="properties">
@@ -314,6 +341,13 @@ export function SelectionDetails({ netlist, layout, selection, onPlacementChange
         </div>
       </div>
       <div className="field-list">
+        <span className="field-label">Value</span>
+        <TextField
+          value={component.value}
+          label="Value"
+          placeholder="e.g. 10k or BD140"
+          onCommit={(value) => onValueChange(component.ref, value)}
+        />
         <span className="field-label">Footprint</span>
         <div className="footprint-field">
           <span title={component.footprint}>{component.footprint || '–'}</span>

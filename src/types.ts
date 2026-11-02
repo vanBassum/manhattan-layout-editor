@@ -87,12 +87,26 @@ export interface Settings {
   maxLead: number
 }
 
+/** Where a component's symbol sits on the schematic, in mm. Rotation is a multiple of 90 degrees. */
+export interface SchematicPlacement {
+  ref: string
+  x: number
+  y: number
+  rotation: number
+}
+
+export interface Schematic {
+  placements: SchematicPlacement[]
+}
+
 export interface Project {
   /** Given once at creation and kept through renames, saves and reopening, so a project can be traced. */
   guid: string
   name: string
   netlist: Netlist
   layout: Layout
+  /** Missing in projects from before the schematic view, and for components not moved yet: those get a grid spot. */
+  schematic?: Schematic
   settings: Settings
 }
 

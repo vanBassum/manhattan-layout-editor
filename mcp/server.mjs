@@ -257,6 +257,31 @@ forward(
   },
 )
 
+forward(
+  'set_schematic',
+  'Places component symbols on the schematic (the editor\'s Schematic view), as one undo step. x/y is the symbol ' +
+    'origin in mm, y points down; it is snapped to the 2.54 mm grid. rotation is 0, 90, 180 or 270 degrees clockwise. ' +
+    'Symbols are drawn with their pins at multiples of 2.54 mm from the origin: two-pin parts horizontal (pin 1 left; ' +
+    'diodes have the cathode, pin 1, on the right), transistors with the base left and collector up (emitter down), ' +
+    'trimmers with the wiper pin pointing down. Components not listed keep their place. Wires are not drawn yet.',
+  {
+    placements: z
+      .array(z.object({ ref: z.string(), x: z.number(), y: z.number(), rotation: z.number().optional() }))
+      .min(1),
+  },
+)
+
+forward(
+  'set_values',
+  'Fills in or corrects component values (e.g. "10k", "BD140"), as one undo step. Use it for parts whose value the ' +
+    'netlist export left empty, such as transistors from EasyEDA ("{Value}"): the schematic draws a transistor as PNP ' +
+    'when its value is a known PNP type. Values typed here survive a netlist re-import that keeps the layout. ' +
+    'Returns every component\'s value.',
+  {
+    values: z.array(z.object({ ref: z.string(), value: z.string() })).min(1),
+  },
+)
+
 forward('undo', 'Undoes the last layout change (the same history as Ctrl+Z in the editor).')
 forward('redo', 'Redoes the last undone layout change.')
 

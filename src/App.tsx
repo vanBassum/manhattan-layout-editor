@@ -19,7 +19,7 @@ import {
   withCutIslands,
   withFootprintChoices,
 } from './layout'
-import { parseNetlist } from './netlist'
+import { parseNetlist, withValues } from './netlist'
 import { findStrategy, KNIFE_CUTS, STRATEGIES } from './optimize'
 import { AiHelpDialog, ComponentList, HelpDialog, Icon, LayerToggles, Section, SelectionDetails, Validation } from './panels'
 import {
@@ -43,7 +43,9 @@ import {
 import { canvasToPng } from './screenshot'
 import { selectedRefs, selectionOf } from './selection'
 import { screenshotHidden } from './hiddenScreenshot'
-import type { Layout, Netlist, Placement, Project, Selection, Settings } from './types'
+import { completeSchematic, withAgentPlacements } from './schematic'
+import { SchematicView } from './SchematicView'
+import type { Layout, Netlist, Placement, Project, SchematicPlacement, Selection, Settings } from './types'
 
 const UNDO_LIMIT = 100
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
@@ -87,12 +89,18 @@ function loadLayers(): Layers {
 
 /** The tab's project with a new netlist; it stays the same project, so it keeps its guid. */
 function projectFromNetlist(name: string, text: string, current: Project, keepLayout: boolean): Project {
-  const netlist = parseNetlist(text)
+  const imported = parseNetlist(text)
+  // A value typed in the editor survives a re-import that still has none (EasyEDA exports "{Value}" as empty).
+  const typedValues = new Map(current.netlist.components.map((c) => [c.ref, c.value]))
+  const netlist = keepLayout
+    ? { ...imported, components: imported.components.map((c) => (c.value ? c : { ...c, value: typedValues.get(c.ref) ?? '' })) }
+    : imported
   return {
     guid: current.guid,
     name,
     netlist,
     layout: createLayout(netlist, keepLayout ? current.layout : undefined),
+    schematic: keepLayout ? current.schematic : undefined,
     settings: keepLayout ? current.settings : DEFAULT_SETTINGS,
   }
 }
@@ -142,9 +150,14 @@ function agentLayoutEdit(command: string, args: Record<string, unknown>, current
   }
 }
 
+/** What one undo step restores. */
+type Snapshot = Pick<Project, 'netlist' | 'layout' | 'schematic'>
+
+const snapshotOf = (project: Project): Snapshot => ({ netlist: project.netlist, layout: project.layout, schematic: project.schematic })
+
 interface History {
-  undo: Layout[]
-  redo: Layout[]
+  undo: Snapshot[]
+  redo: Snapshot[]
 }
 
 export function App() {
@@ -156,12 +169,13 @@ export function App() {
   const [selection, setSelection] = useState<Selection>(null)
   const [tool, setTool] = useState<Tool>('select')
   const [moveMode, setMoveMode] = useState<MoveMode>('part')
+  const [view, setView] = useState<'layout' | 'schematic'>('layout')
   const [fitRequest, setFitRequest] = useState(1)
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const projectFileInputRef = useRef<HTMLInputElement>(null)
-  const undoStack = useRef<Layout[]>([])
-  const redoStack = useRef<Layout[]>([])
+  const undoStack = useRef<Snapshot[]>([])
+  const redoStack = useRef<Snapshot[]>([])
   /** Undo history of the tabs that are not shown, so switching back keeps it. */
   const parkedHistory = useRef(new Map<string, History>())
   const [agentConnected, setAgentConnected] = useState(false)
@@ -181,6 +195,7 @@ export function App() {
   const [layers, setLayersState] = useState<Layers>(loadLayers)
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => withFootprintChoices(netlist, layout.placements), [netlist, layout.placements])
+  const schematicPlacements = useMemo(() => completeSchematic(netlist, project.schematic), [netlist, project.schematic])
 
   // Latest project, also between a change and the next render: agent commands can arrive back to back.
   const projectRef = useRef(project)
@@ -191,31 +206,36 @@ export function App() {
     setProject(projectRef.current)
   }
 
-  /** Call right before changing the layout, so the change can be undone. */
-  const rememberLayout = () => {
-    undoStack.current = [...undoStack.current.slice(-(UNDO_LIMIT - 1)), projectRef.current.layout]
+  const restore = (snapshot: Snapshot) => {
+    projectRef.current = { ...projectRef.current, ...snapshot }
+    setProject(projectRef.current)
+  }
+
+  /** Call right before changing the layout or schematic, so the change can be undone. */
+  const rememberEdit = () => {
+    undoStack.current = [...undoStack.current.slice(-(UNDO_LIMIT - 1)), snapshotOf(projectRef.current)]
     redoStack.current = []
   }
 
   const undo = () => {
     const previous = undoStack.current.pop()
     if (!previous) return
-    redoStack.current.push(projectRef.current.layout)
-    replaceLayout(previous)
+    redoStack.current.push(snapshotOf(projectRef.current))
+    restore(previous)
     setSelection(null)
   }
 
   const redo = () => {
     const next = redoStack.current.pop()
     if (!next) return
-    undoStack.current.push(projectRef.current.layout)
-    replaceLayout(next)
+    undoStack.current.push(snapshotOf(projectRef.current))
+    restore(next)
     setSelection(null)
   }
 
   /** Applies an agent's edit like any other edit (undoable) and reports what is still wrong. */
   const applyAgentEdit = (next: Layout) => {
-    rememberLayout()
+    rememberEdit()
     replaceLayout(next)
     return { problems: findProblems(asBuilt(projectRef.current)) }
   }
@@ -235,7 +255,7 @@ export function App() {
   /** Changes a tab that is not shown: straight in storage, with its own undo history. */
   const editHiddenTab = (id: string, stored: Project, next: Layout) => {
     const history = parkedHistory.current.get(id) ?? { undo: [], redo: [] }
-    parkedHistory.current.set(id, { undo: [...history.undo.slice(-(UNDO_LIMIT - 1)), stored.layout], redo: [] })
+    parkedHistory.current.set(id, { undo: [...history.undo.slice(-(UNDO_LIMIT - 1)), snapshotOf(stored)], redo: [] })
     const updated = { ...stored, layout: next }
     writeProject(id, updated)
     return { problems: findProblems(asBuilt(updated)) }
@@ -246,12 +266,25 @@ export function App() {
     const from = direction === 'undo' ? history.undo : history.redo
     const to = direction === 'undo' ? history.redo : history.undo
     const restored = from.pop()
+    const updated = restored ? { ...stored, ...restored } : stored
     if (restored) {
-      to.push(stored.layout)
+      to.push(snapshotOf(stored))
       parkedHistory.current.set(id, history)
-      writeProject(id, { ...stored, layout: restored })
+      writeProject(id, updated)
     }
-    return { problems: findProblems(asBuilt({ ...stored, layout: restored ?? stored.layout })) }
+    return { problems: findProblems(asBuilt(updated)) }
+  }
+
+  /** An undoable agent change to the netlist or schematic of the shown tab or a hidden one. */
+  const applyAgentChange = (id: string, stored: Project, changes: Partial<Snapshot>) => {
+    if (id === activeIdRef.current) {
+      rememberEdit()
+      restore({ ...snapshotOf(projectRef.current), ...changes })
+      return
+    }
+    const history = parkedHistory.current.get(id) ?? { undo: [], redo: [] }
+    parkedHistory.current.set(id, { undo: [...history.undo.slice(-(UNDO_LIMIT - 1)), snapshotOf(stored)], redo: [] })
+    writeProject(id, { ...stored, ...changes })
   }
 
   const handleAgentCommand = useRef<(command: string, args: Record<string, unknown>) => unknown>(() => undefined)
@@ -280,6 +313,16 @@ export function App() {
         if (command === 'undo') undo()
         else redo()
         return { problems: findProblems(asBuilt(projectRef.current)) }
+      case 'set_schematic': {
+        const schematic = withAgentPlacements(stored.netlist, stored.schematic, args.placements)
+        applyAgentChange(targetId, stored, { schematic })
+        return { placed: schematic.placements }
+      }
+      case 'set_values': {
+        const netlist = withValues(stored.netlist, args.values)
+        applyAgentChange(targetId, stored, { netlist })
+        return { components: netlist.components.map((c) => ({ ref: c.ref, value: c.value })) }
+      }
     }
     const next = agentLayoutEdit(command, args, current, stored.netlist)
     if (!shown) return editHiddenTab(targetId, stored, next)
@@ -456,9 +499,23 @@ export function App() {
   // Rotate and reset leads act on every selected part, each in place.
   const refsToEdit = selectedRefs(selection)
 
+  const changeSchematic = (update: (placements: SchematicPlacement[]) => SchematicPlacement[]) =>
+    setProject((p) => ({ ...p, schematic: { placements: update(completeSchematic(p.netlist, p.schematic)) } }))
+
+  const moveSchematicPart = (ref: string, x: number, y: number) =>
+    changeSchematic((placements) => placements.map((p) => (p.ref === ref ? { ...p, x, y } : p)))
+
   const rotateSelected = (degrees: number) => {
     if (refsToEdit.length === 0) return
-    rememberLayout()
+    rememberEdit()
+    if (view === 'schematic') {
+      // Symbols only turn in quarter turns, so their pins stay on the grid.
+      const quarterTurns = Math.max(1, Math.round(degrees / 90)) * 90
+      changeSchematic((placements) =>
+        placements.map((p) => (refsToEdit.includes(p.ref) ? { ...p, rotation: (p.rotation + quarterTurns) % 360 } : p)),
+      )
+      return
+    }
     setLayout((l) => ({
       ...l,
       placements: l.placements.map((p) => (refsToEdit.includes(p.ref) ? { ...p, rotation: (p.rotation + degrees) % 360 } : p)),
@@ -467,7 +524,7 @@ export function App() {
 
   const resetLeads = () => {
     if (refsToEdit.length === 0) return
-    rememberLayout()
+    rememberEdit()
     setLayout((l) => ({
       ...l,
       placements: l.placements.map((p) => (refsToEdit.includes(p.ref) ? { ...p, leads: undefined } : p)),
@@ -475,8 +532,14 @@ export function App() {
   }
 
   const changePlacement = (ref: string, changes: Partial<Pick<Placement, 'x' | 'y' | 'rotation'>>) => {
-    rememberLayout()
+    rememberEdit()
     setLayout((l) => ({ ...l, placements: l.placements.map((p) => (p.ref === ref ? { ...p, ...changes } : p)) }))
+  }
+
+  /** Fills in or corrects a value, e.g. a transistor type the netlist left out. */
+  const changeValue = (ref: string, value: string) => {
+    rememberEdit()
+    setProject((p) => ({ ...p, netlist: withValues(p.netlist, [{ ref, value }]) }))
   }
 
   const selectAll = () =>
@@ -487,7 +550,7 @@ export function App() {
     const island = layout.islands.find((i) => i.net === selection.net)!
     const base = island.rects[selection.rectIndex] ?? island.rects[0]
     const added = { x: base.x + base.w, y: base.y, w: 4, h: base.h }
-    rememberLayout()
+    rememberEdit()
     setLayout((l) => ({
       ...l,
       islands: l.islands.map((i) => (i.net === selection.net ? { ...i, rects: [...i.rects, added] } : i)),
@@ -500,7 +563,7 @@ export function App() {
 
   const removeRect = () => {
     if (selection?.kind !== 'island' || !canRemoveRect) return
-    rememberLayout()
+    rememberEdit()
     setLayout((l) => ({
       ...l,
       islands: l.islands.map((i) =>
@@ -512,7 +575,7 @@ export function App() {
 
   const resetToGrid = () => {
     if (!confirm('Discard all manual placement and put everything back on a grid?')) return
-    rememberLayout()
+    rememberEdit()
     setProject((p) => {
       const grid = createLayout(withFootprintChoices(p.netlist, p.layout.placements))
       return { ...p, layout: keepFootprintChoices(grid, p.layout) }
@@ -524,7 +587,7 @@ export function App() {
   const openFootprintDialog = () => setFootprintDialogRefs(selectedRefs(selection))
 
   const applyFootprint = (refs: ReadonlySet<string>, footprint: string | undefined) => {
-    rememberLayout()
+    rememberEdit()
     setLayout((l) => changeFootprints(netlist, l, refs, footprint))
   }
 
@@ -538,7 +601,7 @@ export function App() {
     const wantsCuts = id === KNIFE_CUTS
     if (wantsCuts === Boolean(layout.knife)) return
     const next = wantsCuts ? toCutLayout(layout) : fromCutLayout(layout)
-    rememberLayout()
+    rememberEdit()
     setLayout(() => next)
     setSelection(null)
   }
@@ -553,7 +616,7 @@ export function App() {
       setError(e instanceof Error ? e.message : String(e))
       return
     }
-    rememberLayout()
+    rememberEdit()
     setProject((p) => ({ ...p, layout: keepFootprintChoices(optimized, p.layout) }))
     setSelection(null)
     setFitRequest((n) => n + 1)
@@ -642,6 +705,15 @@ export function App() {
           </button>
         </div>
         <div className="header-actions">
+          <div className="view-switch" role="group" aria-label="View">
+            <button className={view === 'layout' ? 'active' : ''} aria-pressed={view === 'layout'} onClick={() => setView('layout')}>
+              <Icon name="grid" />Layout
+            </button>
+            <button className={view === 'schematic' ? 'active' : ''} aria-pressed={view === 'schematic'} onClick={() => setView('schematic')}>
+              <Icon name="schematic" />Schematic
+            </button>
+          </div>
+          <span className="separator" />
           <div className="button-group">
             <button className="icon-button" onClick={undo} title="Undo (Ctrl+Z)" aria-label="Undo"><Icon name="undo" /></button>
             <button className="icon-button" onClick={redo} title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo"><Icon name="redo" /></button>
@@ -784,72 +856,74 @@ export function App() {
         </aside>
 
         <main className="canvas-area">
-          <nav className="tool-rail" aria-label="Tools">
-            <div className="rail-group" role="group" aria-label="View">
-              <button
-                className={tool === 'select' ? 'rail-button active' : 'rail-button'}
-                onClick={() => setTool('select')}
-                aria-pressed={tool === 'select'}
-                title="Select (V): drag empty space to select, Shift+drag adds"
-              >
-                <Icon name="select" />Select
-              </button>
-              <button
-                className={tool === 'pan' ? 'rail-button active' : 'rail-button'}
-                onClick={() => setTool('pan')}
-                aria-pressed={tool === 'pan'}
-                title="Pan (H): drag empty space to move the view; middle mouse always pans"
-              >
-                <Icon name="pan" />Pan
-              </button>
-              <button className="rail-button" onClick={() => setFitRequest((n) => n + 1)} title="Fit the board in view (F)">
-                <Icon name="fit" />Fit
-              </button>
-            </div>
-            <div className="rail-group" role="group" aria-label="Component">
-              <button
-                className={moveMode === 'body' ? 'rail-button active' : 'rail-button'}
-                onClick={() => setMoveMode(moveMode === 'body' ? 'part' : 'body')}
-                aria-pressed={moveMode === 'body'}
-                title={
-                  'Anchor leads (M). On: dragging a part moves only its body, lead ends stay where they are soldered. ' +
-                  'Off: the leads move along. Shift+drag always takes the leads along.'
-                }
-              >
-                <Icon name="moveBody" />Anchor
-              </button>
-              <button className="rail-button" onClick={() => rotateSelected(90)} disabled={refsToEdit.length === 0} title="Rotate: Space = 90°, Shift+Space = 15°">
-                <Icon name="rotate" />Rotate
-              </button>
-              <button className="rail-button" onClick={resetLeads} disabled={refsToEdit.length === 0} title="Straighten the selected parts' leads">
-                <Icon name="leads" />Leads
-              </button>
-              <button className="rail-button" onClick={openFootprintDialog} disabled={refsToEdit.length === 0} title="Choose another footprint for the selected parts">
-                <Icon name="convert" />Footprint
-              </button>
-            </div>
-            <div className="rail-group" role="group" aria-label="Copper">
-              {editMode === 'cuts' ? (
+          {view === 'layout' && (
+            <nav className="tool-rail" aria-label="Tools">
+              <div className="rail-group" role="group" aria-label="View">
                 <button
-                  className={activeTool === 'cut' ? 'rail-button active' : 'rail-button'}
-                  onClick={() => setTool('cut')}
-                  aria-pressed={activeTool === 'cut'}
-                  title="Cut (C): drag to draw a cut line on the grid. Drag a cut to move it, double-click it to remove it."
+                  className={tool === 'select' ? 'rail-button active' : 'rail-button'}
+                  onClick={() => setTool('select')}
+                  aria-pressed={tool === 'select'}
+                  title="Select (V): drag empty space to select, Shift+drag adds"
                 >
-                  <Icon name="cut" />Cut
+                  <Icon name="select" />Select
                 </button>
-              ) : (
-                <>
-                  <button className="rail-button" onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
-                    <Icon name="addRect" />Add rect
+                <button
+                  className={tool === 'pan' ? 'rail-button active' : 'rail-button'}
+                  onClick={() => setTool('pan')}
+                  aria-pressed={tool === 'pan'}
+                  title="Pan (H): drag empty space to move the view; middle mouse always pans"
+                >
+                  <Icon name="pan" />Pan
+                </button>
+                <button className="rail-button" onClick={() => setFitRequest((n) => n + 1)} title="Fit the board in view (F)">
+                  <Icon name="fit" />Fit
+                </button>
+              </div>
+              <div className="rail-group" role="group" aria-label="Component">
+                <button
+                  className={moveMode === 'body' ? 'rail-button active' : 'rail-button'}
+                  onClick={() => setMoveMode(moveMode === 'body' ? 'part' : 'body')}
+                  aria-pressed={moveMode === 'body'}
+                  title={
+                    'Anchor leads (M). On: dragging a part moves only its body, lead ends stay where they are soldered. ' +
+                    'Off: the leads move along. Shift+drag always takes the leads along.'
+                  }
+                >
+                  <Icon name="moveBody" />Anchor
+                </button>
+                <button className="rail-button" onClick={() => rotateSelected(90)} disabled={refsToEdit.length === 0} title="Rotate: Space = 90°, Shift+Space = 15°">
+                  <Icon name="rotate" />Rotate
+                </button>
+                <button className="rail-button" onClick={resetLeads} disabled={refsToEdit.length === 0} title="Straighten the selected parts' leads">
+                  <Icon name="leads" />Leads
+                </button>
+                <button className="rail-button" onClick={openFootprintDialog} disabled={refsToEdit.length === 0} title="Choose another footprint for the selected parts">
+                  <Icon name="convert" />Footprint
+                </button>
+              </div>
+              <div className="rail-group" role="group" aria-label="Copper">
+                {editMode === 'cuts' ? (
+                  <button
+                    className={activeTool === 'cut' ? 'rail-button active' : 'rail-button'}
+                    onClick={() => setTool('cut')}
+                    aria-pressed={activeTool === 'cut'}
+                    title="Cut (C): drag to draw a cut line on the grid. Drag a cut to move it, double-click it to remove it."
+                  >
+                    <Icon name="cut" />Cut
                   </button>
-                  <button className="rail-button" onClick={removeRect} disabled={!canRemoveRect} title="Remove the selected rectangle (Del)">
-                    <Icon name="removeRect" />Del rect
-                  </button>
-                </>
-              )}
-            </div>
-          </nav>
+                ) : (
+                  <>
+                    <button className="rail-button" onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
+                      <Icon name="addRect" />Add rect
+                    </button>
+                    <button className="rail-button" onClick={removeRect} disabled={!canRemoveRect} title="Remove the selected rectangle (Del)">
+                      <Icon name="removeRect" />Del rect
+                    </button>
+                  </>
+                )}
+              </div>
+            </nav>
+          )}
           {error && (
             <div className="error-banner" role="alert">
               {error}
@@ -857,22 +931,34 @@ export function App() {
             </div>
           )}
           <div className="canvas-frame">
-            <Canvas
-              netlist={builtNetlist}
-              layout={layout}
-              onLayoutChange={setLayout}
-              onBeginEdit={rememberLayout}
-              selection={selection}
-              onSelect={setSelection}
-              snap={settings.snap}
-              isolation={settings.isolation}
-              problemNets={problemNets}
-              fitRequest={fitRequest}
-              layers={layers}
-              tool={activeTool}
-              moveMode={moveMode}
-              editMode={editMode}
-            />
+            {view === 'schematic' ? (
+              <SchematicView
+                netlist={builtNetlist}
+                placements={schematicPlacements}
+                onMovePart={moveSchematicPart}
+                onBeginEdit={rememberEdit}
+                selection={selection}
+                onSelect={setSelection}
+                fitRequest={fitRequest}
+              />
+            ) : (
+              <Canvas
+                netlist={builtNetlist}
+                layout={layout}
+                onLayoutChange={setLayout}
+                onBeginEdit={rememberEdit}
+                selection={selection}
+                onSelect={setSelection}
+                snap={settings.snap}
+                isolation={settings.isolation}
+                problemNets={problemNets}
+                fitRequest={fitRequest}
+                layers={layers}
+                tool={activeTool}
+                moveMode={moveMode}
+                editMode={editMode}
+              />
+            )}
           </div>
         </main>
 
@@ -883,6 +969,7 @@ export function App() {
               layout={layout}
               selection={selection}
               onPlacementChange={changePlacement}
+              onValueChange={changeValue}
               onChangeFootprint={openFootprintDialog}
             />
           </Section>

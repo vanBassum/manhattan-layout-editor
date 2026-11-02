@@ -27,6 +27,8 @@
   --idle-dot: #b0b6bd;
   --shadow: var(--shadow);
   --backdrop: rgba(20, 24, 31, 0.35);
+  --sch-resistor: #8a9ee6;
+  --sch-box: #fbfbf4;
 }
 
 :root[data-theme='dark'] {
@@ -58,6 +60,8 @@
   --idle-dot: #5d6773;
   --shadow: rgba(0, 0, 0, 0.5);
   --backdrop: rgba(0, 0, 0, 0.55);
+  --sch-resistor: #4f63b8;
+  --sch-box: #20242a;
 }
 
 * {
@@ -1277,7 +1281,8 @@ input:focus-visible {
   color: var(--text-muted);
 }
 
-.field-list input[type='number'] {
+.field-list input[type='number'],
+.field-list input[type='text'] {
   width: 100%;
   min-width: 0;
 }
@@ -1322,4 +1327,141 @@ input:focus-visible {
   border: none;
   border-left: 1px solid var(--border);
   border-radius: 0 6px 6px 0;
+}
+
+/* Segmented Layout / Schematic toggle in the header. */
+.view-switch {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.view-switch button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.view-switch button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.schematic-view {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.schematic {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background-color: var(--canvas-bg);
+  touch-action: none;
+  user-select: none;
+}
+
+.schematic-badge {
+  position: absolute;
+  top: 26px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.schematic-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* Schematic symbols, styled after classic hand-drawn hobby schematics. */
+.sch-line,
+.sch-outline,
+.sch-plate-open,
+.sch-box,
+.sch-resistor {
+  stroke: var(--canvas-text);
+  stroke-width: 0.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sch-line,
+.sch-outline {
+  fill: none;
+}
+
+.sch-fill {
+  fill: var(--canvas-text);
+}
+
+.sch-plate-open {
+  fill: var(--canvas-bg);
+}
+
+.sch-box {
+  fill: var(--sch-box);
+}
+
+.sch-resistor {
+  fill: var(--sch-resistor);
+}
+
+.sch-ref,
+.sch-value {
+  fill: var(--canvas-text);
+  font-size: 1.4px;
+}
+
+.sch-ref {
+  font-weight: 600;
+}
+
+.sch-pin-number,
+.sch-pin-mark {
+  fill: var(--text-muted);
+  font-size: 1.1px;
+}
+
+.sch-net {
+  fill: var(--accent);
+  font-size: 1.2px;
+}
+
+.sch-part {
+  cursor: grab;
+}
+
+/* Catches the pointer between the thin lines of a symbol, e.g. inside a transistor's circle. */
+.sch-hit {
+  fill: transparent;
+}
+
+.sch-part.selected .sch-line,
+.sch-part.selected .sch-outline,
+.sch-part.selected .sch-box,
+.sch-part.selected .sch-resistor,
+.sch-part.selected .sch-plate-open {
+  stroke: var(--accent);
+}
+
+.sch-part.selected .sch-fill {
+  fill: var(--accent);
 }

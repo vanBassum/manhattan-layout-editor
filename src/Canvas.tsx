@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectsOverlap, snapToGrid } from './geometry'
 import { analyzeLeads, bodyBounds, componentGeometry, toLocal, toWorld as toWorldPoint, type Geometry, type PinStatus } from './layout'
@@ -6,13 +6,7 @@ import { findCuts, MIN_RECT_SIZE, moveCut, type Cut } from './cuts'
 import { islandEdges, moveIslandEdge, type IslandEdge } from './raster'
 import { addToSelection, isSelected, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
 import type { CutLine, Island, Layout, Netlist, Placement, Point, Rect, Selection } from './types'
-
-/** screen = world * scale + offset; scale is pixels per millimeter. */
-interface View {
-  scale: number
-  ox: number
-  oy: number
-}
+import { gridPitch, Rulers, useViewport, ViewportGrid, visibleArea, type View } from './viewport'
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 type Side = 'left' | 'right' | 'top' | 'bottom'
@@ -94,12 +88,6 @@ function layerClasses(layers: Layers): string {
 
 /** Fine grid pitches in mm; every fifth line is solid. */
 const GRID_PITCHES_MM = [1, 5, 25, 125]
-const MIN_GRID_SPACING_PX = 8
-
-/** Finest pitch whose lines stay far enough apart to read at this zoom. */
-function gridPitch(scale: number): number {
-  return GRID_PITCHES_MM.find((pitch) => pitch * scale >= MIN_GRID_SPACING_PX) ?? GRID_PITCHES_MM[GRID_PITCHES_MM.length - 1]
-}
 
 /** CSS variables --opacity-<layer>, read by the stylesheet. */
 function layerOpacities(layers: Layers): CSSProperties {
@@ -332,42 +320,12 @@ export function Canvas(props: Props) {
   const dragChangedRef = useRef(false)
   /** Item to toggle in the selection if the current Shift/Ctrl press ends without dragging. */
   const toggleOnClickRef = useRef<SingleSelection | null>(null)
-  const [view, setView] = useState<View>({ scale: 5, ox: 40, oy: 40 })
-  const [size, setSize] = useState({ width: 800, height: 600 })
+  const { view, setView, size, fitTo } = useViewport(svgRef)
   const [hoveredRef, setHoveredRef] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<Rect | null>(null)
   const [cutPreview, setCutPreview] = useState<CutLine | null>(null)
   // While one part is hovered, the others fade so its leads are easy to follow.
   const partOpacity = (ref: string) => (hoveredRef === null || hoveredRef === ref ? 1 : 0.15)
-
-  useLayoutEffect(() => {
-    const svg = svgRef.current!
-    const observer = new ResizeObserver(() => {
-      const r = svg.getBoundingClientRect()
-      setSize({ width: r.width, height: r.height })
-    })
-    observer.observe(svg)
-    return () => observer.disconnect()
-  }, [])
-
-  // React registers wheel listeners as passive, so preventDefault needs a native listener.
-  useEffect(() => {
-    const svg = svgRef.current!
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault()
-      const r = svg.getBoundingClientRect()
-      const mx = e.clientX - r.left
-      const my = e.clientY - r.top
-      const factor = Math.exp(-e.deltaY * 0.0015)
-      setView((v) => {
-        const scale = Math.min(Math.max(v.scale * factor, 0.5), 200)
-        const k = scale / v.scale
-        return { scale, ox: mx - (mx - v.ox) * k, oy: my - (my - v.oy) * k }
-      })
-    }
-    svg.addEventListener('wheel', onWheel, { passive: false })
-    return () => svg.removeEventListener('wheel', onWheel)
-  }, [])
 
   const componentsByRef = useMemo(() => new Map(netlist.components.map((c) => [c.ref, c])), [netlist])
   const islandsByNet = useMemo(() => new Map(layout.islands.map((i) => [i.net, i])), [layout.islands])
@@ -398,15 +356,7 @@ export function Canvas(props: Props) {
       ...parts.flatMap((p) => p.leads.map((lead) => ({ x: lead.end.x, y: lead.end.y, w: 0, h: 0 }))),
     ]
     const bounds = boundsOf(rects)
-    if (!bounds) return
-    const padded = inflate(bounds, 5)
-    const { width, height } = svgRef.current!.getBoundingClientRect()
-    const scale = Math.min(width / padded.w, height / padded.h)
-    setView({
-      scale,
-      ox: (width - padded.w * scale) / 2 - padded.x * scale,
-      oy: (height - padded.h * scale) / 2 - padded.y * scale,
-    })
+    if (bounds) fitTo(inflate(bounds, 5))
     // Only refit when explicitly requested, not on every layout change.
   }, [fitRequest])
 
@@ -642,13 +592,8 @@ export function Canvas(props: Props) {
 
   // Sizes that should stay constant on screen, expressed in mm.
   const px = 1 / view.scale
-  const pitch = gridPitch(view.scale)
-  const visible = {
-    x: -view.ox / view.scale,
-    y: -view.oy / view.scale,
-    w: size.width / view.scale,
-    h: size.height / view.scale,
-  }
+  const pitch = gridPitch(view.scale, GRID_PITCHES_MM)
+  const visible = visibleArea(view, size)
   const selectedIsland = selection?.kind === 'island' ? islandsByNet.get(selection.net) : undefined
   const selectedRectIndex = selection?.kind === 'island' ? selection.rectIndex : -1
   const highlightedNets = new Set(selectedNets(selection))
@@ -665,28 +610,8 @@ export function Canvas(props: Props) {
       onPointerUp={onPointerUp}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <defs>
-        <pattern id="grid-minor" width={pitch} height={pitch} patternUnits="userSpaceOnUse">
-          <path
-            d={`M ${pitch} 0 L 0 0 0 ${pitch}`}
-            fill="none"
-            className="grid-minor"
-            strokeWidth={px}
-            strokeDasharray={`${2 * px} ${3 * px}`}
-          />
-        </pattern>
-        <pattern id="grid-major" width={5 * pitch} height={5 * pitch} patternUnits="userSpaceOnUse">
-          <path d={`M ${5 * pitch} 0 L 0 0 0 ${5 * pitch}`} fill="none" className="grid-major" strokeWidth={px} />
-        </pattern>
-      </defs>
       <g transform={`translate(${view.ox} ${view.oy}) scale(${view.scale})`}>
-        <g className="grid">
-          <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-minor)" />
-          <rect x={visible.x} y={visible.y} width={visible.w} height={visible.h} fill="url(#grid-major)" />
-          {/* Origin axes: x = 0 and y = 0 */}
-          <line x1={visible.x} y1={0} x2={visible.x + visible.w} y2={0} className="axis" strokeWidth={px} />
-          <line x1={0} y1={visible.y} x2={0} y2={visible.y + visible.h} className="axis" strokeWidth={px} />
-        </g>
+        <ViewportGrid view={view} size={size} pitch={pitch} />
 
         {editMode === 'cuts' && layout.knife && (
           <rect
@@ -942,58 +867,7 @@ export function Canvas(props: Props) {
           />
         )}
       </g>
-      <Rulers view={view} width={size.width} height={size.height} pitch={pitch} />
+      <Rulers view={view} size={size} pitch={pitch} />
     </svg>
-  )
-}
-
-const RULER_PX = 18
-
-/** Tick positions (mm) of one ruler: every grid pitch inside [from, to]. */
-function rulerTicks(from: number, to: number, pitch: number): number[] {
-  const ticks: number[] = []
-  for (let k = Math.ceil(from / pitch); k * pitch <= to; k++) ticks.push(k * pitch)
-  return ticks
-}
-
-/**
- * Millimetre rulers along the top and left edge, in screen space so they stay put while the
- * board pans under them. Labels sit on the solid (every fifth) grid lines.
- */
-function Rulers({ view, width, height, pitch }: { view: View; width: number; height: number; pitch: number }) {
-  const toScreenX = (mm: number) => view.ox + mm * view.scale
-  const toScreenY = (mm: number) => view.oy + mm * view.scale
-  const isMajor = (mm: number) => Math.abs(mm / (5 * pitch) - Math.round(mm / (5 * pitch))) < 1e-6
-  const label = (mm: number) => String(Math.round(mm * 100) / 100)
-  const xTicks = rulerTicks(-view.ox / view.scale, (width - view.ox) / view.scale, pitch)
-  const yTicks = rulerTicks(-view.oy / view.scale, (height - view.oy) / view.scale, pitch)
-  return (
-    <g className="ruler" pointerEvents="none">
-      <rect x={0} y={0} width={width} height={RULER_PX} />
-      <rect x={0} y={0} width={RULER_PX} height={height} />
-      {xTicks.map((mm) => {
-        const x = toScreenX(mm)
-        if (x < RULER_PX) return null
-        return (
-          <g key={`x${mm}`}>
-            <line x1={x} y1={RULER_PX} x2={x} y2={RULER_PX - (isMajor(mm) ? 8 : 4)} />
-            {isMajor(mm) && <text x={x + 2} y={9}>{label(mm)}</text>}
-          </g>
-        )
-      })}
-      {yTicks.map((mm) => {
-        const y = toScreenY(mm)
-        if (y < RULER_PX) return null
-        return (
-          <g key={`y${mm}`}>
-            <line x1={RULER_PX} y1={y} x2={RULER_PX - (isMajor(mm) ? 8 : 4)} y2={y} />
-            {isMajor(mm) && (
-              <text x={9} y={y + 2} transform={`rotate(-90 9 ${y + 2})`}>{label(mm)}</text>
-            )}
-          </g>
-        )
-      })}
-      <text x={3} y={12} className="ruler-unit">mm</text>
-    </g>
   )
 }
