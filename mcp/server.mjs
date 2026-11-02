@@ -66,8 +66,14 @@ function acceptEditor(socket) {
   editors.push(socket)
   log(`editor connected (${editors.length} open)`)
   socket.on('message', (data) => {
-    const message = JSON.parse(String(data))
-    const request = pending.get(message.id)
+    let message
+    try {
+      message = JSON.parse(String(data))
+    } catch {
+      log('ignored a message from the editor that is not JSON')
+      return
+    }
+    const request = pending.get(message?.id)
     if (!request) return
     pending.delete(message.id)
     clearTimeout(request.timer)

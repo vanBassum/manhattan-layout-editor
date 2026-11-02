@@ -105,20 +105,31 @@ const LAYERS_KEY = 'manhattan-layout-editor/layers'
 const THEME_KEY = 'manhattan-layout-editor/theme'
 const VIEW_KEY = 'manhattan-layout-editor/view'
 
-function initialView(): ViewMode {
+// Storage can be disabled (private window, blocked site data); preferences then last one session.
+function readPreference(key: string): string | null {
   try {
-    const stored = localStorage.getItem(VIEW_KEY)
-    if (stored === 'schematic' || stored === 'split' || stored === 'layout') return stored
+    return localStorage.getItem(key)
   } catch {
-    // Storage disabled; start on the PCB.
+    return null
   }
+}
+
+function writePreference(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value)
+  } catch {}
+}
+
+function initialView(): ViewMode {
+  const stored = readPreference(VIEW_KEY)
+  if (stored === 'schematic' || stored === 'split' || stored === 'layout') return stored
   return 'layout'
 }
 
 type Theme = 'light' | 'dark'
 
 function initialTheme(): Theme {
-  const stored = localStorage.getItem(THEME_KEY)
+  const stored = readPreference(THEME_KEY)
   if (stored === 'light' || stored === 'dark') return stored
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
@@ -137,9 +148,9 @@ function parseLayerView(value: unknown): LayerView {
 }
 
 function loadLayers(): Layers {
+  const stored = readPreference(LAYERS_KEY)
+  if (!stored) return ALL_LAYERS
   try {
-    const stored = localStorage.getItem(LAYERS_KEY)
-    if (!stored) return ALL_LAYERS
     const parsed = JSON.parse(stored) as Record<string, unknown>
     const layers = { ...ALL_LAYERS }
     for (const layer of Object.keys(layers) as LayerName[]) layers[layer] = parseLayerView(parsed[layer])
@@ -296,11 +307,7 @@ export function App() {
   const showView = (mode: ViewMode) => {
     setView(mode)
     if (mode !== 'split') setActivePane(mode)
-    try {
-      localStorage.setItem(VIEW_KEY, mode)
-    } catch {
-      // Storage disabled; the view still switches for this session.
-    }
+    writePreference(VIEW_KEY, mode)
   }
   const [fitRequest, setFitRequest] = useState(1)
   const [error, setError] = useState('')
@@ -320,7 +327,7 @@ export function App() {
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
     setTheme(next)
-    localStorage.setItem(THEME_KEY, next)
+    writePreference(THEME_KEY, next)
   }
   /** Parts checked when the footprint dialog opened; null while it is closed. */
   const [footprintDialogRefs, setFootprintDialogRefs] = useState<string[] | null>(null)
@@ -343,6 +350,8 @@ export function App() {
   // Latest project, also between a change and the next render: agent commands can arrive back to back.
   const projectRef = useRef(project)
   projectRef.current = project
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
 
   const replaceLayout = (next: Layout) => {
     projectRef.current = { ...projectRef.current, layout: next }
@@ -385,7 +394,8 @@ export function App() {
 
   /** The tab an agent command is for: its "project" argument (tab id or name), else the shown tab. */
   const agentTarget = (project: unknown): string => {
-    if (project === undefined || project === '') return activeId
+    if (project === undefined || project === '') return activeIdRef.current
+    const tabs = tabsRef.current
     const wanted = String(project)
     const byId = tabs.find((t) => t.id === wanted)
     if (byId) return byId.id
@@ -433,7 +443,7 @@ export function App() {
   const handleAgentCommand = useRef<(command: string, args: Record<string, unknown>) => unknown>(() => undefined)
   handleAgentCommand.current = (command, args) => {
     if (command === 'list_projects') {
-      return { projects: tabs.map((t) => ({ id: t.id, name: t.name, shown: t.id === activeId })) }
+      return { projects: tabsRef.current.map((t) => ({ id: t.id, name: t.name, shown: t.id === activeIdRef.current })) }
     }
     const targetId = agentTarget(args.project)
     const shown = targetId === activeIdRef.current
@@ -509,9 +519,6 @@ export function App() {
     () => connectAgentBridge((command, args) => handleAgentCommand.current(command, args), setAgentConnected),
     [],
   )
-
-  const activeIdRef = useRef(activeId)
-  activeIdRef.current = activeId
 
   // The agent only talks to the most recently opened browser tab; other browser tabs showing the
   // same project follow along. The store skips writes that change nothing, so browser tabs do not
@@ -750,11 +757,7 @@ export function App() {
 
   const setLayers = (next: Layers) => {
     setLayersState(next)
-    try {
-      localStorage.setItem(LAYERS_KEY, JSON.stringify(next))
-    } catch {
-      // Storage disabled; the toggle still works for this session.
-    }
+    writePreference(LAYERS_KEY, JSON.stringify(next))
   }
 
   const setLayout = (update: (layout: Layout) => Layout) =>
