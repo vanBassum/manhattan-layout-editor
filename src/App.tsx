@@ -35,7 +35,7 @@ import {
   ViewMenu,
   type Question,
 } from './panels'
-import { canUseFiles, fileLabel, mayUse, pickFileToOpen, pickFileToSave, readFile, writeFile } from './projectFiles'
+import { canUseFiles, compareWithFile, fileLabel, mayUse, pickFileToOpen, readFile, saveProjectFile } from './projectFiles'
 import {
   acceptFileContent,
   addProject,
@@ -463,50 +463,40 @@ export function App() {
   /** The project of tab `id`, including changes still waiting to be written to the recovery copy. */
   const shownProject = (id: string) => (id === activeIdRef.current ? projectRef.current : readProject(id))
 
-  /**
-   * The file's project and its content as the editor would save it, so it compares with what the
-   * editor saved even when the file came from an older version; `project` is null when unreadable.
-   */
-  const readProjectFile = async (handle: FileSystemFileHandle) => {
-    const text = await readFile(handle)
-    try {
-      const fromFile = projectFromFile(text)
-      return { project: fromFile, content: projectToFile(fromFile) }
-    } catch {
-      return { project: null, content: text }
-    }
+  const [question, setQuestion] = useState<{ question: Question<string>; answer: (answer: string) => void } | null>(null)
+  /** Shows `question` in a dialog and resolves to the answer picked. */
+  const ask = <Answer extends string>(question: Question<Answer>) =>
+    new Promise<Answer>((resolve) =>
+      setQuestion({
+        question,
+        answer: (answer) => {
+          setQuestion(null)
+          resolve(answer as Answer)
+        },
+      }),
+    )
+
+  const confirmOverwrite = async (fileName: string) => {
+    const answer = await ask({
+      title: `Overwrite "${fileName}"?`,
+      text: 'The file changed on disk since it was opened or saved here.',
+      choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'overwrite', label: 'Overwrite' }],
+      cancel: 'cancel',
+    })
+    return answer === 'overwrite'
   }
 
   /** Saves tab `id` to its file, or asks for one; false when nothing was saved. */
   const saveTab = async (id: string, saveAs = false): Promise<boolean> => {
     const toSave = shownProject(id)
-    const content = projectToFile(toSave)
     try {
       if (!canUseFiles) {
-        downloadText(`${toSave.name}.manhattan.json`, content, 'application/json')
+        downloadText(`${toSave.name}.manhattan.json`, projectToFile(toSave), 'application/json')
         markSaved(id, toSave)
         return true
       }
-      const file = projectFile(id)
-      let handle = saveAs ? undefined : file.handle
-      if (handle) {
-        if (!(await mayUse(handle, true))) return false
-        const onDisk = await readProjectFile(handle).catch(() => null)
-        const changedOnDisk = onDisk !== null && onDisk.content !== file.savedContent
-        if (changedOnDisk) {
-          const answer = await ask({
-            title: `Overwrite "${handle.name}"?`,
-            text: 'The file changed on disk since it was opened or saved here.',
-            choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'overwrite', label: 'Overwrite' }],
-            cancel: 'cancel',
-          })
-          if (answer === 'cancel') return false
-        }
-      } else {
-        handle = (await pickFileToSave(`${toSave.name}.manhattan.json`)) ?? undefined
-        if (!handle) return false
-      }
-      await writeFile(handle, content)
+      const handle = await saveProjectFile(toSave, projectFile(id), saveAs, confirmOverwrite)
+      if (!handle) return false
       markSaved(id, toSave, handle)
       return true
     } catch (e) {
@@ -536,33 +526,19 @@ export function App() {
   /**
    * After a reload the tab shows its recovery copy. Compares the file with it: an unchanged file
    * needs nothing, a file changed elsewhere replaces a copy without unsaved changes, and with
-   * changes on both sides the user picks. Without permission yet (`ask` false) it waits for a click.
+   * changes on both sides the user picks. Without permission yet (`askPermission` false) it waits for a click.
    */
-  const [question, setQuestion] = useState<{ question: Question<string>; answer: (answer: string) => void } | null>(null)
-  /** Shows `question` in a dialog and resolves to the answer picked. */
-  const ask = <Answer extends string>(question: Question<Answer>) =>
-    new Promise<Answer>((resolve) =>
-      setQuestion({
-        question,
-        answer: (answer) => {
-          setQuestion(null)
-          resolve(answer as Answer)
-        },
-      }),
-    )
-
   const [fileConflict, setFileConflict] = useState<{ id: string; project: Project; content: string } | null>(null)
-  const checkFile = async (id: string, ask: boolean) => {
+  const checkFile = async (id: string, askPermission: boolean) => {
     const file = projectFile(id)
     if (!file.handle || file.checked) return
     try {
-      if (!(await mayUse(file.handle, ask))) return
-      const onDisk = await readProjectFile(file.handle)
+      if (!(await mayUse(file.handle, askPermission))) return
+      const comparison = await compareWithFile(file.handle, file)
       if (id !== activeIdRef.current) return
-      if (onDisk.content === file.savedContent) acceptFileContent(id, onDisk.content)
-      else if (!onDisk.project) throw new Error('it is not a Manhattan project anymore')
-      else if (!file.dirty) loadFileVersion(id, onDisk.project, file.handle)
-      else setFileConflict({ id, project: onDisk.project, content: onDisk.content })
+      if (comparison.kind === 'unchanged') acceptFileContent(id, comparison.content)
+      else if (comparison.kind === 'newer') loadFileVersion(id, comparison.project, file.handle)
+      else setFileConflict({ id, project: comparison.project, content: comparison.content })
     } catch (e) {
       // Moved, deleted or damaged: keep working on the recovery copy; Save asks for a new file.
       setError(`Could not read "${file.handle.name}" (${errorText(e)}). Showing the recovery copy.`)

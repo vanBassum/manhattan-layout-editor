@@ -1,6 +1,9 @@
 // Project files on disk through the File System Access API (Chromium browsers). Elsewhere the
 // editor falls back to downloading and uploading.
 
+import { projectFromFile, projectToFile, type ProjectFile } from './projectStore'
+import type { Project } from './types'
+
 // Not in TypeScript's DOM types yet.
 declare global {
   interface Window {
@@ -29,7 +32,8 @@ const PICKER_OPTIONS: FilePickerOptions = {
   startIn: 'documents',
 }
 
-export const canUseFiles = typeof window.showOpenFilePicker === 'function' && typeof window.showSaveFilePicker === 'function'
+// globalThis.window: tests run without a window.
+export const canUseFiles = typeof globalThis.window?.showOpenFilePicker === 'function' && typeof globalThis.window?.showSaveFilePicker === 'function'
 
 const isCancel = (e: unknown) => e instanceof DOMException && e.name === 'AbortError'
 
@@ -72,6 +76,62 @@ export async function writeFile(handle: FileSystemFileHandle, text: string) {
   const writable = await handle.createWritable()
   await writable.write(text)
   await writable.close()
+}
+
+/**
+ * The file's project and its content as the editor would save it, so it compares with what the
+ * editor saved even when the file came from an older version; `project` is null when unreadable.
+ */
+export async function readProjectFile(handle: FileSystemFileHandle): Promise<{ project: Project | null; content: string }> {
+  const text = await readFile(handle)
+  try {
+    const fromFile = projectFromFile(text)
+    return { project: fromFile, content: projectToFile(fromFile) }
+  } catch {
+    return { project: null, content: text }
+  }
+}
+
+/**
+ * Writes `project` to its linked file, or to one the user picks (always with `saveAs`). A linked
+ * file that changed on disk since it was opened or saved is only overwritten when `confirmOverwrite`
+ * says so. Returns the file written, or null when nothing was saved.
+ */
+export async function saveProjectFile(
+  project: Project,
+  file: ProjectFile,
+  saveAs: boolean,
+  confirmOverwrite: (fileName: string) => Promise<boolean>,
+): Promise<FileSystemFileHandle | null> {
+  let handle = saveAs ? undefined : file.handle
+  if (handle) {
+    if (!(await mayUse(handle, true))) return null
+    const onDisk = await readProjectFile(handle).catch(() => null)
+    const changedOnDisk = onDisk !== null && onDisk.content !== file.savedContent
+    if (changedOnDisk && !(await confirmOverwrite(handle.name))) return null
+  } else {
+    handle = (await pickFileToSave(`${project.name}.manhattan.json`)) ?? undefined
+    if (!handle) return null
+  }
+  await writeFile(handle, projectToFile(project))
+  return handle
+}
+
+/** How a linked file stands against its tab's recovery copy. */
+export type FileComparison =
+  | { kind: 'unchanged'; content: string }
+  /** Changed on disk while the tab has no unsaved changes: the file's version can simply be shown. */
+  | { kind: 'newer'; project: Project }
+  /** Changed on both sides: the user picks. */
+  | { kind: 'conflict'; project: Project; content: string }
+
+/** Throws when the file cannot be read or is no project anymore. */
+export async function compareWithFile(handle: FileSystemFileHandle, file: ProjectFile): Promise<FileComparison> {
+  const onDisk = await readProjectFile(handle)
+  if (onDisk.content === file.savedContent) return { kind: 'unchanged', content: onDisk.content }
+  if (!onDisk.project) throw new Error('it is not a Manhattan project anymore')
+  if (!file.dirty) return { kind: 'newer', project: onDisk.project }
+  return { kind: 'conflict', project: onDisk.project, content: onDisk.content }
 }
 
 /** "amp.manhattan.json" → "amp". */
