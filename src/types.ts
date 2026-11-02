@@ -160,6 +160,11 @@ export interface SchematicPlacement {
   rotation: number
   /** Mirrored left to right before rotating. Missing means not mirrored. */
   mirrored?: boolean
+  /**
+   * Where the reference and value text start (top-left), relative to x/y and not rotated: the text
+   * always stays upright. Missing means the symbol's own spot, turned with the symbol.
+   */
+  textOffset?: Point
 }
 
 /** A straight wire between two grid points. It connects where an end meets a pin, another end, or lands on a wire. */

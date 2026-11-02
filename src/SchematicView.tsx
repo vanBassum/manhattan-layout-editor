@@ -98,6 +98,8 @@ type Drag =
     }
   /** A press that starts or continues a wire draft: dragging finishes it on release, a click keeps drawing. */
   | { kind: 'draw'; startX: number; startY: number; moved: boolean }
+  /** A part's reference and value text, dragged on its own; the part stays where it is. */
+  | { kind: 'part-text'; ref: string; start: Point; origin: Point; moved: boolean }
 
 /** A pin end or wire end under the pointer. */
 interface Grab {
@@ -233,21 +235,30 @@ function SymbolHitShape({ graphic }: { graphic: SymbolGraphic }) {
   }
 }
 
+/** Where the part's reference and value text starts, relative to its origin: moved by hand, or the symbol's own spot. */
+const textOffsetOf = (component: NetComponent, placement: SchematicPlacement): Point =>
+  placement.textOffset ?? rotatePoint(componentSymbol(component).label, placement.rotation)
+
+/** Reference and value text moves in quarter grid steps: finer than parts, so it can be fitted between wires. */
+const TEXT_STEP = SCHEMATIC_GRID / 4
+
 interface PartProps {
   component: NetComponent
   placement: SchematicPlacement
   pins: PinEnd[]
   selected: boolean
   onPointerDown: (e: ReactPointerEvent) => void
+  /** Pressing the reference or value text: it can be dragged on its own. */
+  onTextPointerDown: (e: ReactPointerEvent) => void
 }
 
 /** The body rotates with the part; reference and value stay upright. Unconnected pins get an open circle. */
-function SchematicPart({ component, placement, pins, selected, onPointerDown }: PartProps) {
+function SchematicPart({ component, placement, pins, selected, onPointerDown, onTextPointerDown }: PartProps) {
   const symbol = componentSymbol(component)
   const { x, y, rotation } = placement
   const mirrored = placement.mirrored ?? false
-  const labelOffset = rotatePoint(symbol.label, rotation)
-  const label = { x: x + labelOffset.x, y: y + labelOffset.y }
+  const textOffset = textOffsetOf(component, placement)
+  const label = { x: x + textOffset.x, y: y + textOffset.y }
   return (
     <g className={selected ? 'sch-part selected' : 'sch-part'} onPointerDown={onPointerDown}>
       <title>{`${component.ref} ${component.value}`}</title>
@@ -259,8 +270,10 @@ function SchematicPart({ component, placement, pins, selected, onPointerDown }: 
           <SymbolShape key={k} graphic={graphic} mirrored={mirrored} />
         ))}
       </g>
-      <text className="sch-ref" x={label.x} y={label.y}>{component.ref}</text>
-      <text className="sch-value" x={label.x} y={label.y + 1.5}>{component.value}</text>
+      <g className="sch-part-text" onPointerDown={onTextPointerDown}>
+        <text className="sch-ref" x={label.x} y={label.y}>{component.ref}</text>
+        <text className="sch-value" x={label.x} y={label.y + 1.5}>{component.value}</text>
+      </g>
       {pins.map((pin, k) => !component.pins[k]?.net && <circle key={k} className="sch-open-pin" cx={pin.x} cy={pin.y} r={0.5} />)}
     </g>
   )
@@ -464,6 +477,14 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
     return d
   }
 
+  /** Pressing a part's text selects the part; dragging moves only the text. */
+  const pressPartText = (e: ReactPointerEvent, component: NetComponent, placement: SchematicPlacement) => {
+    if (!selectToolOnly(e)) return
+    e.stopPropagation()
+    onSelect({ kind: 'part', ref: placement.ref })
+    beginDrag(e, { kind: 'part-text', ref: placement.ref, start: toWorld(e), origin: textOffsetOf(component, placement), moved: false })
+  }
+
   /** The schematic with `moving` shifted by `delta` from `base`. Parts keep a rotation or flip made mid-drag. */
   const movedSchematic = (drag: Extract<Drag, { kind: 'selection' }>) => {
     const refs = selectedRefs(drag.moving)
@@ -524,6 +545,11 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
       if (Math.hypot(dx, dy) * view.scale <= CLICK_TOLERANCE_PX) return
       drag.moved = true
       onBeginEdit()
+    }
+    if (drag.kind === 'part-text') {
+      const textOffset = { x: snapToGrid(drag.origin.x + dx, TEXT_STEP), y: snapToGrid(drag.origin.y + dy, TEXT_STEP) }
+      onChange({ ...schematic, placements: schematic.placements.map((p) => (p.ref === drag.ref ? { ...p, textOffset } : p)) })
+      return
     }
     drag.delta = snapPoint(alongDragAxis(drag, { x: dx, y: dy }))
     onChange(movedSchematic(drag))
@@ -676,6 +702,7 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
               pins={pins}
               selected={highlightedRefs.has(placement.ref)}
               onPointerDown={(e) => pressItem(e, { kind: 'part', ref: placement.ref })}
+              onTextPointerDown={(e) => pressPartText(e, component, placement)}
             />
           ))}
           {nets.junctions.map((p) => (

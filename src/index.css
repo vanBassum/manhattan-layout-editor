@@ -1523,7 +1523,8 @@ polyline.sch-hit-shape {
 
 /* A wire can be shifted sideways by dragging it. */
 .schematic.tool-select .sch-wire-item,
-.schematic.tool-select .sch-label {
+.schematic.tool-select .sch-label,
+.schematic.tool-select .sch-part-text {
   cursor: move;
 }
 
