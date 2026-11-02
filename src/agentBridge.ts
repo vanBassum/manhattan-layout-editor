@@ -1,6 +1,8 @@
 // Connection to the local MCP server (mcp/server.mjs), which forwards an AI agent's tool calls.
 // The page executes each command on its own state and sends back the result.
 
+import { errorText } from './errorText'
+
 const BRIDGE_URL = 'ws://127.0.0.1:5174'
 const MIN_RETRY_MS = 2000
 const MAX_RETRY_MS = 15000
@@ -35,7 +37,7 @@ export function connectAgentBridge(handle: AgentCommandHandler, onStatus: (conne
         const result = await handle(command, args ?? {})
         socket?.send(JSON.stringify({ id, result }))
       } catch (e) {
-        socket?.send(JSON.stringify({ id, error: e instanceof Error ? e.message : String(e) }))
+        socket?.send(JSON.stringify({ id, error: errorText(e) }))
       }
     }
   }

@@ -2,6 +2,7 @@
 // and return a description or a new layout (or netlist); App applies it (with undo).
 
 import { buildNetlist, withAssignedDefinition } from './definitions'
+import { errorText } from './errorText'
 import { footprintPinCount } from './footprints'
 import { boundsOf } from './geometry'
 import { analyzeLeads, bodyBounds, changeFootprints, createLayout, findSpacingViolations, findSplitNets, toLocal, toWorld } from './layout'
@@ -281,7 +282,7 @@ export function applyBatch(project: BuiltProject, args: Args): Layout {
     try {
       layout = apply({ ...project, layout }, (edit.args ?? {}) as Args)
     } catch (e) {
-      throw new Error(`edit ${k + 1} (${command}): ${e instanceof Error ? e.message : String(e)}; nothing was changed`)
+      throw new Error(`edit ${k + 1} (${command}): ${errorText(e)}; nothing was changed`)
     }
   })
   return layout

@@ -101,6 +101,10 @@ export function buildNetlist(netlist: Netlist, placements: Placement[], definiti
   }
 }
 
+/** The project's own netlist, built; for the schematic's nets, build those with buildNetlist. */
+export const buildProjectNetlist = (project: Project): BuiltNetlist =>
+  buildNetlist(project.netlist, project.layout.placements, project.definitions)
+
 /**
  * The project with a definition for every part and every footprint in use, taken from the
  * built-in templates where the project has none yet. Existing definitions are never changed.

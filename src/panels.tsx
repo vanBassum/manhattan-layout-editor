@@ -640,23 +640,29 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
   )
 }
 
-export type SaveChoice = 'save' | 'discard' | 'cancel'
+/** A question with a button per answer. The last choice is the default; Escape answers `cancel`. */
+export interface Question<Answer extends string> {
+  title: string
+  text: string
+  choices: { answer: Answer; label: string }[]
+  cancel: Answer
+}
 
-/** Asked when closing a tab with unsaved changes. Escape cancels. */
-export function SaveChangesDialog({ name, onAnswer }: { name: string; onAnswer: (choice: SaveChoice) => void }) {
+export function QuestionDialog<Answer extends string>({ question, onAnswer }: { question: Question<Answer>; onAnswer: (answer: Answer) => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   useEffect(() => dialogRef.current?.showModal(), [])
+  const last = question.choices.length - 1
 
   return (
-    <dialog ref={dialogRef} className="ai-dialog save-dialog" onCancel={() => onAnswer('cancel')}>
-      <h2>Save changes to "{name}"?</h2>
-      <p>Closing without saving throws the changes away.</p>
+    <dialog ref={dialogRef} className="ai-dialog question-dialog" onCancel={() => onAnswer(question.cancel)}>
+      <h2>{question.title}</h2>
+      <p>{question.text}</p>
       <div className="dialog-actions">
-        <button onClick={() => onAnswer('discard')}>Don't save</button>
-        <button onClick={() => onAnswer('cancel')}>Cancel</button>
-        <button className="primary" onClick={() => onAnswer('save')} autoFocus>
-          Save
-        </button>
+        {question.choices.map(({ answer, label }, k) => (
+          <button key={answer} className={k === last ? 'primary' : undefined} onClick={() => onAnswer(answer)} autoFocus={k === last}>
+            {label}
+          </button>
+        ))}
       </div>
     </dialog>
   )

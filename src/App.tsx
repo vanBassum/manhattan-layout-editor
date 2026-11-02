@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
-import { buildNetlist, checkedDefinition, withAssignedDefinition, withDefinitions } from './definitions'
+import { buildNetlist, buildProjectNetlist, checkedDefinition, withAssignedDefinition, withDefinitions } from './definitions'
 import { addComponent, applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setFootprint, setIsland, setLeadEnd } from './agentCommands'
 import { Canvas, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { exportDxf } from './exportDxf'
+import { errorText } from './errorText'
 import { downloadText, exportSvg } from './exportSvg'
 import { FootprintDialog } from './FootprintDialog'
 import { boundsOf } from './geometry'
@@ -26,7 +27,7 @@ import {
   Icon,
   LayerToggles,
   PartProperties,
-  SaveChangesDialog,
+  QuestionDialog,
   PCB_LAYERS,
   SchematicCheck,
   SCHEMATIC_LAYERS,
@@ -34,7 +35,7 @@ import {
   SelectionDetails,
   Validation,
   ViewMenu,
-  type SaveChoice,
+  type Question,
 } from './panels'
 import { canUseFiles, fileLabel, mayUse, pickFileToOpen, pickFileToSave, readFile, writeFile } from './projectFiles'
 import {
@@ -212,11 +213,11 @@ function projectFromNetlist(name: string, text: string, current: Project, keepLa
 
 /** The project's schematic with every part placed; `project` is as stored, without footprint choices applied. */
 const fullSchematicOf = (project: Project): FullSchematic =>
-  completeSchematic(buildNetlist(project.netlist, project.layout.placements, project.definitions), project.schematic)
+  completeSchematic(buildProjectNetlist(project), project.schematic)
 
 /** The nets the project's schematic gives, which the PCB does not use until it is updated. */
 function schematicNetsOf(project: Project) {
-  const built = buildNetlist(project.netlist, project.layout.placements, project.definitions)
+  const built = buildProjectNetlist(project)
   return deriveNets(project.netlist, built, fullSchematicOf(project))
 }
 
@@ -254,7 +255,7 @@ function describeSchematic(project: Project) {
 /** The project with the editor's footprint choices applied: what drawing, checks and optimizers should see. */
 const asBuilt = (project: Project): BuiltProject => ({
   ...project,
-  netlist: buildNetlist(project.netlist, project.layout.placements, project.definitions),
+  netlist: buildProjectNetlist(project),
 })
 
 /** The layout after an agent's edit command. `current` is as built; `imported` is the netlist as imported. */
@@ -318,6 +319,7 @@ export function App() {
     writePreference(VIEW_KEY, mode)
   }
   const [fitRequest, setFitRequest] = useState(1)
+  const refit = () => setFitRequest((n) => n + 1)
   const [error, setError] = useState('')
   /** A short confirmation, e.g. that a link was copied; it goes away by itself. */
   const [notice, setNotice] = useState('')
@@ -501,7 +503,7 @@ export function App() {
       }
     }
     const updated = applyAgentChange(targetId, stored, { layout: agentLayoutEdit(command, args, current, stored.netlist) })
-    if (shown && command === 'run_optimizer') setFitRequest((n) => n + 1)
+    if (shown && command === 'run_optimizer') refit()
     return { problems: findProblems(asBuilt(updated)) }
   }
 
@@ -564,7 +566,7 @@ export function App() {
     rememberActiveTab(id)
     setSelection(null)
     setError('')
-    setFitRequest((n) => n + 1)
+    refit()
   }
 
   const switchTab = (id: string) => {
@@ -586,7 +588,7 @@ export function App() {
   useEffect(() => {
     takeSharedProject()
       .then((shared) => shared && openInNewTab(shared))
-      .catch((e) => setError(`Could not open the shared project: ${e instanceof Error ? e.message : String(e)}`))
+      .catch((e) => setError(`Could not open the shared project: ${errorText(e)}`))
   }, [])
 
   const copyShareLink = async () => {
@@ -594,7 +596,7 @@ export function App() {
     try {
       link = await shareLinkOf(projectRef.current)
     } catch (e) {
-      setError(`Could not make a share link: ${e instanceof Error ? e.message : String(e)}`)
+      setError(`Could not make a share link: ${errorText(e)}`)
       return
     }
     try {
@@ -638,7 +640,15 @@ export function App() {
         if (!(await mayUse(handle, true))) return false
         const onDisk = await readProjectFile(handle).catch(() => null)
         const changedOnDisk = onDisk !== null && onDisk.content !== file.savedContent
-        if (changedOnDisk && !confirm(`"${handle.name}" changed on disk since it was opened or saved here. Overwrite it?`)) return false
+        if (changedOnDisk) {
+          const answer = await ask({
+            title: `Overwrite "${handle.name}"?`,
+            text: 'The file changed on disk since it was opened or saved here.',
+            choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'overwrite', label: 'Overwrite' }],
+            cancel: 'cancel',
+          })
+          if (answer === 'cancel') return false
+        }
       } else {
         handle = (await pickFileToSave(`${toSave.name}.manhattan.json`)) ?? undefined
         if (!handle) return false
@@ -647,7 +657,7 @@ export function App() {
       markSaved(id, toSave, handle)
       return true
     } catch (e) {
-      setError(`Could not save: ${e instanceof Error ? e.message : String(e)}`)
+      setError(`Could not save: ${errorText(e)}`)
       return false
     }
   }
@@ -666,7 +676,7 @@ export function App() {
       }
       openInNewTab(projectFromFile(await readFile(handle)), handle)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorText(e))
     }
   }
 
@@ -675,6 +685,19 @@ export function App() {
    * needs nothing, a file changed elsewhere replaces a copy without unsaved changes, and with
    * changes on both sides the user picks. Without permission yet (`ask` false) it waits for a click.
    */
+  const [question, setQuestion] = useState<{ question: Question<string>; answer: (answer: string) => void } | null>(null)
+  /** Shows `question` in a dialog and resolves to the answer picked. */
+  const ask = <Answer extends string>(question: Question<Answer>) =>
+    new Promise<Answer>((resolve) =>
+      setQuestion({
+        question,
+        answer: (answer) => {
+          setQuestion(null)
+          resolve(answer as Answer)
+        },
+      }),
+    )
+
   const [fileConflict, setFileConflict] = useState<{ id: string; project: Project; content: string } | null>(null)
   const checkFile = async (id: string, ask: boolean) => {
     const file = projectFile(id)
@@ -689,7 +712,7 @@ export function App() {
       else setFileConflict({ id, project: onDisk.project, content: onDisk.content })
     } catch (e) {
       // Moved, deleted or damaged: keep working on the recovery copy; Save asks for a new file.
-      setError(`Could not read "${file.handle.name}" (${e instanceof Error ? e.message : String(e)}). Showing the recovery copy.`)
+      setError(`Could not read "${file.handle.name}" (${errorText(e)}). Showing the recovery copy.`)
       unlinkFile(id)
     }
   }
@@ -721,23 +744,17 @@ export function App() {
     const tab = tabs.find((t) => t.id === id)
     if (!tab) return
     if (projectFile(id).dirty) {
-      const choice = await askToSave(tabLabel(tab))
+      const choice = await ask({
+        title: `Save changes to "${tabLabel(tab)}"?`,
+        text: 'Closing without saving throws the changes away.',
+        choices: [{ answer: 'discard', label: "Don't save" }, { answer: 'cancel', label: 'Cancel' }, { answer: 'save', label: 'Save' }],
+        cancel: 'cancel',
+      })
       if (choice === 'cancel' || (choice === 'save' && !(await saveTab(id)))) return
     }
     closeSavedTab(id)
   }
 
-  const [saveQuestion, setSaveQuestion] = useState<{ name: string; answer: (choice: SaveChoice) => void } | null>(null)
-  const askToSave = (name: string) =>
-    new Promise<SaveChoice>((resolve) =>
-      setSaveQuestion({
-        name,
-        answer: (choice) => {
-          setSaveQuestion(null)
-          resolve(choice)
-        },
-      }),
-    )
 
   const closeSavedTab = (id: string) => {
     // Read fresh: an await in closeTab may have changed the tabs.
@@ -813,17 +830,30 @@ export function App() {
       history.current = NO_HISTORY
       setSelection(null)
       setError('')
-      setFitRequest((n) => n + 1)
+      refit()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorText(e))
     }
   }
 
   const onFileChosen = async (file: File | undefined) => {
     if (!file) return
-    const keepLayout = confirm('Keep the current positions of matching nets and components?\n\nOK = keep, Cancel = fresh grid')
-    loadNetlist(file.name.replace(/\.[^.]+$/, ''), await file.text(), keepLayout)
     fileInputRef.current!.value = ''
+    const answer = await ask({
+      title: 'Import netlist',
+      text: 'Keep the current positions of matching nets and components, or start over on a fresh grid?',
+      choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'fresh', label: 'Fresh grid' }, { answer: 'keep', label: 'Keep positions' }],
+      cancel: 'cancel',
+    })
+    if (answer === 'cancel') return
+    loadNetlist(file.name.replace(/\.[^.]+$/, ''), await file.text(), answer === 'keep')
+  }
+
+  /** Changes the placements of `refs` with `change`, as one undo step; nothing when `refs` is empty. */
+  const editPlacements = (refs: string[], change: (p: Placement) => Placement) => {
+    if (refs.length === 0) return
+    rememberEdit()
+    setLayout((l) => ({ ...l, placements: l.placements.map((p) => (refs.includes(p.ref) ? change(p) : p)) }))
   }
 
   // Rotate and reset leads act on every selected part, each in place.
@@ -863,12 +893,7 @@ export function App() {
       )
       return
     }
-    if (refsToEdit.length === 0) return
-    rememberEdit()
-    setLayout((l) => ({
-      ...l,
-      placements: l.placements.map((p) => (refsToEdit.includes(p.ref) ? { ...p, rotation: (p.rotation + degrees) % 360 } : p)),
-    }))
+    editPlacements(refsToEdit, (p) => ({ ...p, rotation: (p.rotation + degrees) % 360 }))
   }
 
   /** Mirrors each selected symbol in place; wires and labels on its pins go along. */
@@ -885,19 +910,10 @@ export function App() {
     changeSchematic({ ...fullSchematic, labels: fullSchematic.labels.map((l, i) => (i === index ? { ...l, ...changes } : l)) })
   }
 
-  const resetLeads = () => {
-    if (refsToEdit.length === 0) return
-    rememberEdit()
-    setLayout((l) => ({
-      ...l,
-      placements: l.placements.map((p) => (refsToEdit.includes(p.ref) ? { ...p, leads: undefined } : p)),
-    }))
-  }
+  const resetLeads = () => editPlacements(refsToEdit, (p) => ({ ...p, leads: undefined }))
 
-  const changePlacement = (ref: string, changes: Partial<Pick<Placement, 'x' | 'y' | 'rotation'>>) => {
-    rememberEdit()
-    setLayout((l) => ({ ...l, placements: l.placements.map((p) => (p.ref === ref ? { ...p, ...changes } : p)) }))
-  }
+  const changePlacement = (ref: string, changes: Partial<Pick<Placement, 'x' | 'y' | 'rotation'>>) =>
+    editPlacements([ref], (p) => ({ ...p, ...changes }))
 
   /** Fills in or corrects a value, e.g. a transistor type the netlist left out. */
   const changeValue = (ref: string, value: string) => {
@@ -925,15 +941,21 @@ export function App() {
     setSelection({ ...selection, rectIndex: 0 })
   }
 
-  const resetToGrid = () => {
-    if (!confirm('Discard all manual placement and put everything back on a grid?')) return
+  const resetToGrid = async () => {
+    const answer = await ask({
+      title: 'Reset to grid',
+      text: 'Discard all manual placement and put everything back on a grid? This can be undone.',
+      choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'reset', label: 'Reset' }],
+      cancel: 'cancel',
+    })
+    if (answer === 'cancel') return
     rememberEdit()
     setProject((p) => {
-      const grid = createLayout(buildNetlist(p.netlist, p.layout.placements, p.definitions))
+      const grid = createLayout(buildProjectNetlist(p))
       return { ...p, layout: keepFootprintChoices(grid, p.layout) }
     })
     setSelection(null)
-    setFitRequest((n) => n + 1)
+    refit()
   }
 
   const openFootprintDialog = () => setFootprintDialogRefs(selectedRefs(selection))
@@ -945,20 +967,26 @@ export function App() {
 
   const editMode: EditMode = settings.strategy === 'knife' ? 'polygons' : 'rects'
 
-  const optimize = () => {
+  const optimize = async () => {
     const strategy = findStrategy(settings.strategy)
-    if (!confirm(`Replace the current layout with a new ${strategy.label} layout?`)) return
+    const answer = await ask({
+      title: 'Optimize',
+      text: `Replace the current layout with a new ${strategy.label} layout? This can be undone.`,
+      choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'replace', label: 'Replace layout' }],
+      cancel: 'cancel',
+    })
+    if (answer === 'cancel') return
     let optimized: Layout
     try {
       optimized = strategy.run(builtNetlist, settings)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorText(e))
       return
     }
     rememberEdit()
     setProject((p) => ({ ...p, layout: keepFootprintChoices(optimized, p.layout) }))
     setSelection(null)
-    setFitRequest((n) => n + 1)
+    refit()
   }
 
   const exportLayout = () =>
@@ -972,7 +1000,7 @@ export function App() {
     try {
       openInNewTab(projectFromFile(await file.text()))
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorText(e))
     }
   }
 
@@ -981,44 +1009,72 @@ export function App() {
   shortcuts.current = (e: KeyboardEvent) => {
     // An open dialog handles its own keys (Escape closes it); the canvas shortcuts stay out of the way.
     if (e.target instanceof Element && e.target.closest('dialog')) return
-    const command = e.ctrlKey || e.metaKey
-    // File shortcuts also work while typing in a field, instead of the browser's own.
     const key = e.key.toLowerCase()
-    if (command && (key === 's' || key === 'o' || key === 'n')) {
-      e.preventDefault()
-      if (key === 's') saveTab(activeId, e.shiftKey)
-      else if (key === 'o') openProjectFile()
-      else newProject()
-      return
+    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement
+    if (e.ctrlKey || e.metaKey) commandShortcut(e, key, typing)
+    else if (!typing) plainShortcut(e, key)
+  }
+
+  /** Ctrl/Cmd shortcuts. The file ones also work while typing in a field, instead of the browser's own. */
+  const commandShortcut = (e: KeyboardEvent, key: string, typing: boolean) => {
+    const action = commandAction(key, e.shiftKey, typing)
+    if (!action) return
+    e.preventDefault()
+    action()
+  }
+
+  const commandAction = (key: string, shift: boolean, typing: boolean): (() => void) | undefined => {
+    switch (key) {
+      case 's':
+        return () => saveTab(activeId, shift)
+      case 'o':
+        return openProjectFile
+      case 'n':
+        return newProject
     }
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
-    if (command && (e.key === 'z' || e.key === 'Z')) {
-      e.preventDefault()
-      if (e.shiftKey) redo()
-      else undo()
-    } else if (command && (e.key === 'y' || e.key === 'Y')) {
-      e.preventDefault()
-      redo()
-    } else if (command && (e.key === 'a' || e.key === 'A')) {
-      e.preventDefault()
-      selectAll()
-    } else if (command) return
-    else if (e.key === ' ') {
-      // Also stops a focused button from being clicked by the same key press.
-      e.preventDefault()
-      if (!e.repeat) rotateSelected(e.shiftKey ? 15 : 90, activePane)
-    } else if (e.key === 'Delete' || e.key === 'Backspace') removeRect()
-    else if (e.key === 'Escape') setSelection(null)
-    else if (e.key === 'f' || e.key === 'F') setFitRequest((n) => n + 1)
-    else if (e.key === 'v' || e.key === 'V') {
-      setTool('select')
-      setSchematicTool('select')
-    } else if (e.key === 'w' || e.key === 'W') setSchematicTool('wire')
-    else if (e.key === 'l' || e.key === 'L') setSchematicTool('label')
-    else if (e.key === 'h' || e.key === 'H') setTool('pan')
-    else if ((e.key === 'x' || e.key === 'X') && activePane === 'schematic') flipSelected('horizontal')
-    else if ((e.key === 'y' || e.key === 'Y') && activePane === 'schematic') flipSelected('vertical')
-    else if (e.key === 'm' || e.key === 'M') setMoveMode((mode) => (mode === 'part' ? 'body' : 'part'))
+    if (typing) return undefined
+    switch (key) {
+      case 'z':
+        return shift ? redo : undo
+      case 'y':
+        return redo
+      case 'a':
+        return selectAll
+    }
+  }
+
+  const plainShortcut = (e: KeyboardEvent, key: string) => {
+    switch (key) {
+      case ' ':
+        // Also stops a focused button from being clicked by the same key press.
+        e.preventDefault()
+        if (!e.repeat) rotateSelected(e.shiftKey ? 15 : 90, activePane)
+        return
+      case 'delete':
+      case 'backspace':
+        return removeRect()
+      case 'escape':
+        return setSelection(null)
+      case 'f':
+        return refit()
+      case 'v':
+        setTool('select')
+        return setSchematicTool('select')
+      case 'w':
+        return setSchematicTool('wire')
+      case 'l':
+        return setSchematicTool('label')
+      case 'h':
+        return setTool('pan')
+      case 'x':
+        if (activePane === 'schematic') flipSelected('horizontal')
+        return
+      case 'y':
+        if (activePane === 'schematic') flipSelected('vertical')
+        return
+      case 'm':
+        return setMoveMode((mode) => (mode === 'part' ? 'body' : 'part'))
+    }
   }
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => shortcuts.current(e)
@@ -1228,7 +1284,7 @@ export function App() {
                         <Icon name={icon} />{label}
                       </button>
                     ))}
-                    <button className="rail-button" onClick={() => setFitRequest((n) => n + 1)} title="Fit the schematic in view (F)">
+                    <button className="rail-button" onClick={refit} title="Fit the schematic in view (F)">
                       <Icon name="fit" />Fit
                     </button>
                   </div>
@@ -1285,7 +1341,7 @@ export function App() {
                     >
                       <Icon name="pan" />Pan
                     </button>
-                    <button className="rail-button" onClick={() => setFitRequest((n) => n + 1)} title="Fit the board in view (F)">
+                    <button className="rail-button" onClick={refit} title="Fit the board in view (F)">
                       <Icon name="fit" />Fit
                     </button>
                   </div>
@@ -1448,7 +1504,7 @@ export function App() {
 
       {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
       {showAiHelp && <AiHelpDialog agentConnected={agentConnected} onClose={() => setShowAiHelp(false)} />}
-      {saveQuestion && <SaveChangesDialog name={saveQuestion.name} onAnswer={saveQuestion.answer} />}
+      {question && <QuestionDialog question={question.question} onAnswer={question.answer} />}
       {footprintDialogRefs && (
         <FootprintDialog
           built={builtNetlist}
