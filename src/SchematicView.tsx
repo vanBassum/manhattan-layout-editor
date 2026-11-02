@@ -412,7 +412,9 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
       onChange(withWireShifted(drag.base, drag.index, snapPoint({ x: dx, y: dy }), pinKeys))
       return
     }
-    const moved = { ...drag.origin, ...snapPoint({ x: drag.origin.x + dx, y: drag.origin.y + dy }) }
+    // A part rotated mid-drag (Space) keeps its new rotation; `base` still maps its old pin ends.
+    const rotation = schematic.placements.find((p) => p.ref === drag.ref)?.rotation ?? drag.origin.rotation
+    const moved = { ...drag.origin, rotation, ...snapPoint({ x: drag.origin.x + dx, y: drag.origin.y + dy }) }
     onChange(withPlacementChanges(drag.base, netlist, [moved]))
   }
 

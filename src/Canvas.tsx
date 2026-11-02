@@ -49,7 +49,7 @@ type Drag =
   | { kind: 'resize'; net: string; rectIndex: number; handle: Handle; start: Point; rect: Rect; neighbours: CutNeighbour[] }
   | { kind: 'part'; start: Point; part: MovingPart }
   | { kind: 'group'; start: Point; parts: MovingPart[]; islands: Island[]; pressed: SingleSelection }
-  | { kind: 'lead'; pin: string; start: Point; origin: Point; placement: Placement }
+  | { kind: 'lead'; ref: string; pin: string; start: Point; origin: Point }
 
 type MarqueeDrag = Extract<Drag, { kind: 'marquee' }>
 type GroupDrag = Extract<Drag, { kind: 'group' }>
@@ -469,7 +469,7 @@ export function Canvas(props: Props) {
       return
     }
     onSelect({ kind: 'part', ref: placement.ref })
-    beginDrag(e, { kind: 'lead', pin, start: toWorld(e), origin, placement })
+    beginDrag(e, { kind: 'lead', ref: placement.ref, pin, start: toWorld(e), origin })
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {
@@ -514,12 +514,12 @@ export function Canvas(props: Props) {
         ),
       )
     } else if (drag.kind === 'lead') {
-      // Stored relative to the body so the bent lead follows the component.
-      const end = toLocal({ x: drag.origin.x + dx, y: drag.origin.y + dy }, drag.placement)
+      // Stored relative to the body as it is now (it may have rotated mid-drag), so the bent lead follows the component.
+      const end = { x: drag.origin.x + dx, y: drag.origin.y + dy }
       onLayoutChange((l) => ({
         ...l,
         placements: l.placements.map((pl) =>
-          pl.ref === drag.placement.ref ? { ...pl, leads: { ...pl.leads, [drag.pin]: end } } : pl,
+          pl.ref === drag.ref ? { ...pl, leads: { ...pl.leads, [drag.pin]: toLocal(end, pl) } } : pl,
         ),
       }))
     } else if (drag.kind === 'part') {
