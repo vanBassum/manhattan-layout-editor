@@ -138,10 +138,14 @@ input:focus-visible {
   height: 100%;
 }
 
-/* Columns and padding match .workspace, so the project tabs line up with the canvas. */
+/*
+ * Columns and padding match .workspace, so the menu buttons span the left panel, the project tabs
+ * line up with the canvas and the view switch spans the right panel. A view without a panel on
+ * one side gives that side only the room its buttons need.
+ */
 .header {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr) 260px;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
@@ -149,9 +153,12 @@ input:focus-visible {
   border-bottom: 1px solid var(--border);
 }
 
-/* PCB view has no left panel: the File menu takes only the room it needs. */
+.header.view-schematic {
+  grid-template-columns: 260px minmax(0, 1fr) auto;
+}
+
 .header.view-layout {
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) 260px;
 }
 
 .header-start {
@@ -160,11 +167,9 @@ input:focus-visible {
   gap: 8px;
 }
 
-.header-main {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
+/* File on the left edge of the panel, the app buttons on its right edge. */
+.ai-button {
+  margin-left: auto;
 }
 
 .project-tabs {
@@ -216,13 +221,6 @@ input:focus-visible {
   padding: 4px 8px;
   font-size: 11px;
   color: var(--text-muted);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
 }
 
 .header-button {
@@ -1309,7 +1307,9 @@ input:focus-visible {
 
 .view-switch button {
   display: flex;
+  flex: 1;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   height: 28px;
   padding: 0 10px;
