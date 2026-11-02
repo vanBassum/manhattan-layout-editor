@@ -119,10 +119,15 @@ interface ComponentListProps {
   netlist: Netlist
   selection: Selection
   onSelect: (selection: Selection) => void
-  onChangeFootprint: () => void
-  /** Parts with open or shorted pins. */
-  refsWithIssues: ReadonlySet<string>
+  /** The PCB list has an Issues filter and a footprint button; the schematic list only searches. */
+  pcb?: {
+    onChangeFootprint: () => void
+    /** Parts with open or shorted pins. */
+    refsWithIssues: ReadonlySet<string>
+  }
 }
+
+const NO_ISSUES: ReadonlySet<string> = new Set()
 
 /** Short package description for the component list, e.g. "TO-92", "1206" or "Radial". */
 function packageLabel(component: NetComponent): string {
@@ -142,7 +147,8 @@ function packageLabel(component: NetComponent): string {
 const refPrefix = (ref: string) => ref.match(/^[A-Za-z]+/)?.[0].toUpperCase() ?? '?'
 
 export function ComponentList(props: ComponentListProps) {
-  const { netlist, selection, onSelect, onChangeFootprint, refsWithIssues } = props
+  const { netlist, selection, onSelect, pcb } = props
+  const refsWithIssues = pcb?.refsWithIssues ?? NO_ISSUES
   const highlighted = new Set(selectedRefs(selection))
   const [query, setQuery] = useState('')
   const [onlyIssues, setOnlyIssues] = useState(false)
@@ -159,22 +165,24 @@ export function ComponentList(props: ComponentListProps) {
         <Icon name="search" />
         <input type="search" placeholder="Search components" value={query} onChange={(e) => setQuery(e.target.value)} />
       </label>
-      <div className="list-tabs">
-        <button className={onlyIssues ? '' : 'active'} onClick={() => setOnlyIssues(false)}>
-          All ({netlist.components.length})
-        </button>
-        <button className={onlyIssues ? 'active' : ''} onClick={() => setOnlyIssues(true)} title="Parts with open or shorted pins">
-          Issues ({refsWithIssues.size})
-        </button>
-        <button
-          className="change-footprint"
-          onClick={onChangeFootprint}
-          disabled={netlist.components.length === 0}
-          title="Choose another footprint for groups of parts"
-        >
-          <Icon name="convert" />Change footprint…
-        </button>
-      </div>
+      {pcb && (
+        <div className="list-tabs">
+          <button className={onlyIssues ? '' : 'active'} onClick={() => setOnlyIssues(false)}>
+            All ({netlist.components.length})
+          </button>
+          <button className={onlyIssues ? 'active' : ''} onClick={() => setOnlyIssues(true)} title="Parts with open or shorted pins">
+            Issues ({refsWithIssues.size})
+          </button>
+          <button
+            className="change-footprint"
+            onClick={pcb.onChangeFootprint}
+            disabled={netlist.components.length === 0}
+            title="Choose another footprint for groups of parts"
+          >
+            <Icon name="convert" />Change footprint…
+          </button>
+        </div>
+      )}
       <ul className="component-list">
         {shown.map((c) => {
           const selected = highlighted.has(c.ref)
@@ -267,28 +275,130 @@ function TextField({ value, label, placeholder, onCommit }: { value: string; lab
   )
 }
 
+function MultiSelection({ refs, nets }: { refs: string[]; nets: string[] }) {
+  return (
+    <dl className="properties">
+      <dt>Selected</dt>
+      <dd>{refs.length} parts, {nets.length} islands</dd>
+      <dt>Parts</dt>
+      <dd>{refs.length ? refs.join(' ') : '–'}</dd>
+      <dt>Nets</dt>
+      <dd>{nets.length ? nets.join(' ') : '–'}</dd>
+    </dl>
+  )
+}
+
+function PartCard({ component }: { component: NetComponent }) {
+  return (
+    <div className="selection-card">
+      <span className={`kind-badge large kind-${refPrefix(component.ref).charAt(0)}`} aria-hidden="true">
+        {refPrefix(component.ref)}
+      </span>
+      <div>
+        <div className="selection-title">{component.ref}</div>
+        <div className="muted">{[component.value, packageLabel(component)].filter(Boolean).join(' · ')}</div>
+      </div>
+    </div>
+  )
+}
+
+function PinTable({ component }: { component: NetComponent }) {
+  return (
+    <table className="pin-table">
+      <thead>
+        <tr>
+          <th>Pin</th>
+          <th>Net</th>
+        </tr>
+      </thead>
+      <tbody>
+        {component.pins.map((p) => (
+          <tr key={p.number}>
+            <td>{p.number}</td>
+            <td>{p.net || '–'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+interface PartPropertiesProps {
+  /** With the schematic's nets. */
+  netlist: Netlist
+  selection: Selection
+  onValueChange: (ref: string, value: string) => void
+}
+
+/** The schematic side of the selection: what the part is and how the schematic connects it. */
+export function PartProperties({ netlist, selection, onValueChange }: PartPropertiesProps) {
+  if (selection?.kind === 'multi') return <MultiSelection refs={selection.refs} nets={selection.nets} />
+  const component = selection?.kind === 'part' ? netlist.components.find((c) => c.ref === selection.ref) : undefined
+  if (!component) return <p className="muted">Nothing selected. Click a part in the schematic or the list.</p>
+  return (
+    <>
+      <PartCard component={component} />
+      <div className="field-list">
+        <span className="field-label">Value</span>
+        <TextField
+          value={component.value}
+          label="Value"
+          placeholder="e.g. 10k or BD140"
+          onCommit={(value) => onValueChange(component.ref, value)}
+        />
+      </div>
+      <PinTable component={component} />
+    </>
+  )
+}
+
+interface SchematicCheckProps {
+  shorts: string[][]
+  /** Pins the schematic connects to nothing. */
+  openPins: string[]
+  /** Pins on another net in the schematic than on the PCB. */
+  pinsNotInPcb: string[]
+  onUpdatePcb: () => void
+}
+
+/** Electrical rule check of the schematic, and whether the PCB still matches it. */
+export function SchematicCheck({ shorts, openPins, pinsNotInPcb, onUpdatePcb }: SchematicCheckProps) {
+  return (
+    <>
+      <div className="badges">
+        {shorts.length === 0 && openPins.length === 0 && <span className="badge ok">No errors</span>}
+        {shorts.length > 0 && <span className="badge error">{shorts.length} {shorts.length === 1 ? 'short' : 'shorts'}</span>}
+        {openPins.length > 0 && <span className="badge warn">{openPins.length} open {openPins.length === 1 ? 'pin' : 'pins'}</span>}
+      </div>
+      <ul className="check-list">
+        {shorts.map((names) => (
+          <li key={names.join('+')} className="error">Shorted: {names.join(' + ')}</li>
+        ))}
+        {openPins.length > 0 && <li className="warn">Not connected: {openPins.join(' ')}</li>}
+        <li className={pinsNotInPcb.length ? 'warn' : 'ok'}>
+          {pinsNotInPcb.length ? `PCB is behind: ${pinsNotInPcb.length} pins on another net` : 'PCB matches the schematic'}
+        </li>
+      </ul>
+      {pinsNotInPcb.length > 0 && (
+        <button className="update-pcb" onClick={onUpdatePcb} title="Give the PCB the schematic's nets (can be undone)">
+          <Icon name="convert" />Update PCB
+        </button>
+      )}
+    </>
+  )
+}
+
 interface SelectionDetailsProps {
   netlist: Netlist
   layout: Layout
   selection: Selection
   onPlacementChange: (ref: string, changes: Partial<Pick<Placement, 'x' | 'y' | 'rotation'>>) => void
-  onValueChange: (ref: string, value: string) => void
   onChangeFootprint: () => void
 }
 
-export function SelectionDetails({ netlist, layout, selection, onPlacementChange, onValueChange, onChangeFootprint }: SelectionDetailsProps) {
-  if (selection?.kind === 'multi') {
-    return (
-      <dl className="properties">
-        <dt>Selected</dt>
-        <dd>{selection.refs.length} parts, {selection.nets.length} islands</dd>
-        <dt>Parts</dt>
-        <dd>{selection.refs.length ? selection.refs.join(' ') : '–'}</dd>
-        <dt>Nets</dt>
-        <dd>{selection.nets.length ? selection.nets.join(' ') : '–'}</dd>
-      </dl>
-    )
-  }
+/** The PCB side of the selection: footprint and placement of a part, or a copper island. */
+export function SelectionDetails({ netlist, layout, selection, onPlacementChange, onChangeFootprint }: SelectionDetailsProps) {
+  if (selection?.kind === 'multi') return <MultiSelection refs={selection.refs} nets={selection.nets} />
   if (selection?.kind === 'island') {
     const pins = netlist.components.flatMap((c) =>
       c.pins.filter((p) => p.net === selection.net).map((p) => `${c.ref}.${p.number}`),
@@ -334,23 +444,8 @@ export function SelectionDetails({ netlist, layout, selection, onPlacementChange
   const change = (changes: Partial<Pick<Placement, 'x' | 'y' | 'rotation'>>) => onPlacementChange(component.ref, changes)
   return (
     <>
-      <div className="selection-card">
-        <span className={`kind-badge large kind-${refPrefix(component.ref).charAt(0)}`} aria-hidden="true">
-          {refPrefix(component.ref)}
-        </span>
-        <div>
-          <div className="selection-title">{component.ref}</div>
-          <div className="muted">{[component.value, packageLabel(component)].filter(Boolean).join(' · ')}</div>
-        </div>
-      </div>
+      <PartCard component={component} />
       <div className="field-list">
-        <span className="field-label">Value</span>
-        <TextField
-          value={component.value}
-          label="Value"
-          placeholder="e.g. 10k or BD140"
-          onCommit={(value) => onValueChange(component.ref, value)}
-        />
         <span className="field-label">Footprint</span>
         <div className="footprint-field">
           <span title={component.footprint}>{component.footprint || '–'}</span>
@@ -368,22 +463,7 @@ export function SelectionDetails({ netlist, layout, selection, onPlacementChange
         <span className="field-label">Rotation</span>
         <NumberField label="Rotation" value={placement.rotation} unit="°" step={15} onCommit={(r) => change({ rotation: ((r % 360) + 360) % 360 })} />
       </div>
-      <table className="pin-table">
-        <thead>
-          <tr>
-            <th>Pin</th>
-            <th>Net</th>
-          </tr>
-        </thead>
-        <tbody>
-          {component.pins.map((p) => (
-            <tr key={p.number}>
-              <td>{p.number}</td>
-              <td>{p.net || '–'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <PinTable component={component} />
     </>
   )
 }

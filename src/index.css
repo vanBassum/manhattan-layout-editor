@@ -328,21 +328,6 @@ input:focus-visible {
   color: var(--text-muted);
 }
 
-.action-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.action-list button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-color: transparent;
-  background: none;
-  text-align: left;
-}
-
 .layer-list {
   display: flex;
   flex-direction: column;
@@ -1544,4 +1529,93 @@ input:focus-visible {
   background: var(--error-soft);
   color: var(--error);
   font-size: 12px;
+}
+
+/* Side panels follow the view: schematic panel left, PCB panel right, both in split view. */
+.workspace.view-schematic {
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.workspace.view-layout {
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+
+.workspace.view-split {
+  grid-template-columns: 260px minmax(0, 1fr) 260px;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+}
+
+/* File menu in the header. */
+.menu {
+  position: relative;
+}
+
+.menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 6px 20px var(--backdrop);
+}
+
+.menu-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+}
+
+.menu-list button:hover {
+  background: var(--panel-muted);
+}
+
+.reset-grid,
+.update-pcb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
+
+.check-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.check-list .error {
+  color: var(--error);
+}
+
+.check-list .warn {
+  color: var(--warn);
+}
+
+.check-list .ok {
+  color: var(--ok);
 }

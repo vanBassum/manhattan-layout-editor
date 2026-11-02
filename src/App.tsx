@@ -22,7 +22,18 @@ import {
 } from './layout'
 import { parseNetlist, withValues } from './netlist'
 import { findStrategy, KNIFE_CUTS, STRATEGIES } from './optimize'
-import { AiHelpDialog, ComponentList, HelpDialog, Icon, LayerToggles, Section, SelectionDetails, Validation } from './panels'
+import {
+  AiHelpDialog,
+  ComponentList,
+  HelpDialog,
+  Icon,
+  LayerToggles,
+  PartProperties,
+  SchematicCheck,
+  Section,
+  SelectionDetails,
+  Validation,
+} from './panels'
 import {
   DEFAULT_SETTINGS,
   emptyProject,
@@ -247,6 +258,16 @@ export function App() {
   /** The pane last clicked in; keyboard shortcuts act on it when both are shown. */
   const [activePane, setActivePane] = useState<Pane>(() => (view === 'schematic' ? 'schematic' : 'layout'))
   const [schematicTool, setSchematicTool] = useState<SchematicTool>('select')
+  const [fileMenuOpen, setFileMenuOpen] = useState(false)
+  const fileMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!fileMenuOpen) return
+    const closeOutside = (e: PointerEvent) => {
+      if (!fileMenuRef.current?.contains(e.target as Node)) setFileMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [fileMenuOpen])
   const showView = (mode: ViewMode) => {
     setView(mode)
     if (mode !== 'split') setActivePane(mode)
@@ -289,6 +310,10 @@ export function App() {
     [schematicNets, layout.placements],
   )
   const pinsNotInPcb = useMemo(() => pinsWithOtherNet(netlist, schematicNets.netlist), [netlist, schematicNets])
+  const schematicOpenPins = useMemo(
+    () => schematicNets.netlist.components.flatMap((c) => c.pins.filter((p) => !p.net).map((p) => `${c.ref}.${p.number}`)),
+    [schematicNets],
+  )
 
   // Latest project, also between a change and the next render: agent commands can arrive back to back.
   const projectRef = useRef(project)
@@ -797,6 +822,46 @@ export function App() {
           <span className="brand-icon"><Icon name="app" /></span>
           Manhattan Layout Editor
         </div>
+        <div className="menu" ref={fileMenuRef}>
+          <button
+            className="header-button"
+            aria-haspopup="menu"
+            aria-expanded={fileMenuOpen}
+            onClick={() => setFileMenuOpen(!fileMenuOpen)}
+          >
+            <Icon name="file" />File
+          </button>
+          {fileMenuOpen && (
+            <div className="menu-list" role="menu" onClick={() => setFileMenuOpen(false)}>
+              <button onClick={() => projectFileInputRef.current!.click()} title="Open a saved project in a new tab">
+                <Icon name="open" />Open project…
+              </button>
+              <button onClick={saveProject} title="Download this tab's project as a JSON file">
+                <Icon name="save" />Save project…
+              </button>
+              <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
+              <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
+              <button onClick={exportLayoutDxf} title="Area to burn as closed contours in mm (board outline + copper as holes), ready to hatch in EzCad">
+                <Icon name="export" />Export DXF
+              </button>
+            </div>
+        )}
+      </div>
+      {/* Outside the menu, so they stay mounted while the file dialog is open. */}
+        <input
+          ref={projectFileInputRef}
+          type="file"
+          accept=".json"
+          hidden
+          onChange={(e) => onProjectFileChosen(e.target.files?.[0])}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".tel,.enet,.json,.net,.txt"
+          hidden
+          onChange={(e) => onFileChosen(e.target.files?.[0])}
+        />
         <div className="project-tabs" role="tablist">
           {tabs.map((tab) => (
             <div key={tab.id} className={tab.id === activeId ? 'project-tab active' : 'project-tab'}>
@@ -877,106 +942,26 @@ export function App() {
         </div>
       </header>
 
-      <div className="workspace">
-        <aside className="sidebar">
-          <Section title="File">
-            <div className="action-list">
-              <button onClick={() => projectFileInputRef.current!.click()} title="Open a saved project in a new tab">
-                <Icon name="open" />Open project…
-              </button>
-              <input
-                ref={projectFileInputRef}
-                type="file"
-                accept=".json"
-                hidden
-                onChange={(e) => onProjectFileChosen(e.target.files?.[0])}
+      <div className={`workspace view-${view}`}>
+        {view !== 'layout' && (
+          <aside className="sidebar">
+            <h2 className="panel-title"><Icon name="schematic" />Schematic</h2>
+            <Section title={`Components (${schematicNetlist.components.length})`}>
+              <ComponentList netlist={schematicNetlist} selection={selection} onSelect={setSelection} />
+            </Section>
+            <Section title="Properties">
+              <PartProperties netlist={schematicNetlist} selection={selection} onValueChange={changeValue} />
+            </Section>
+            <Section title="Electrical check">
+              <SchematicCheck
+                shorts={schematicNets.conflicts.map((c) => c.names)}
+                openPins={schematicOpenPins}
+                pinsNotInPcb={pinsNotInPcb}
+                onUpdatePcb={updatePcb}
               />
-              <button onClick={saveProject} title="Download this tab's project as a JSON file">
-                <Icon name="save" />Save project…
-              </button>
-              <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".tel,.enet,.json,.net,.txt"
-                hidden
-                onChange={(e) => onFileChosen(e.target.files?.[0])}
-              />
-              <button onClick={resetToGrid}><Icon name="grid" />Reset to grid</button>
-              <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
-              <button onClick={exportLayoutDxf} title="Area to burn as closed contours in mm (board outline + copper as holes), ready to hatch in EzCad">
-                <Icon name="export" />Export DXF
-              </button>
-            </div>
-          </Section>
-          <Section title="Layers">
-            <LayerToggles layers={layers} onChange={setLayers} />
-          </Section>
-          <Section title="Board settings">
-            <div className="settings">
-              <label>
-                Snap
-                <select value={settings.snap} onChange={(e) => setSettings({ snap: Number(e.target.value) })}>
-                  {SNAP_OPTIONS.map((s) => (
-                    <option key={s} value={s}>{s === 0 ? 'off' : `${s} mm`}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Isolation
-                <span className="unit-input">
-                  <input
-                    type="number"
-                    min={0.05}
-                    step={0.05}
-                    value={settings.isolation}
-                    onChange={(e) => setSettings({ isolation: Math.max(0.05, Number(e.target.value) || 0.05) })}
-                  />
-                  mm
-                </span>
-              </label>
-              <label title="Free space the optimizer keeps around each component, for soldering and probing">
-                Clearance
-                <span className="unit-input">
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    value={settings.clearance}
-                    onChange={(e) => setSettings({ clearance: Math.max(0, Number(e.target.value) || 0) })}
-                  />
-                  mm
-                </span>
-              </label>
-              <label title="Longest lead the optimizer bends without a heavy penalty">
-                Max lead
-                <span className="unit-input">
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={settings.maxLead}
-                    onChange={(e) => setSettings({ maxLead: Math.max(1, Number(e.target.value) || 1) })}
-                  />
-                  mm
-                </span>
-              </label>
-              {boardSize && (
-                <p className="board-size">Board {boardSize.w.toFixed(1)} × {boardSize.h.toFixed(1)} mm</p>
-              )}
-            </div>
-          </Section>
-          <Section title="Netlist validation">
-            <Validation
-              components={netlist.components.length}
-              nets={netlist.nets.length}
-              openPins={pinCounts.open}
-              shortedPins={pinCounts.short}
-              netsTooClose={spacingViolations.size}
-              netsSplit={splitNets.size}
-            />
-          </Section>
-        </aside>
+            </Section>
+          </aside>
+        )}
 
         <main className="canvas-area">
           {error && (
@@ -1127,27 +1112,96 @@ export function App() {
           </div>
         </main>
 
-        <aside className="sidebar">
-          <Section title="Selection">
-            <SelectionDetails
-              netlist={builtNetlist}
-              layout={layout}
-              selection={selection}
-              onPlacementChange={changePlacement}
-              onValueChange={changeValue}
-              onChangeFootprint={openFootprintDialog}
-            />
-          </Section>
-          <Section title={`Components (${builtNetlist.components.length})`} fill>
-            <ComponentList
-              netlist={builtNetlist}
-              selection={selection}
-              onSelect={setSelection}
-              refsWithIssues={pinCounts.refsWithIssues}
-              onChangeFootprint={openFootprintDialog}
-            />
-          </Section>
-        </aside>
+        {view !== 'schematic' && (
+          <aside className="sidebar">
+            <h2 className="panel-title"><Icon name="grid" />PCB</h2>
+            <Section title="Selection">
+              <SelectionDetails
+                netlist={builtNetlist}
+                layout={layout}
+                selection={selection}
+                onPlacementChange={changePlacement}
+                onChangeFootprint={openFootprintDialog}
+              />
+            </Section>
+            <Section title="Layers">
+              <LayerToggles layers={layers} onChange={setLayers} />
+            </Section>
+            <Section title="Board settings">
+              <div className="settings">
+                <label>
+                  Snap
+                  <select value={settings.snap} onChange={(e) => setSettings({ snap: Number(e.target.value) })}>
+                    {SNAP_OPTIONS.map((s) => (
+                      <option key={s} value={s}>{s === 0 ? 'off' : `${s} mm`}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Isolation
+                  <span className="unit-input">
+                    <input
+                      type="number"
+                      min={0.05}
+                      step={0.05}
+                      value={settings.isolation}
+                      onChange={(e) => setSettings({ isolation: Math.max(0.05, Number(e.target.value) || 0.05) })}
+                    />
+                    mm
+                  </span>
+                </label>
+                <label title="Free space the optimizer keeps around each component, for soldering and probing">
+                  Clearance
+                  <span className="unit-input">
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      value={settings.clearance}
+                      onChange={(e) => setSettings({ clearance: Math.max(0, Number(e.target.value) || 0) })}
+                    />
+                    mm
+                  </span>
+                </label>
+                <label title="Longest lead the optimizer bends without a heavy penalty">
+                  Max lead
+                  <span className="unit-input">
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={settings.maxLead}
+                      onChange={(e) => setSettings({ maxLead: Math.max(1, Number(e.target.value) || 1) })}
+                    />
+                    mm
+                  </span>
+                </label>
+                <button className="reset-grid" onClick={resetToGrid}><Icon name="grid" />Reset to grid</button>
+                {boardSize && (
+                  <p className="board-size">Board {boardSize.w.toFixed(1)} × {boardSize.h.toFixed(1)} mm</p>
+                )}
+              </div>
+            </Section>
+            <Section title="Design rule check">
+              <Validation
+                components={netlist.components.length}
+                nets={netlist.nets.length}
+                openPins={pinCounts.open}
+                shortedPins={pinCounts.short}
+                netsTooClose={spacingViolations.size}
+                netsSplit={splitNets.size}
+              />
+            </Section>
+            <Section title={`Components (${builtNetlist.components.length})`} fill>
+              <ComponentList
+                netlist={builtNetlist}
+                selection={selection}
+                onSelect={setSelection}
+                pcb={{ refsWithIssues: pinCounts.refsWithIssues, onChangeFootprint: openFootprintDialog }}
+              />
+            </Section>
+          </aside>
+        )}
       </div>
 
       {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
