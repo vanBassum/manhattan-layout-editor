@@ -78,7 +78,7 @@ export function completeSchematic(built: Netlist, schematic: Schematic | undefin
 }
 
 /** True when `p` lies on the wire, ends excluded. Only straight horizontal and vertical wires take T-joins. */
-function onWireInterior(p: Point, w: Wire): boolean {
+export function onWireInterior(p: Point, w: Wire): boolean {
   const eps = 1e-6
   if (Math.abs(w.x1 - w.x2) < eps && Math.abs(p.x - w.x1) < eps) {
     return p.y > Math.min(w.y1, w.y2) + eps && p.y < Math.max(w.y1, w.y2) - eps
@@ -276,4 +276,73 @@ export function pinsWithOtherNet(a: Netlist, b: Netlist): string[] {
       return netsOfB.get(pin) === p.net ? [] : [pin]
     }),
   )
+}
+
+// ---------- Wire editing ----------
+// Every way of drawing or changing wires goes through these few functions, so they all behave alike.
+
+const samePoint = (a: Point, b: Point) => pointKey(a) === pointKey(b)
+const wireEnds = (w: Wire): [Point, Point] => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]
+const isHorizontal = (w: Wire) => w.y1 === w.y2 && w.x1 !== w.x2
+const isVertical = (w: Wire) => w.x1 === w.x2 && w.y1 !== w.y2
+
+/** From a to b along the grid: straight when they line up, else an L whose first leg is horizontal when `horizontalFirst`. */
+export function route(a: Point, b: Point, horizontalFirst: boolean): Point[] {
+  if (a.x === b.x || a.y === b.y) return [a, b]
+  return [a, horizontalFirst ? { x: b.x, y: a.y } : { x: a.x, y: b.y }, b]
+}
+
+/** One wire per step of a polyline; steps of zero length are left out. */
+export function polylineWires(points: Point[]): Wire[] {
+  return points.slice(1).flatMap((b, k) => {
+    const a = points[k]
+    return samePoint(a, b) ? [] : [{ x1: a.x, y1: a.y, x2: b.x, y2: b.y }]
+  })
+}
+
+/** True when a wire ending at `p` connects to something: a pin end, a wire end, or the middle of a wire (a T-join). */
+export function isConnection(p: Point, wires: Wire[], pinKeys: ReadonlySet<string>): boolean {
+  return pinKeys.has(pointKey(p)) || wires.some((w) => wireEnds(w).some((e) => samePoint(e, p)) || onWireInterior(p, w))
+}
+
+/** The schematic with one wire's end moved to `to`; the wire bends into an L when needed, keeping its first leg's direction. */
+export function withWireEndMoved(schematic: FullSchematic, index: number, end: 1 | 2, to: Point): FullSchematic {
+  const wire = schematic.wires[index]
+  const [a, b] = wireEnds(wire)
+  const fixed = end === 1 ? b : a
+  const horizontalFirst = isHorizontal(wire) || (!isVertical(wire) && Math.abs(to.x - fixed.x) >= Math.abs(to.y - fixed.y))
+  const rerouted = polylineWires(route(fixed, to, horizontalFirst))
+  return { ...schematic, wires: [...schematic.wires.slice(0, index), ...rerouted, ...schematic.wires.slice(index + 1)] }
+}
+
+/**
+ * The schematic with a straight wire shifted sideways by `offset` (its component along the wire is
+ * ignored). Wires meeting its ends at right angles stretch along; anything else at an end (a pin,
+ * a label, a wire carrying on in line, a T-join) gets a short new wire, so no connection is lost.
+ */
+export function withWireShifted(schematic: FullSchematic, index: number, offset: Point, pinKeys: ReadonlySet<string>): FullSchematic {
+  const wire = schematic.wires[index]
+  const horizontal = isHorizontal(wire)
+  if (!horizontal && !isVertical(wire)) return schematic
+  const d = horizontal ? { x: 0, y: offset.y } : { x: offset.x, y: 0 }
+  if (d.x === 0 && d.y === 0) return schematic
+  const ends = wireEnds(wire).map((from) => ({ from, to: { x: from.x + d.x, y: from.y + d.y } }))
+  // A neighbour at right angles to the shifted wire runs along the shift, so it can simply stretch.
+  const stretches = (w: Wire) => (horizontal ? isVertical(w) : isHorizontal(w))
+  const others = schematic.wires.filter((_, k) => k !== index)
+
+  const stubs = ends.flatMap(({ from, to }) => {
+    const heldInPlace =
+      pinKeys.has(pointKey(from)) ||
+      schematic.labels.some((l) => samePoint(l, from)) ||
+      others.some((w) => (wireEnds(w).some((e) => samePoint(e, from)) && !stretches(w)) || onWireInterior(from, w))
+    return heldInPlace ? polylineWires([from, to]) : []
+  })
+  const moved = (p: Point) => ends.find(({ from }) => samePoint(from, p))?.to ?? p
+  const shifted = schematic.wires.map((w, k) => {
+    if (k !== index && !stretches(w)) return w
+    const [a, b] = wireEnds(w).map(moved)
+    return { x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+  })
+  return { ...schematic, wires: [...shifted, ...stubs].filter((w) => w.x1 !== w.x2 || w.y1 !== w.y2) }
 }

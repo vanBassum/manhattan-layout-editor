@@ -1457,8 +1457,15 @@ input:focus-visible {
 }
 
 .schematic.tool-wire,
-.schematic.tool-label {
+.schematic.tool-label,
+.schematic.over-point,
+.schematic.over-point .sch-part {
   cursor: crosshair;
+}
+
+/* A wire can be shifted sideways by dragging it. */
+.schematic.tool-select .sch-wire-item {
+  cursor: move;
 }
 
 .sch-wire {

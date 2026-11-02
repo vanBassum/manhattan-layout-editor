@@ -75,8 +75,22 @@ type ViewMode = 'schematic' | 'split' | 'layout'
 type Pane = 'schematic' | 'layout'
 
 const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title: string }[] = [
-  { id: 'select', icon: 'select', label: 'Select', title: 'Select (V): drag parts; click a wire or label and press Del to remove it' },
-  { id: 'wire', icon: 'wire', label: 'Wire', title: 'Wire (W): drag from point to point; it connects where it meets a pin, a wire end or lands on a wire' },
+  {
+    id: 'select',
+    icon: 'select',
+    label: 'Select',
+    title:
+      'Select (V): drag parts. Drag from a pin end to draw a wire (Shift: from a wire end). Drag a wire end to move it, ' +
+      'a wire sideways to shift it. Click a wire or label and press Del to remove it',
+  },
+  {
+    id: 'wire',
+    icon: 'wire',
+    label: 'Wire',
+    title:
+      'Wire (W): drag for one wire, or click corner by corner and double-click or Esc to stop. Space flips the bend. ' +
+      'Ending on a pin, a wire end or the middle of a wire connects; crossing wires do not',
+  },
   { id: 'label', icon: 'label', label: 'Label', title: 'Label (L): click a point to name its net; labels with the same name are connected. Double-click a label to rename it' },
 ]
 
