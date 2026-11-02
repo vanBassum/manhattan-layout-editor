@@ -2,8 +2,32 @@ import { describe, expect, it } from 'vitest'
 import example from './examples/multivibrator.manhattan.json?raw'
 import { buildProjectNetlist } from './definitions'
 import { projectFromFile } from './projectStore'
-import { pinEnds, projectSchematic, withPlacementChanges, withTidyWires, type FullSchematic } from './schematic'
-import type { BuiltNetlist } from './types'
+import { pinEnds, pinsWithOtherNet, projectSchematic, withPlacementChanges, withTidyWires, type FullSchematic } from './schematic'
+import type { BuiltNetlist, Netlist } from './types'
+
+describe('pinsWithOtherNet', () => {
+  const netlist = (nets: Record<string, string>): Netlist => ({
+    components: [
+      { ref: 'R1', value: '1k', footprint: '', pins: [{ number: '1', net: nets['R1.1'] }, { number: '2', net: nets['R1.2'] }] },
+      { ref: 'R2', value: '1k', footprint: '', pins: [{ number: '1', net: nets['R2.1'] }, { number: '2', net: nets['R2.2'] }] },
+    ],
+    nets: [...new Set(Object.values(nets))],
+  })
+
+  it('ignores a net that is only renamed', () => {
+    const pcb = netlist({ 'R1.1': 'A', 'R1.2': 'MID', 'R2.1': 'MID', 'R2.2': 'B' })
+    const schematic = netlist({ 'R1.1': 'IN', 'R1.2': 'R1.2', 'R2.1': 'R1.2', 'R2.2': 'OUT' })
+
+    expect(pinsWithOtherNet(pcb, schematic)).toEqual([])
+  })
+
+  it('lists the pins whose connections changed', () => {
+    const pcb = netlist({ 'R1.1': 'A', 'R1.2': 'MID', 'R2.1': 'MID', 'R2.2': 'B' })
+    const schematic = netlist({ 'R1.1': 'A', 'R1.2': 'MID', 'R2.1': 'B', 'R2.2': 'B' })
+
+    expect(pinsWithOtherNet(pcb, schematic)).toEqual(['R1.2', 'R2.1', 'R2.2'])
+  })
+})
 
 describe('withPlacementChanges', () => {
   it('moves a label on a moved pin to the new pin end, and gives it no other fields', () => {

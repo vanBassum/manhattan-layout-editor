@@ -441,7 +441,7 @@ interface SchematicCheckProps {
   shorts: string[][]
   /** Pins the schematic connects to nothing. */
   openPins: string[]
-  /** Pins on another net in the schematic than on the PCB. */
+  /** Pins connected to other pins in the schematic than on the PCB. */
   pinsNotInPcb: string[]
   onUpdatePcb: () => void
 }
@@ -461,7 +461,7 @@ export function SchematicCheck({ shorts, openPins, pinsNotInPcb, onUpdatePcb }: 
         ))}
         {openPins.length > 0 && <li className="warn">Not connected: {openPins.join(' ')}</li>}
         <li className={pinsNotInPcb.length ? 'warn' : 'ok'}>
-          {pinsNotInPcb.length ? `PCB is behind: ${pinsNotInPcb.length} pins on another net` : 'PCB matches the schematic'}
+          {pinsNotInPcb.length ? `PCB is behind: ${pinsNotInPcb.length} pins connected differently` : 'PCB matches the schematic'}
         </li>
       </ul>
       {pinsNotInPcb.length > 0 && (

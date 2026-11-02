@@ -321,7 +321,8 @@ forward(
 forward(
   'update_pcb',
   'Gives the PCB layout the nets the schematic gives (like the "Update PCB" button), as one undo step. Schematic ' +
-    'edits do not change the PCB until then; get_schematic lists the differing pins as "pinsNotInPcb". Islands follow ' +
+    'edits do not change the PCB until then; get_schematic lists the pins connected differently as "pinsNotInPcb" (a net that is only ' +
+    'named differently does not count). Islands follow ' +
     'renamed and merged nets; new nets and parts get a spot on the grid. Returns the PCB problems after the update.',
 )
 

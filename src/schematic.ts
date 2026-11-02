@@ -563,13 +563,34 @@ export function withSchematicNets(project: Project): Project {
   return { ...project, netlist, layout: followNetlist(project.layout, project.netlist, built) }
 }
 
-/** Pins ("R1.2") whose net differs between two netlists of the same components, e.g. the PCB's and the schematic's. */
+/** For every pin ("R1.2") that shares a net with other pins, all pins on that net as one key. */
+function netMatesByPin(netlist: Netlist): Map<string, string> {
+  const pinsByNet = new Map<string, string[]>()
+  for (const c of netlist.components) {
+    for (const p of c.pins) {
+      if (isRealNet(p.net)) pinsByNet.set(p.net, [...(pinsByNet.get(p.net) ?? []), `${c.ref}.${p.number}`])
+    }
+  }
+  const mates = new Map<string, string>()
+  for (const pins of pinsByNet.values()) {
+    // A net with one pin connects that pin to nothing, the same as no net.
+    if (pins.length < 2) continue
+    const key = [...pins].sort(naturalCompare).join(' ')
+    for (const pin of pins) mates.set(pin, key)
+  }
+  return mates
+}
+
+/**
+ * Pins ("R1.2") connected to other pins in one netlist than in the other, e.g. the PCB's and the
+ * schematic's. Only the connections count: a net that is merely named differently is no change.
+ */
 export function pinsWithOtherNet(a: Netlist, b: Netlist): string[] {
-  const netsOfB = new Map<string, string>(b.components.flatMap((c) => c.pins.map((p) => [`${c.ref}.${p.number}`, p.net])))
+  const [matesInA, matesInB] = [netMatesByPin(a), netMatesByPin(b)]
   return a.components.flatMap((c) =>
     c.pins.flatMap((p) => {
       const pin = `${c.ref}.${p.number}`
-      return netsOfB.get(pin) === p.net ? [] : [pin]
+      return (matesInA.get(pin) ?? '') === (matesInB.get(pin) ?? '') ? [] : [pin]
     }),
   )
 }

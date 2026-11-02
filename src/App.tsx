@@ -1112,7 +1112,7 @@ export function App() {
             {pinsNotInPcb.length > 0 && (
               <div className="sync-banner" role="status">
                 <span title={pinsNotInPcb.join(' ')}>
-                  The schematic has changes the PCB does not have yet: {pinsNotInPcb.length} pin{pinsNotInPcb.length === 1 ? '' : 's'} on another net.
+                  The schematic has changes the PCB does not have yet: {pinsNotInPcb.length} pin{pinsNotInPcb.length === 1 ? '' : 's'} connected differently.
                 </span>
                 <button className="header-button" onClick={updatePcb} title="Give the PCB the schematic's nets; islands follow renamed and merged nets (can be undone)">
                   <Icon name="convert" />Update PCB
