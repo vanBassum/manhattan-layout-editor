@@ -194,7 +194,7 @@ interface ComponentListProps {
   netlist: BuiltNetlist
   selection: Selection
   onSelect: (selection: Selection) => void
-  /** With the PCB on screen the list has an Issues filter and a footprint button; otherwise it only searches. */
+  /** With the PCB on screen the list marks parts with pin problems and has a footprint button. */
   pcb?: {
     onChangeFootprint: () => void
     /** Parts with open or shorted pins. */
@@ -226,38 +226,32 @@ export function ComponentList(props: ComponentListProps) {
   const refsWithIssues = pcb?.refsWithIssues ?? NO_ISSUES
   const highlighted = new Set(selectedRefs(selection))
   const [query, setQuery] = useState('')
-  const [onlyIssues, setOnlyIssues] = useState(false)
   const needle = query.trim().toLowerCase()
-  const shown = netlist.components.filter(
-    (c) =>
-      (!onlyIssues || refsWithIssues.has(c.ref)) &&
-      [c.ref, c.value, c.footprint].some((text) => text.toLowerCase().includes(needle)),
-  )
+  const shown = netlist.components.filter((c) => [c.ref, c.value, c.footprint].some((text) => text.toLowerCase().includes(needle)))
 
   return (
     <>
-      <label className="search">
+      <div className="search">
         <Icon name="search" />
-        <input type="search" placeholder="Search components" value={query} onChange={(e) => setQuery(e.target.value)} />
-      </label>
-      {pcb && (
-        <div className="list-tabs">
-          <button className={onlyIssues ? '' : 'active'} onClick={() => setOnlyIssues(false)}>
-            All ({netlist.components.length})
-          </button>
-          <button className={onlyIssues ? 'active' : ''} onClick={() => setOnlyIssues(true)} title="Parts with open or shorted pins">
-            Issues ({refsWithIssues.size})
-          </button>
+        <input
+          type="search"
+          placeholder="Search components"
+          aria-label="Search components"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {pcb && (
           <button
-            className="change-footprint"
+            className="icon-button"
             onClick={pcb.onChangeFootprint}
             disabled={netlist.components.length === 0}
-            title="Choose another footprint for groups of parts"
+            title="Change footprints…"
+            aria-label="Change footprints"
           >
-            <Icon name="convert" />Change footprint…
+            <Icon name="convert" />
           </button>
-        </div>
-      )}
+        )}
+      </div>
       <ul className="component-list">
         {shown.map((c) => {
           const selected = highlighted.has(c.ref)
@@ -280,7 +274,7 @@ export function ComponentList(props: ComponentListProps) {
             </li>
           )
         })}
-        {shown.length === 0 && <li className="muted">{onlyIssues ? 'No issues' : 'No matches'}</li>}
+        {shown.length === 0 && <li className="muted">No matches</li>}
       </ul>
     </>
   )

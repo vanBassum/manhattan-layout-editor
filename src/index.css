@@ -966,13 +966,6 @@ input:focus-visible {
   color: #fff;
 }
 
-.list-tabs .change-footprint {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-}
-
 .component-list .component-row {
   display: grid;
   grid-template-columns: 22px 3em minmax(0, 1fr) auto;
@@ -1371,7 +1364,8 @@ input:focus-visible {
   font-size: 12px;
 }
 
-.footprint-field .icon-button {
+.footprint-field .icon-button,
+.search .icon-button {
   width: 28px;
   height: 26px;
   border: none;
