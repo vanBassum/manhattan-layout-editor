@@ -74,6 +74,17 @@ const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
 const LAYERS_KEY = 'manhattan-layout-editor/layers'
 const THEME_KEY = 'manhattan-layout-editor/theme'
+const VIEW_KEY = 'manhattan-layout-editor/view'
+
+function initialView(): ViewMode {
+  try {
+    const stored = localStorage.getItem(VIEW_KEY)
+    if (stored === 'schematic' || stored === 'split' || stored === 'layout') return stored
+  } catch {
+    // Storage disabled; start on the PCB.
+  }
+  return 'layout'
+}
 
 type Theme = 'light' | 'dark'
 
@@ -232,13 +243,18 @@ export function App() {
   const [selection, setSelection] = useState<Selection>(null)
   const [tool, setTool] = useState<Tool>('select')
   const [moveMode, setMoveMode] = useState<MoveMode>('part')
-  const [view, setView] = useState<ViewMode>('layout')
+  const [view, setView] = useState<ViewMode>(initialView)
   /** The pane last clicked in; keyboard shortcuts act on it when both are shown. */
-  const [activePane, setActivePane] = useState<Pane>('layout')
+  const [activePane, setActivePane] = useState<Pane>(() => (view === 'schematic' ? 'schematic' : 'layout'))
   const [schematicTool, setSchematicTool] = useState<SchematicTool>('select')
   const showView = (mode: ViewMode) => {
     setView(mode)
     if (mode !== 'split') setActivePane(mode)
+    try {
+      localStorage.setItem(VIEW_KEY, mode)
+    } catch {
+      // Storage disabled; the view still switches for this session.
+    }
   }
   const [fitRequest, setFitRequest] = useState(1)
   const [error, setError] = useState('')
