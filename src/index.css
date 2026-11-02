@@ -22,7 +22,7 @@
   --grid-minor: #d0d4d9;
   --grid-major: #c4c9cf;
   --axis: #8b96a3;
-  --ruler-bg: rgba(255, 255, 255, 0.92);
+  --ruler-bg: var(--panel);
   --ruler-text: #6b7580;
   --idle-dot: #b0b6bd;
   --shadow: var(--shadow);
@@ -57,7 +57,7 @@
   --grid-minor: #262b31;
   --grid-major: #333941;
   --axis: #5d6773;
-  --ruler-bg: rgba(22, 24, 28, 0.92);
+  --ruler-bg: var(--panel);
   --ruler-text: #8a939d;
   --idle-dot: #5d6773;
   --shadow: rgba(0, 0, 0, 0.5);
