@@ -169,7 +169,8 @@ forward(
     '(open pins, shorted pins, nets too close = islands of different nets overlapping, nets split into pieces). ' +
     'Islands of different nets touch edge to edge without gaps; the isolation cut is burned centered on their ' +
     'shared edge, so the copper is each island shrunk by isolation/2 and a lead end must lie at least isolation/2 ' +
-    'inside its island. The netlist is fixed; only geometry can change.',
+    'inside its island. Layout tools only change geometry; parts and nets change through add_component and the ' +
+    'schematic (update_pcb).',
 )
 
 server.registerTool(
@@ -350,6 +351,32 @@ forward(
     'Returns every component\'s value.',
   {
     values: z.array(z.object({ ref: z.string(), value: z.string() })).min(1),
+  },
+)
+
+forward(
+  'add_component',
+  'Adds a part to the project, as one undo step. Each pin joins the net given for it, or nothing: the PCB netlist ' +
+    'gets the net (a new net gets an island) and the schematic a net label on the pin end, so no update_pcb is ' +
+    'needed. Leave nets out to wire the part in the schematic instead, then call update_pcb. The symbol goes to x/y ' +
+    '(as set_schematic places it) or below the other parts; on the PCB the part gets a spot on the grid. The symbol ' +
+    'and footprint follow from definition, or else from the reference prefix, value, footprint name and pin count ' +
+    'like imported parts (R = resistor, C = capacitor, D = diode, Q = transistor, ...). Returns the part with its pin ' +
+    'ends as get_schematic does, and the PCB problems.',
+  {
+    ref: z.string().min(1).describe('new, unused reference, e.g. "C5"'),
+    value: z.string().optional().describe('e.g. "100n", "BC547"'),
+    footprint: z.string().optional().describe('footprint name as set_footprint takes; default: the first of the definition, else guessed'),
+    definition: z.string().optional().describe('id of a project definition (see get_definitions) the part uses'),
+    pins: z
+      .array(z.object({ number: z.string().min(1), net: z.string().optional().describe('net to join; omit for none') }))
+      .min(1)
+      .optional()
+      .describe('the part\'s pins; required unless definition is given, which then supplies them unconnected'),
+    x: z.number().optional().describe('schematic symbol origin, mm'),
+    y: z.number().optional().describe('schematic symbol origin, mm, y down'),
+    rotation: z.number().optional().describe('schematic rotation, 0, 90, 180 or 270'),
+    mirrored: z.boolean().optional(),
   },
 )
 

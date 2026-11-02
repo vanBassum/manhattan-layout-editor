@@ -1,10 +1,13 @@
 // Layout inspection and edits as used by the AI agent bridge. Pure functions: they read a project
-// and return a description or a new layout; App applies the layout (with undo).
+// and return a description or a new layout (or netlist); App applies it (with undo).
 
+import { buildNetlist, withAssignedDefinition } from './definitions'
 import { footprintPinCount } from './footprints'
 import { boundsOf } from './geometry'
-import { analyzeLeads, bodyBounds, changeFootprints, componentGeometry, findSpacingViolations, findSplitNets, toLocal, toWorld } from './layout'
-import type { Island, Layout, NetComponent, Netlist, Placement, Point, Project, Rect } from './types'
+import { analyzeLeads, bodyBounds, changeFootprints, componentGeometry, createLayout, findSpacingViolations, findSplitNets, toLocal, toWorld } from './layout'
+import { isRealNet, naturalCompare } from './netlist'
+import { agentPlacements, completeSchematic, pinEnds } from './schematic'
+import type { Island, Layout, NetComponent, NetLabel, Netlist, Pin, Placement, Point, Project, Rect, Schematic } from './types'
 
 const round = (v: number) => Math.round(v * 100) / 100
 const roundPoint = (p: Point) => ({ x: round(p.x), y: round(p.y) })
@@ -204,6 +207,58 @@ export function setFootprint(project: Project, imported: Netlist, args: Args): L
     }
   }
   return changeFootprints(imported, project.layout, new Set(refs as string[]), footprint)
+}
+
+/** An agent's pin list: unique pin numbers, each with the net it joins ('' or missing: none). */
+function pinsArg(pins: unknown): Pin[] {
+  if (!Array.isArray(pins) || pins.length === 0) throw new Error('"pins" must be a non-empty array of {number, net?}')
+  const numbers = new Set<string>()
+  return pins.map((pin: { number?: unknown; net?: unknown }, k) => {
+    if (typeof pin?.number !== 'string' || pin.number === '') throw new Error(`pins[${k}] needs a "number"`)
+    if (numbers.has(pin.number)) throw new Error(`pin ${pin.number} is listed twice`)
+    if (pin.net !== undefined && typeof pin.net !== 'string') throw new Error(`pin ${pin.number}: "net" must be a string`)
+    numbers.add(pin.number)
+    return { number: pin.number, net: pin.net?.trim() ?? '' }
+  })
+}
+
+/**
+ * The project with a new part. Each pin joins the net given for it: the PCB netlist gets the net and
+ * the schematic a net label on the pin end, so the two agree. The part's symbol goes to x/y, or below
+ * the others; on the PCB it gets a spot on the grid, and new nets get an island.
+ */
+export function addComponent(project: Project, args: Args): Pick<Project, 'netlist' | 'layout' | 'schematic'> {
+  const ref = stringArg(args, 'ref')
+  if (project.netlist.components.some((c) => c.ref === ref)) throw new Error(`There already is a component "${ref}"`)
+  const definitionId = args.definition === undefined ? undefined : stringArg(args, 'definition')
+  const definition = definitionId === undefined ? undefined : project.definitions?.[definitionId]
+  if (definitionId !== undefined && !definition) throw new Error(`Unknown definition "${definitionId}"`)
+  const pins =
+    args.pins === undefined && definition ? definition.pins.map((p) => ({ number: p.number, net: '' })) : pinsArg(args.pins)
+  pins.sort((a, b) => naturalCompare(a.number, b.number))
+  const footprint = args.footprint === undefined ? Object.keys(definition?.footprints ?? {})[0] ?? '' : stringArg(args, 'footprint')
+  const value = args.value === undefined ? '' : String(args.value).trim()
+
+  const components = [...project.netlist.components, { ref, value, footprint, pins }].sort((a, b) => naturalCompare(a.ref, b.ref))
+  const nets = new Set([...project.netlist.nets, ...pins.map((p) => p.net).filter(isRealNet)])
+  let netlist: Netlist = { components, nets: [...nets].sort(naturalCompare) }
+  // Refuses a definition that lacks one of the pins.
+  if (definitionId !== undefined) netlist = withAssignedDefinition(netlist, project.definitions, [ref], definitionId)
+  const layout = createLayout(netlist, project.layout)
+
+  const placed = args.x === undefined && args.y === undefined ? [] : agentPlacements(netlist, [{ ...args, ref }])
+  let schematic: Schematic | undefined =
+    project.schematic || placed.length > 0 ? { ...project.schematic, placements: [...(project.schematic?.placements ?? []), ...placed] } : undefined
+  // A schematic without labels of its own labels every pin from the netlist already.
+  if (schematic?.labels) {
+    const built = buildNetlist(netlist, layout.placements, project.definitions)
+    const full = completeSchematic(built, schematic)
+    const index = built.components.findIndex((c) => c.ref === ref)
+    const ends = pinEnds(built.components[index], full.placements[index])
+    const labels: NetLabel[] = built.components[index].pins.flatMap((pin, k) => (isRealNet(pin.net) ? [{ x: ends[k].x, y: ends[k].y, name: pin.net }] : []))
+    schematic = { ...schematic, labels: [...schematic.labels, ...labels] }
+  }
+  return { netlist, layout, schematic }
 }
 
 const BATCH_EDITS: Record<string, (project: Project, args: Args) => Layout> = {

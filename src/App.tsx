@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
 import { buildNetlist, checkedDefinition, withAssignedDefinition, withDefinitions } from './definitions'
-import { applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setFootprint, setIsland, setLeadEnd } from './agentCommands'
+import { addComponent, applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setFootprint, setIsland, setLeadEnd } from './agentCommands'
 import { Canvas, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { exportDxf } from './exportDxf'
 import { downloadText, exportSvg } from './exportSvg'
@@ -482,6 +482,11 @@ export function App() {
         const netlist = withValues(stored.netlist, args.values)
         applyAgentChange(targetId, stored, { netlist })
         return { components: netlist.components.map((c) => ({ ref: c.ref, value: c.value })) }
+      }
+      case 'add_component': {
+        const updated = applyAgentChange(targetId, stored, addComponent(stored, args))
+        const part = describeSchematic(updated).parts.find((p) => p.ref === args.ref)
+        return { part, problems: findProblems(asBuilt(updated)) }
       }
     }
     const updated = applyAgentChange(targetId, stored, { layout: agentLayoutEdit(command, args, current, stored.netlist) })

@@ -19,10 +19,12 @@ Safari is not supported for this connection.
 
 get_layout, screenshot, move_component, set_lead_end, reset_leads, set_island, move_island,
 batch (several edits as one undo step), set_resistor_footprint, set_footprint (any footprint
-for chosen parts, or null for the netlist footprint), run_optimizer, undo, redo, list_projects.
+for chosen parts, or null for the netlist footprint), run_optimizer, add_component (a new part,
+optionally with the nets its pins join), undo, redo, list_projects.
 The editor has project tabs. Every tool takes an optional "project" (tab name or id from
 list_projects); without it, tools work on the tab shown on screen.
-All coordinates are millimetres, y points down. The netlist is fixed; only geometry changes.
+All coordinates are millimetres, y points down. Layout tools only change geometry; parts and nets
+change through add_component and the schematic (update_pcb).
 Islands of different nets touch edge to edge, with no gaps: the shared edge is the cut line, and the
 isolation (settings.isolation) is burned centred on it. The copper is each island shrunk by
 isolation/2, so a lead end must lie at least isolation/2 inside its island. Islands of different nets
