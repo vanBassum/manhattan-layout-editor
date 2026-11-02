@@ -10,6 +10,7 @@
 
 import { withDefinitions } from './definitions'
 import EXAMPLE_PROJECT from './examples/multivibrator.manhattan.json?raw'
+import { withoutCutLines } from './migrateCutLayout'
 import { migrateGappedIslands } from './migrateIslands'
 import { STRATEGIES } from './optimize'
 import type { Project, Settings } from './types'
@@ -75,17 +76,19 @@ export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => 
 export const newTabId = () => Math.random().toString(36).slice(2, 10)
 
 /**
- * A project read from storage or a file; projects from before guids get one here, and parts
- * without a component definition get one from the built-in templates.
+ * A project read from storage or a file; projects from before guids get one here, parts without a
+ * component definition get one from the built-in templates, and a cut-line layout becomes islands.
  */
 function checkedProject(data: unknown): Project | null {
   const project = data as Partial<Project> | null
   if (!project?.netlist?.components || !project.layout?.islands) return null
-  return withDefinitions({
-    ...(project as Project),
-    guid: project.guid || crypto.randomUUID(),
-    settings: { ...DEFAULT_SETTINGS, ...project.settings },
-  })
+  return withoutCutLines(
+    withDefinitions({
+      ...(project as Project),
+      guid: project.guid || crypto.randomUUID(),
+      settings: { ...DEFAULT_SETTINGS, ...project.settings },
+    }),
+  )
 }
 
 // A saved project file. Bump the version when the stored layout changes meaning, and convert

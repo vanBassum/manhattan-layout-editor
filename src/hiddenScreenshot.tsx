@@ -37,7 +37,7 @@ export async function screenshotHidden(netlist: Netlist, layout: Layout, isolati
           layers={ALL_LAYERS}
           tool="select"
           moveMode="part"
-          editMode={layout.knife ? 'cuts' : 'rects'}
+          editMode="rects"
         />,
       ),
     )

@@ -18,8 +18,6 @@ const ICON_PATHS = {
   fit: 'M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5',
   rotate: 'M20 12a8 8 0 1 1-2.3-5.7 M20 4v4h-4',
   leads: 'M4 12h5 M15 12h5 M9 8h6v8H9z',
-  addRect: 'M4 6h12v12H4z M19 9v6 M16 12h6',
-  removeRect: 'M4 6h12v12H4z M16 12h6',
   select: 'M6 3l13 8-6 1.5L10 19z',
   pan: 'M12 3v18 M3 12h18 M9 6l3-3 3 3 M9 18l3 3 3-3 M6 9l-3 3 3 3 M18 9l3 3-3 3',
   moveBody: 'M9 9h6v6H9z M3 12h2 M19 12h2 M5 10v4 M19 10v4',
@@ -33,7 +31,6 @@ const ICON_PATHS = {
   label: 'M4 7h11l5 5-5 5H4z M8 12h.01',
   sun: 'M12 8a4 4 0 1 1 0 8a4 4 0 1 1 0-8 M12 2v2 M12 20v2 M4.9 4.9l1.4 1.4 M17.7 17.7l1.4 1.4 M2 12h2 M20 12h2 M4.9 19.1l1.4-1.4 M17.7 6.3l1.4-1.4',
   moon: 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z',
-  cut: 'M6 4a2 2 0 1 1 0 4a2 2 0 1 1 0-4 M6 16a2 2 0 1 1 0 4a2 2 0 1 1 0-4 M7.5 7.5L20 18 M7.5 16.5L20 6',
   help: 'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18 M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6 M12 17.5v.01',
   eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z M12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6',
   eyeOff: 'M2 12s3.5-7 10-7c2 0 3.7.7 5.1 1.6 M22 12s-3.5 7-10 7c-2 0-3.7-.7-5.1-1.6 M3 3l18 18',
@@ -507,9 +504,9 @@ function CopyLine({ text }: { text: string }) {
 
 const SHORTCUTS: [string, string][] = [
   ['V / H', 'Select / pan tool'],
-  ['C', 'Cut tool (Knife – cut lines): drag to draw a cut'],
   ['Drag a cut', 'Move it; both sides follow'],
-  ['Double-click a cut', 'Remove it (Knife – cut lines)'],
+  ['Drag an island edge', 'Move that edge of the selected island'],
+  ['+ on a hovered edge', 'Grow the selected island 2.5 mm on that side'],
   ['Click, Shift+click', 'Select, add to selection'],
   ['Drag empty space', 'Marquee select (Shift adds)'],
   ['Ctrl+A', 'Select all'],

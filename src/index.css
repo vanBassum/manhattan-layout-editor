@@ -622,34 +622,29 @@ input:focus-visible {
   stroke-opacity: 0.45;
 }
 
-/* Outline edges of the selected island in polygon editing: a visible band to grab. */
-.island-edge {
+/* Outline edges of the selected island: a visible band to grab. */
+.island-edge line {
   stroke: var(--accent);
   stroke-opacity: 0.35;
 }
 
-.island-edge:hover {
+.island-edge.hovered line {
   stroke-opacity: 0.7;
 }
 
-.cut-channel {
-  stroke: var(--canvas-bg);
-  stroke-linecap: square;
-  pointer-events: none;
+/* The + on a hovered edge that grows the island on that side. */
+.grow-button {
+  cursor: copy;
 }
 
-.free-copper {
-  fill: #d9945a;
-  fill-opacity: 0.45;
+.grow-button circle {
+  fill: var(--accent);
+  stroke: #fff;
 }
 
-.board-outline {
-  fill: none;
-  stroke: var(--axis);
-}
-
-.draw-cut {
-  cursor: crosshair;
+.grow-button path {
+  stroke: #fff;
+  stroke-linecap: round;
 }
 
 .marquee {

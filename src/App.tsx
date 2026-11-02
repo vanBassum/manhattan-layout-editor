@@ -15,13 +15,10 @@ import {
   followNetlist,
   findSpacingViolations,
   findSplitNets,
-  fromCutLayout,
   keepFootprintChoices,
-  toCutLayout,
-  withCutIslands,
 } from './layout'
 import { parseNetlist, withValues } from './netlist'
-import { findStrategy, KNIFE_CUTS, STRATEGIES } from './optimize'
+import { findStrategy, STRATEGIES } from './optimize'
 import {
   AiHelpDialog,
   ComponentList,
@@ -221,18 +218,10 @@ function describeSchematic(project: Project) {
 }
 
 /** The project with the editor's footprint choices applied: what drawing, checks and optimizers should see. */
-/** The project with footprint choices applied and, in a cut-line layout, the islands the cuts give. */
-const asBuilt = (project: Project): Project => {
-  const netlist = buildNetlist(project.netlist, project.layout.placements, project.definitions)
-  return { ...project, netlist, layout: withCutIslands(netlist, project.layout) }
-}
-
-/** The stored project with the islands of a cut-line layout filled in. */
-const withDerivedIslands = (project: Project): Project =>
-  project.layout.knife ? { ...project, layout: asBuilt(project).layout } : project
-
-/** Every piece of copper, including cut-line copper no lead reaches, for the isolation exports. */
-const allCopper = (layout: Layout) => [...layout.islands, ...(layout.freeCopper ?? []).map((rects) => ({ net: '', rects }))]
+const asBuilt = (project: Project): Project => ({
+  ...project,
+  netlist: buildNetlist(project.netlist, project.layout.placements, project.definitions),
+})
 
 /** The layout after an agent's edit command. `current` is as built; `imported` is the netlist as imported. */
 function agentLayoutEdit(command: string, args: Record<string, unknown>, current: Project, imported: Netlist): Layout {
@@ -286,8 +275,7 @@ export function App() {
   const tabsRef = useRef(tabs)
   tabsRef.current = tabs
   const [activeId, setActiveId] = useState(initialTabs.activeId)
-  const [storedProject, setProject] = useState<Project>(() => readProject(initialTabs.activeId))
-  const project = useMemo(() => withDerivedIslands(storedProject), [storedProject])
+  const [project, setProject] = useState<Project>(() => readProject(initialTabs.activeId))
   const [selection, setSelection] = useState<Selection>(null)
   const [tool, setTool] = useState<Tool>('select')
   const [moveMode, setMoveMode] = useState<MoveMode>('part')
@@ -589,8 +577,7 @@ export function App() {
 
   const openInNewTab = (opened: Project, handle?: FileSystemFileHandle) => {
     const id = newTabId()
-    // Compared as the editor shows it, so an opened file does not count as changed right away.
-    addProject(id, withDerivedIslands(opened), handle)
+    addProject(id, opened, handle)
     const next = [...tabs, { id, name: opened.name }]
     setTabs(next)
     writeTabs(next)
@@ -599,14 +586,17 @@ export function App() {
 
   const newProject = () => openInNewTab(emptyProject(project.settings))
 
-  /** The project of tab `id` as the editor shows it, which is what gets saved. */
-  const shownProject = (id: string) => (id === activeIdRef.current ? projectRef.current : withDerivedIslands(readProject(id)))
+  /** The project of tab `id`, including changes still waiting to be written to the recovery copy. */
+  const shownProject = (id: string) => (id === activeIdRef.current ? projectRef.current : readProject(id))
 
-  /** File content in the form the editor saves it, so it compares with what the editor saved; null when unreadable. */
+  /**
+   * The file's project and its content as the editor would save it, so it compares with what the
+   * editor saved even when the file came from an older version; `project` is null when unreadable.
+   */
   const readProjectFile = async (handle: FileSystemFileHandle) => {
     const text = await readFile(handle)
     try {
-      const fromFile = withDerivedIslands(projectFromFile(text))
+      const fromFile = projectFromFile(text)
       return { project: fromFile, content: projectToFile(fromFile) }
     } catch {
       return { project: null, content: text }
@@ -870,19 +860,6 @@ export function App() {
   const selectAll = () =>
     setSelection(selectionOf(layout.placements.map((p) => p.ref), layout.islands.map((i) => i.net)))
 
-  const addRect = () => {
-    if (selection?.kind !== 'island') return
-    const island = layout.islands.find((i) => i.net === selection.net)!
-    const base = island.rects[selection.rectIndex] ?? island.rects[0]
-    const added = { x: base.x + base.w, y: base.y, w: 4, h: base.h }
-    rememberEdit()
-    setLayout((l) => ({
-      ...l,
-      islands: l.islands.map((i) => (i.net === selection.net ? { ...i, rects: [...i.rects, added] } : i)),
-    }))
-    setSelection({ ...selection, rectIndex: island.rects.length })
-  }
-
   const selectedIsland = selection?.kind === 'island' ? layout.islands.find((i) => i.net === selection.net) : undefined
   const canRemoveRect = selectedIsland !== undefined && selectedIsland.rects.length > 1
 
@@ -916,20 +893,7 @@ export function App() {
     setLayout((l) => changeFootprints(netlist, l, refs, footprint))
   }
 
-  const editMode: EditMode = layout.knife ? 'cuts' : settings.strategy === 'knife' ? 'polygons' : 'rects'
-  // The cut tool only exists in a cut-line layout.
-  const activeTool: Tool = tool === 'cut' && editMode !== 'cuts' ? 'select' : tool
-
-  /** Choosing a knife variant also turns the current layout into that kind, so both can be compared on it. */
-  const chooseStrategy = (id: string) => {
-    setSettings({ strategy: id })
-    const wantsCuts = id === KNIFE_CUTS
-    if (wantsCuts === Boolean(layout.knife)) return
-    const next = wantsCuts ? toCutLayout(layout) : fromCutLayout(layout)
-    rememberEdit()
-    setLayout(() => next)
-    setSelection(null)
-  }
+  const editMode: EditMode = settings.strategy === 'knife' ? 'polygons' : 'rects'
 
   const optimize = () => {
     const strategy = findStrategy(settings.strategy)
@@ -948,9 +912,9 @@ export function App() {
   }
 
   const exportLayout = () =>
-    downloadText(`${project.name}-isolation.svg`, exportSvg(allCopper(layout), settings.isolation), 'image/svg+xml')
+    downloadText(`${project.name}-isolation.svg`, exportSvg(layout.islands, settings.isolation), 'image/svg+xml')
 
-  const exportLayoutDxf = () => downloadText(`${project.name}-isolation.dxf`, exportDxf(allCopper(layout), settings.isolation), 'application/dxf')
+  const exportLayoutDxf = () => downloadText(`${project.name}-isolation.dxf`, exportDxf(layout.islands, settings.isolation), 'application/dxf')
 
   const onProjectFileChosen = async (file: File | undefined) => {
     if (!file) return
@@ -1002,7 +966,6 @@ export function App() {
     } else if (e.key === 'w' || e.key === 'W') setSchematicTool('wire')
     else if (e.key === 'l' || e.key === 'L') setSchematicTool('label')
     else if (e.key === 'h' || e.key === 'H') setTool('pan')
-    else if ((e.key === 'c' || e.key === 'C') && editMode === 'cuts') setTool('cut')
     else if (e.key === 'm' || e.key === 'M') setMoveMode((mode) => (mode === 'part' ? 'body' : 'part'))
   }
   useEffect(() => {
@@ -1253,27 +1216,6 @@ export function App() {
                       <Icon name="convert" />Footprint
                     </button>
                   </div>
-                  <div className="rail-group" role="group" aria-label="Copper">
-                    {editMode === 'cuts' ? (
-                      <button
-                        className={activeTool === 'cut' ? 'rail-button active' : 'rail-button'}
-                        onClick={() => setTool('cut')}
-                        aria-pressed={activeTool === 'cut'}
-                        title="Cut (C): drag to draw a cut line on the grid. Drag a cut to move it, double-click it to remove it."
-                      >
-                        <Icon name="cut" />Cut
-                      </button>
-                    ) : (
-                      <>
-                        <button className="rail-button" onClick={addRect} disabled={selection?.kind !== 'island'} title="Extend the selected island with a rectangle">
-                          <Icon name="addRect" />Add rect
-                        </button>
-                        <button className="rail-button" onClick={removeRect} disabled={!canRemoveRect} title="Remove the selected rectangle (Del)">
-                          <Icon name="removeRect" />Del rect
-                        </button>
-                      </>
-                    )}
-                  </div>
                 </nav>
                 <div className="canvas-frame">
                   <Canvas
@@ -1288,7 +1230,7 @@ export function App() {
                     problemNets={problemNets}
                     fitRequest={fitRequest}
                     layers={layers}
-                    tool={activeTool}
+                    tool={tool}
                     moveMode={moveMode}
                     editMode={editMode}
                   />
@@ -1313,7 +1255,7 @@ export function App() {
               <div className="settings">
                 <label title={findStrategy(settings.strategy).description}>
                   Mode
-                  <select value={settings.strategy} onChange={(e) => chooseStrategy(e.target.value)}>
+                  <select value={settings.strategy} onChange={(e) => setSettings({ strategy: e.target.value })}>
                     {STRATEGIES.map((s) => (
                       <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
                     ))}

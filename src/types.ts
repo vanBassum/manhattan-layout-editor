@@ -122,7 +122,7 @@ export interface Placement {
   footprint?: string
 }
 
-/** A straight cut along x or y (x1 = x2 or y1 = y2) in a knife cut-line layout. */
+/** A straight cut along x or y (x1 = x2 or y1 = y2) in a knife cut-line layout (only in old projects). */
 export interface CutLine {
   x1: number
   y1: number
@@ -137,12 +137,8 @@ export interface CutBoard {
 }
 
 export interface Layout {
-  /** Derived from `knife` when that is set; stored as edited otherwise. */
   islands: Island[]
   placements: Placement[]
-  knife?: CutBoard
-  /** Derived with `islands` in a cut-line layout: copper that no lead reaches. */
-  freeCopper?: Rect[][]
 }
 
 export interface Settings {

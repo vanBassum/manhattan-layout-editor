@@ -1,5 +1,5 @@
 import { isRealNet } from './netlist'
-import type { CutBoard, CutLine, Island, Point, Rect } from './types'
+import type { CutBoard, Island, Point, Rect } from './types'
 
 const EPS = 1e-6
 
@@ -68,6 +68,7 @@ function cellsToRects(grid: Grid, isCell: (index: number) => boolean): Rect[] {
 }
 
 // ---------- Knife with cut lines: a solid board, split by cuts ----------
+// Only for reading projects from before that mode was removed (see migrateCutLayout.ts).
 
 /** The copper areas a set of cut lines splits the board into, each as rectangles. */
 export function cutRegions({ board, cuts }: CutBoard): Rect[][] {
@@ -232,31 +233,5 @@ export function moveIslandEdge(islands: Island[], net: string, edge: IslandEdge,
     const updated = byNet.get(island.net)!
     // An island fully taken over by its neighbour has no copper left and is dropped.
     return updated.rects.length > 0 ? [updated] : []
-  })
-}
-
-/**
- * Cut lines along every boundary between two islands, or between an island and bare board,
- * inside the islands' bounds: cutting them out of a solid board gives the same islands back.
- */
-export function cutsFromIslands(islands: Island[]): CutLine[] {
-  const grid = rasterize(islands.filter((island) => !island.plane), [], [])
-  return (['x', 'y'] as const).flatMap((axis) => {
-    const { across, along, cell: at } = oriented(grid, axis)
-    const runs: { at: number; from: number; to: number }[] = []
-    for (let a = 1; a < across.length - 1; a++) {
-      let run: (typeof runs)[number] | undefined
-      for (let b = 0; b < along.length - 1; b++) {
-        if (grid.owner[at(a - 1, b)] === grid.owner[at(a, b)]) {
-          run = undefined
-        } else if (run && Math.abs(run.to - along[b]) < EPS) {
-          run.to = along[b + 1]
-        } else {
-          run = { at: across[a], from: along[b], to: along[b + 1] }
-          runs.push(run)
-        }
-      }
-    }
-    return runs.map((r) => (axis === 'x' ? { x1: r.at, y1: r.from, x2: r.at, y2: r.to } : { x1: r.from, y1: r.at, x2: r.to, y2: r.at }))
   })
 }

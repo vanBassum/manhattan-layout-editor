@@ -1,7 +1,6 @@
 import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint } from './geometry'
 import { footprintPinCount } from './footprints'
 import { isRealNet } from './netlist'
-import { cutsFromIslands, islandsFromCuts } from './raster'
 import type { Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
 
 const PITCH = 2.54
@@ -291,34 +290,6 @@ export function analyzeLeads(
   })
 }
 
-/**
- * In a cut-line layout the islands are not edited but follow from the cuts and from where the
- * leads end. `netlist` must be the netlist as built (footprint choices applied).
- */
-export function withCutIslands(netlist: Netlist, layout: Layout): Layout {
-  if (!layout.knife) return layout
-  const components = new Map(netlist.components.map((c) => [c.ref, c]))
-  const leadEnds = layout.placements.flatMap((placement) => {
-    const component = components.get(placement.ref)
-    if (!component) return []
-    const defaults = defaultLeadEnds(componentGeometry(component))
-    return component.pins.map((pin, k) => ({ net: pin.net, end: toWorld(placement.leads?.[pin.number] ?? defaults[k], placement) }))
-  })
-  const { islands, free } = islandsFromCuts(layout.knife, leadEnds)
-  return { ...layout, islands, freeCopper: free }
-}
-
-/** Turns island edges into cut lines on a solid board covering the islands. */
-export function toCutLayout(layout: Layout): Layout {
-  const rects = layout.islands.filter((island) => !island.plane).flatMap((island) => island.rects)
-  const board = boundsOf(rects) ?? { x: 0, y: 0, w: 30, h: 20 }
-  return { ...layout, knife: { board, cuts: cutsFromIslands(layout.islands) } }
-}
-
-/** Back to editable islands: keeps the islands the cuts gave. */
-export function fromCutLayout(layout: Layout): Layout {
-  return { islands: layout.islands, placements: layout.placements }
-}
 
 /**
  * Grid placement. Islands and placements from `previous` whose net/ref still exist are kept as-is,
