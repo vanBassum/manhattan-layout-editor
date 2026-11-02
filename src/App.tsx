@@ -1051,7 +1051,12 @@ export function App() {
           <aside className="sidebar">
             {/* The schematic panel has the most room, so the shared list lives here and takes the rest of its height. */}
             <Section title={`Components (${schematicNetlist.components.length})`} fill>
-              <ComponentList netlist={schematicNetlist} selection={selection} onSelect={setSelection} />
+              <ComponentList
+                netlist={schematicNetlist}
+                selection={selection}
+                onSelect={setSelection}
+                pcb={view === 'split' ? { refsWithIssues: pinCounts.refsWithIssues, onChangeFootprint: openFootprintDialog } : undefined}
+              />
             </Section>
             <Section title="Properties">
               <PartProperties

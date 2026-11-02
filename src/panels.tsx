@@ -194,7 +194,7 @@ interface ComponentListProps {
   netlist: BuiltNetlist
   selection: Selection
   onSelect: (selection: Selection) => void
-  /** The PCB list has an Issues filter and a footprint button; the schematic list only searches. */
+  /** With the PCB on screen the list has an Issues filter and a footprint button; otherwise it only searches. */
   pcb?: {
     onChangeFootprint: () => void
     /** Parts with open or shorted pins. */
