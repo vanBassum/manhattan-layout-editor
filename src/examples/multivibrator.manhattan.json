@@ -3,7 +3,7 @@
   "version": 5,
   "project": {
     "guid": "7d3f0a52-4b1e-4c8a-9f6d-2e5b8c1a9d40",
-    "name": "Example: astable multivibrator",
+    "name": "Astable multivibrator",
     "netlist": {
       "components": [
         {

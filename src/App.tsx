@@ -41,6 +41,7 @@ import {
   addProject,
   DEFAULT_SETTINGS,
   emptyProject,
+  EXAMPLES,
   loadTabs,
   markSaved,
   newTabId,
@@ -983,6 +984,19 @@ export function App() {
                 <button onClick={openProjectFile} title="Open a project file in a new tab">
                   <Icon name="open" />Open…<kbd>Ctrl+O</kbd>
                 </button>
+                {/* Opens on hover, or on a click (keyboard, touch), which must not close the File menu. */}
+                <div className="submenu">
+                  <button aria-haspopup="menu" onClick={(e) => e.stopPropagation()}>
+                    <Icon name="sample" />Examples<Icon name="chevronRight" />
+                  </button>
+                  <div className="menu-list submenu-list" role="menu">
+                    {EXAMPLES.map((example) => (
+                      <button key={example.name} onClick={() => openInNewTab(example.open())} title="A copy of this example in a new tab">
+                        {example.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <button onClick={() => saveTab(activeId)} title="Save this tab's project to its file">
                   <Icon name="save" />Save<kbd>Ctrl+S</kbd>
                 </button>

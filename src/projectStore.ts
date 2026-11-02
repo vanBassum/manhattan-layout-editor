@@ -9,7 +9,6 @@
 // projects without overwriting each other.
 
 import { withDefinitions } from './definitions'
-import EXAMPLE_PROJECT from './examples/multivibrator.manhattan.json?raw'
 import { withoutCutLines } from './migrateCutLayout'
 import { migrateGappedIslands } from './migrateIslands'
 import { STRATEGIES } from './optimize'
@@ -253,14 +252,30 @@ export async function openProjectStore() {
   })
 }
 
-/** Each copy of the example is a project of its own, so it gets its own guid. */
-const exampleProject = (): Project => ({ ...projectFromFile(EXAMPLE_PROJECT), guid: crypto.randomUUID() })
+// Every project file in src/examples is offered under File > Examples.
+const EXAMPLE_FILES = import.meta.glob<string>('./examples/*.manhattan.json', { query: '?raw', import: 'default', eager: true })
+const FIRST_VISIT_EXAMPLE = './examples/multivibrator.manhattan.json'
+
+export interface Example {
+  name: string
+  /** A fresh copy: each is a project of its own, so it gets its own guid. */
+  open: () => Project
+}
+
+const exampleFrom = (text: string): Example => ({
+  name: projectFromFile(text).name,
+  open: () => ({ ...projectFromFile(text), guid: crypto.randomUUID() }),
+})
+
+export const EXAMPLES: Example[] = Object.values(EXAMPLE_FILES)
+  .map(exampleFrom)
+  .sort((a, b) => a.name.localeCompare(b.name))
 
 /** The open tabs and the one this browser tab shows; a browser that has never been here gets the example. */
 export function loadTabs(): { tabs: ProjectTab[]; activeId: string } {
   if (openTabs.length === 0) {
     const id = newTabId()
-    const project = exampleProject()
+    const project = exampleFrom(EXAMPLE_FILES[FIRST_VISIT_EXAMPLE]).open()
     addProject(id, project)
     openTabs = [{ id, name: project.name }]
     writeTabs(openTabs)

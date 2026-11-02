@@ -1600,6 +1600,29 @@ input:focus-visible {
   box-shadow: 0 6px 20px var(--backdrop);
 }
 
+.submenu {
+  position: relative;
+}
+
+.submenu > button {
+  width: 100%;
+}
+
+.submenu > button .icon:last-child {
+  margin-left: auto;
+}
+
+.menu-list.submenu-list {
+  display: none;
+  top: -5px;
+  left: 100%;
+}
+
+.submenu:hover > .submenu-list,
+.submenu:focus-within > .submenu-list {
+  display: flex;
+}
+
 /* At the far end of a pane's rail, opening towards the pane's middle. */
 .rail-group.view {
   margin-left: auto;
