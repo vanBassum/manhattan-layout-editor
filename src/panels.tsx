@@ -7,8 +7,7 @@ import type { Layout, NetComponent, Netlist, Placement, Selection } from './type
 
 const ICON_PATHS = {
   app: 'M4 4h6v6H4z M14 14h6v6h-6z M10 7h4v10 M7 10v7h7',
-  undo: 'M9 14L4 9l5-5 M4 9h11a5 5 0 0 1 0 10h-3',
-  redo: 'M15 14l5-5-5-5 M20 9H9a5 5 0 0 0 0 10h3',
+  chevronDown: 'M7 10l5 5 5-5',
   file: 'M6 3h8l4 4v14H6z M14 3v4h4',
   open: 'M3 7h6l2 2h10v10H3z M3 7V5h6',
   save: 'M5 4h11l3 3v13H5z M8 4v5h7V4 M8 20v-6h8v6',

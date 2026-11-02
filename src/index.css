@@ -154,6 +154,12 @@ input:focus-visible {
   grid-template-columns: auto minmax(0, 1fr);
 }
 
+.header-start {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .header-main {
   display: flex;
   align-items: center;
@@ -219,21 +225,12 @@ input:focus-visible {
   margin-left: auto;
 }
 
-.button-group {
-  display: flex;
-  gap: 4px;
-}
-
 .header-button {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 30px;
   padding: 0 12px;
-}
-
-.header-actions select {
-  height: 30px;
 }
 
 .icon-button {
@@ -552,13 +549,6 @@ input:focus-visible {
 .rail-button.active:hover:not(:disabled) {
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-.separator {
-  width: 1px;
-  height: 20px;
-  background: var(--border);
-  margin: 0 2px;
 }
 
 .canvas-frame {
@@ -1571,6 +1561,7 @@ input:focus-visible {
 }
 
 .reset-grid,
+.optimize-button,
 .update-pcb {
   display: flex;
   align-items: center;

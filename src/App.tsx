@@ -872,7 +872,7 @@ export function App() {
               aria-expanded={fileMenuOpen}
               onClick={() => setFileMenuOpen(!fileMenuOpen)}
             >
-              <Icon name="file" />File
+              <Icon name="file" />File<Icon name="chevronDown" />
             </button>
             {fileMenuOpen && (
               <div className="menu-list" role="menu" onClick={() => setFileMenuOpen(false)}>
@@ -905,6 +905,25 @@ export function App() {
             hidden
             onChange={(e) => onFileChosen(e.target.files?.[0])}
           />
+          <button
+            className="header-button"
+            onClick={() => setShowAiHelp(true)}
+            title={agentConnected ? 'AI agent connected (MCP)' : 'Let an AI assistant edit this layout (MCP)'}
+          >
+            <Icon name="ai" />AI
+            <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
+          </button>
+          <button
+            className="icon-button"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label="Toggle dark mode"
+          >
+            <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+          </button>
+          <button className="icon-button" onClick={() => setShowHelp(true)} title="Keyboard and mouse shortcuts" aria-label="Help">
+            <Icon name="help" />
+          </button>
         </div>
         <div className="header-main">
           <div className="project-tabs" role="tablist">
@@ -946,44 +965,6 @@ export function App() {
                 <Icon name="grid" />PCB
               </button>
             </div>
-            <span className="separator" />
-            <div className="button-group">
-              <button className="icon-button" onClick={undo} title="Undo (Ctrl+Z)" aria-label="Undo"><Icon name="undo" /></button>
-              <button className="icon-button" onClick={redo} title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo"><Icon name="redo" /></button>
-            </div>
-            <span className="separator" />
-            <select
-              value={settings.strategy}
-              onChange={(e) => chooseStrategy(e.target.value)}
-              title={findStrategy(settings.strategy).description}
-              aria-label="Optimizer strategy"
-            >
-              {STRATEGIES.map((s) => (
-                <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
-              ))}
-            </select>
-            <button className="header-button" onClick={optimize} title={findStrategy(settings.strategy).description}>
-              <Icon name="optimize" />Optimize
-            </button>
-            <button
-              className="header-button"
-              onClick={() => setShowAiHelp(true)}
-              title={agentConnected ? 'AI agent connected (MCP)' : 'Let an AI assistant edit this layout (MCP)'}
-            >
-              <Icon name="ai" />AI
-              <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
-            </button>
-            <button
-              className="icon-button"
-              onClick={toggleTheme}
-              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              aria-label="Toggle dark mode"
-            >
-              <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-            </button>
-            <button className="icon-button" onClick={() => setShowHelp(true)} title="Keyboard and mouse shortcuts" aria-label="Help">
-              <Icon name="help" />
-            </button>
           </div>
         </div>
       </header>
@@ -1168,6 +1149,21 @@ export function App() {
                 onPlacementChange={changePlacement}
                 onChangeFootprint={openFootprintDialog}
               />
+            </Section>
+            <Section title="Optimizer">
+              <div className="settings">
+                <label title={findStrategy(settings.strategy).description}>
+                  Mode
+                  <select value={settings.strategy} onChange={(e) => chooseStrategy(e.target.value)}>
+                    {STRATEGIES.map((s) => (
+                      <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <button className="optimize-button" onClick={optimize} title={findStrategy(settings.strategy).description}>
+                  <Icon name="optimize" />Optimize
+                </button>
+              </div>
             </Section>
             <Section title="Layers">
               <LayerToggles layers={layers} onChange={setLayers} />
