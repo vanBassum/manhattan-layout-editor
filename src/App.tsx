@@ -60,6 +60,7 @@ import {
   type ProjectTab,
 } from './projectStore'
 import { canvasToPng } from './screenshot'
+import { shareLinkOf, takeSharedProject } from './shareLink'
 import { selectedRefs, selectedWiring, selectionOf } from './selection'
 import { screenshotHidden } from './hiddenScreenshot'
 import {
@@ -315,6 +316,13 @@ export function App() {
   }
   const [fitRequest, setFitRequest] = useState(1)
   const [error, setError] = useState('')
+  /** A short confirmation, e.g. that a link was copied; it goes away by itself. */
+  const [notice, setNotice] = useState('')
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(''), 5000)
+    return () => clearTimeout(timer)
+  }, [notice])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const projectFileInputRef = useRef<HTMLInputElement>(null)
   /** Undo history of the shown tab. */
@@ -542,6 +550,7 @@ export function App() {
 
   /** Saves the shown project and its undo history, then shows `id` with its own. */
   const showTab = (id: string, next: Project) => {
+    const activeId = activeIdRef.current
     writeProject(activeId, projectRef.current)
     parkedHistory.current.set(activeId, history.current)
     history.current = parkedHistory.current.get(id) ?? NO_HISTORY
@@ -562,13 +571,36 @@ export function App() {
   const openInNewTab = (opened: Project, handle?: FileSystemFileHandle) => {
     const id = newTabId()
     addProject(id, opened, handle)
-    const next = [...tabs, { id, name: opened.name }]
+    const next = [...tabsRef.current, { id, name: opened.name }]
     setTabs(next)
     writeTabs(next)
     showTab(id, opened)
   }
 
   const newProject = () => openInNewTab(emptyProject(project.settings))
+
+  // A share link opens its project in a new tab once the editor is up.
+  useEffect(() => {
+    takeSharedProject()
+      .then((shared) => shared && openInNewTab(shared))
+      .catch((e) => setError(`Could not open the shared project: ${e instanceof Error ? e.message : String(e)}`))
+  }, [])
+
+  const copyShareLink = async () => {
+    let link: string
+    try {
+      link = await shareLinkOf(projectRef.current)
+    } catch (e) {
+      setError(`Could not make a share link: ${e instanceof Error ? e.message : String(e)}`)
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(link)
+      setNotice('Share link copied. Whoever opens it gets their own copy of this project.')
+    } catch {
+      prompt('Copy the share link:', link)
+    }
+  }
 
   /** The project of tab `id`, including changes still waiting to be written to the recovery copy. */
   const shownProject = (id: string) => (id === activeIdRef.current ? projectRef.current : readProject(id))
@@ -1032,6 +1064,9 @@ export function App() {
                 <button onClick={() => saveTab(activeId, true)} title="Save this tab's project to another file">
                   <Icon name="save" />Save as…<kbd>Ctrl+Shift+S</kbd>
                 </button>
+                <button onClick={copyShareLink} title="Copy a link that holds this whole project; opening it gives a copy in a new tab">
+                  <Icon name="link" />Copy share link
+                </button>
                 <hr />
                 <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
                 <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
@@ -1134,6 +1169,12 @@ export function App() {
               <div className="error-banner" role="alert">
                 {error}
                 <button className="icon-button" onClick={() => setError('')} aria-label="Dismiss">✕</button>
+              </div>
+            )}
+            {notice && (
+              <div className="notice-banner" role="status">
+                {notice}
+                <button className="icon-button" onClick={() => setNotice('')} aria-label="Dismiss">✕</button>
               </div>
             )}
             {fileConflict?.id === activeId ? (

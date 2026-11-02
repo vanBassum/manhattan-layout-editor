@@ -30,6 +30,7 @@ const ICON_PATHS = {
   search: 'M10 4a6 6 0 1 1 0 12a6 6 0 1 1 0-12 M15 15l5 5',
   convert: 'M4 8h14l-3-3 M20 16H6l3 3',
   plus: 'M12 5v14 M5 12h14',
+  link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   schematic: 'M2 12h4 M6 9h8v6H6z M14 12h4 M18 7v10 M20 9v6',
   split: 'M3 5h18v14H3z M12 5v14',
   wire: 'M4 18h6V6h10 M4 18a1.5 1.5 0 1 0 0.01 0 M20 6a1.5 1.5 0 1 0 0.01 0',
