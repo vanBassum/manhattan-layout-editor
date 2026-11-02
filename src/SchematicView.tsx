@@ -45,6 +45,11 @@ const GRID_PITCHES_MM = [SCHEMATIC_GRID, 12.7, 63.5, 317.5]
 const CLICK_TOLERANCE_PX = 3
 /** How close (screen pixels) the pointer must be to grab a pin end or wire end. */
 const GRAB_RADIUS_PX = 8
+/**
+ * Never further than this (mm): zoomed out, 8 pixels would cover most of a small symbol, and a
+ * press meant to move the part would start a wire instead.
+ */
+const MAX_GRAB_RADIUS_MM = 1
 
 /**
  * The wire being drawn, whatever started it: the corners placed so far, where the pointer is, and
@@ -82,6 +87,7 @@ type Drag =
   | { kind: 'draw'; startX: number; startY: number; moved: boolean }
   | { kind: 'wire-end'; index: number; end: 1 | 2; startX: number; startY: number; base: FullSchematic; moved: boolean }
   | { kind: 'wire-shift'; index: number; start: Point; base: FullSchematic; moved: boolean }
+  | { kind: 'label'; index: number; start: Point; origin: Point; moved: boolean }
 
 type Item = { kind: 'wire'; index: number } | { kind: 'label'; index: number }
 
@@ -278,7 +284,7 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
 
   /** The nearest pin end or wire end within grabbing distance; a pin wins over a wire end on the same spot. */
   const grabAt = (p: Point): Grab | null => {
-    const radius = GRAB_RADIUS_PX / view.scale
+    const radius = Math.min(GRAB_RADIUS_PX / view.scale, MAX_GRAB_RADIUS_MM)
     const candidates: Grab[] = [
       ...parts.flatMap(({ pins }) => pins.map((pin) => ({ point: { x: pin.x, y: pin.y }, onPin: true }))),
       ...schematic.wires.flatMap((w, index) => [
@@ -412,6 +418,8 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
     e.stopPropagation()
     onSelect(null)
     setItem({ kind: 'label', index })
+    const { x, y } = schematic.labels[index]
+    beginDrag(e, { kind: 'label', index, start: toWorld(e), origin: { x, y }, moved: false })
   }
 
   const renameLabel = (index: number) => {
@@ -458,6 +466,11 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
     if (drag.kind === 'wire-shift') {
       setItem(null)
       onChange(withWireShifted(drag.base, drag.index, snapPoint({ x: dx, y: dy }), pinKeys))
+      return
+    }
+    if (drag.kind === 'label') {
+      const to = snapPoint({ x: drag.origin.x + dx, y: drag.origin.y + dy })
+      onChange({ ...schematic, labels: schematic.labels.map((l, k) => (k === drag.index ? { ...l, ...to } : l)) })
       return
     }
     // A part rotated or flipped mid-drag keeps its new orientation; `base` still maps its old pin ends.

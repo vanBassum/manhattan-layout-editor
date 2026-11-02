@@ -28,6 +28,11 @@ export interface FullSchematic {
 /** Map key of a point; coordinates are on the grid, so rounding only removes float noise. */
 export const pointKey = (p: Point) => `${Math.round(p.x * 1000) / 1000},${Math.round(p.y * 1000) / 1000}`
 
+const samePoint = (a: Point, b: Point) => pointKey(a) === pointKey(b)
+const wireEnds = (w: Wire): [Point, Point] => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]
+const isHorizontal = (w: Wire) => w.y1 === w.y2 && w.x1 !== w.x2
+const isVertical = (w: Wire) => w.x1 === w.x2 && w.y1 !== w.y2
+
 /** A point of the symbol, relative to the placement's origin: mirrored first, then rotated. */
 function placedOffset(p: Point, placement: SchematicPlacement): Point {
   return rotatePoint(placement.mirrored ? { x: -p.x, y: p.y } : p, placement.rotation)
@@ -210,8 +215,24 @@ export function deriveNets(netlist: Netlist, built: Netlist, schematic: FullSche
 }
 
 /**
+ * A straight wire from `fixed` to `moved` after its other end moved off-line: a Z that jogs one grid
+ * step before the moved end. The wire keeps lying where it was for as long as possible, so labels
+ * and T-joins on it stay connected, and it still enters the moved pin in its own direction.
+ */
+function rubberBand(fixed: Point, moved: Point, horizontal: boolean): Wire[] {
+  const along = (p: Point) => (horizontal ? p.x : p.y)
+  const towardsFixed = Math.sign(along(fixed) - along(moved)) * SCHEMATIC_GRID
+  // Too short to step back from the moved end: jog right at the fixed end instead (an L).
+  const jog = Math.abs(along(fixed) - along(moved)) > SCHEMATIC_GRID ? along(moved) + towardsFixed : along(fixed)
+  const corners = horizontal
+    ? [{ x: jog, y: fixed.y }, { x: jog, y: moved.y }]
+    : [{ x: fixed.x, y: jog }, { x: moved.x, y: jog }]
+  return polylineWires([fixed, ...corners, moved])
+}
+
+/**
  * The schematic with some parts moved or rotated. Wire ends and labels on their pins go along, so
- * the connections stay; a wire can end up diagonal and then needs tidying by hand.
+ * the connections stay. A straight wire with only one end moving bends to stay horizontal and vertical.
  */
 export function withPlacementChanges(schematic: FullSchematic, built: Netlist, changed: SchematicPlacement[]): FullSchematic {
   const components = new Map(built.components.map((c) => [c.ref, c]))
@@ -228,10 +249,15 @@ export function withPlacementChanges(schematic: FullSchematic, built: Netlist, c
   const byRef = new Map(changed.map((p) => [p.ref, p]))
   return {
     placements: schematic.placements.map((p) => byRef.get(p.ref) ?? p),
-    wires: schematic.wires.map((w) => {
-      const a = moved({ x: w.x1, y: w.y1 })
-      const b = moved({ x: w.x2, y: w.y2 })
-      return { x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+    wires: schematic.wires.flatMap((w) => {
+      const [a, b] = wireEnds(w)
+      const [a2, b2] = [moved(a), moved(b)]
+      const oneEndMoved = samePoint(a, a2) !== samePoint(b, b2)
+      const stillStraight = a2.x === b2.x || a2.y === b2.y
+      if (oneEndMoved && !stillStraight && (isHorizontal(w) || isVertical(w))) {
+        return samePoint(a, a2) ? rubberBand(a, b2, isHorizontal(w)) : rubberBand(b, a2, isHorizontal(w))
+      }
+      return [{ x1: a2.x, y1: a2.y, x2: b2.x, y2: b2.y }]
     }),
     labels: schematic.labels.map((l) => ({ ...l, ...moved(l) })),
   }
@@ -298,11 +324,6 @@ export function pinsWithOtherNet(a: Netlist, b: Netlist): string[] {
 
 // ---------- Wire editing ----------
 // Every way of drawing or changing wires goes through these few functions, so they all behave alike.
-
-const samePoint = (a: Point, b: Point) => pointKey(a) === pointKey(b)
-const wireEnds = (w: Wire): [Point, Point] => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]
-const isHorizontal = (w: Wire) => w.y1 === w.y2 && w.x1 !== w.x2
-const isVertical = (w: Wire) => w.x1 === w.x2 && w.y1 !== w.y2
 
 /** From a to b along the grid: straight when they line up, else an L whose first leg is horizontal when `horizontalFirst`. */
 export function route(a: Point, b: Point, horizontalFirst: boolean): Point[] {

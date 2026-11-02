@@ -1511,7 +1511,8 @@ input:focus-visible {
 }
 
 /* A wire can be shifted sideways by dragging it. */
-.schematic.tool-select .sch-wire-item {
+.schematic.tool-select .sch-wire-item,
+.schematic.tool-select .sch-label {
   cursor: move;
 }
 
