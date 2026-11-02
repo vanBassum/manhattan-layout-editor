@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
-import { buildNetlist, buildProjectNetlist, checkedDefinition, withAssignedDefinition, withDefinitions } from './definitions'
-import { addComponent, applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setFootprint, setIsland, setLeadEnd } from './agentCommands'
+import { buildNetlist, buildProjectNetlist, withDefinitions } from './definitions'
+import { agentTargetId, runAgentCommand } from './agentDispatch'
 import { Canvas, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { exportDxf } from './exportDxf'
 import { errorText } from './errorText'
@@ -11,9 +11,7 @@ import { boundsOf } from './geometry'
 import {
   analyzeLeads,
   changeFootprints,
-  chooseResistors,
   createLayout,
-  followNetlist,
   findSpacingViolations,
   findSplitNets,
   keepFootprintChoices,
@@ -66,19 +64,16 @@ import { shareLinkOf, takeSharedProject } from './shareLink'
 import { selectedRefs, selectedWiring, selectionOf } from './selection'
 import { screenshotHidden } from './hiddenScreenshot'
 import {
-  agentPlacements,
   completeSchematic,
   deriveNets,
   flipped,
-  labelsFromAgent,
-  pinEnds,
   pinsWithOtherNet,
-  wiresFromPolylines,
   withPlacementChanges,
+  withSchematicNets,
   type FullSchematic,
 } from './schematic'
 import { SchematicView, type SchematicLayers, type SchematicTool } from './SchematicView'
-import type { BuiltProject, Layout, NetLabel, Netlist, Placement, Project, SchematicPlacement, Selection, Settings } from './types'
+import type { Layout, NetLabel, Placement, Project, SchematicPlacement, Selection, Settings } from './types'
 import type { IconName } from './panels'
 import { ProjectTabs } from './ProjectTabs'
 import { NO_HISTORY, snapshotOf, stepHistory, withEdit, type History, type Snapshot } from './undoHistory'
@@ -212,84 +207,6 @@ function projectFromNetlist(name: string, text: string, current: Project, keepLa
   })
 }
 
-/** The project's schematic with every part placed; `project` is as stored, without footprint choices applied. */
-const fullSchematicOf = (project: Project): FullSchematic =>
-  completeSchematic(buildProjectNetlist(project), project.schematic)
-
-/** The nets the project's schematic gives, which the PCB does not use until it is updated. */
-function schematicNetsOf(project: Project) {
-  const built = buildProjectNetlist(project)
-  return deriveNets(project.netlist, built, fullSchematicOf(project))
-}
-
-/** The project with the PCB brought in line with the schematic: its nets, and islands that follow them. */
-function withSchematicNets(project: Project): Project {
-  const { netlist } = schematicNetsOf(project)
-  const built = buildNetlist(netlist, project.layout.placements, project.definitions)
-  return { ...project, netlist, layout: followNetlist(project.layout, project.netlist, built) }
-}
-
-/** What an agent needs to draw wires: every pin end with its schematic net, the wires and labels, shorts, and what the PCB does not have yet. */
-function describeSchematic(project: Project) {
-  const schematic = fullSchematicOf(project)
-  const { netlist, conflicts } = schematicNetsOf(project)
-  const built = buildNetlist(netlist, project.layout.placements, project.definitions)
-  return {
-    units: 'mm; x to the right, y down; grid 2.54',
-    parts: built.components.map((component, i) => ({
-      value: component.value,
-      ...schematic.placements[i],
-      pins: pinEnds(component, schematic.placements[i]).map((end, k) => ({
-        pin: component.pins[k].number,
-        net: component.pins[k].net,
-        x: end.x,
-        y: end.y,
-      })),
-    })),
-    wires: schematic.wires,
-    labels: schematic.labels,
-    shorts: conflicts.map((c) => c.names),
-    pinsNotInPcb: pinsWithOtherNet(project.netlist, netlist),
-  }
-}
-
-/** The project with the editor's footprint choices applied: what drawing, checks and optimizers should see. */
-const asBuilt = (project: Project): BuiltProject => ({
-  ...project,
-  netlist: buildProjectNetlist(project),
-})
-
-/** The layout after an agent's edit command. `current` is as built; `imported` is the netlist as imported. */
-function agentLayoutEdit(command: string, args: Record<string, unknown>, current: BuiltProject, imported: Netlist): Layout {
-  switch (command) {
-    case 'move_component':
-      return moveComponent(current, args)
-    case 'set_lead_end':
-      return setLeadEnd(current, args)
-    case 'reset_leads':
-      return resetLeadsOf(current, args)
-    case 'set_island':
-      return setIsland(current, args)
-    case 'move_island':
-      return moveIsland(current, args)
-    case 'batch':
-      return applyBatch(current, args)
-    case 'run_optimizer': {
-      const optimized = findStrategy(String(args.strategy)).run(current.netlist, current.settings)
-      return keepFootprintChoices(optimized, current.layout)
-    }
-    case 'set_resistor_footprint':
-      if (args.footprint !== 'through-hole' && args.footprint !== '1206') {
-        throw new Error('"footprint" must be "through-hole" or "1206"')
-      }
-      return chooseResistors(imported, current.layout, args.footprint)
-    case 'set_footprint':
-      return setFootprint(current, imported, args)
-    default:
-      throw new Error(`Unknown command "${command}"`)
-  }
-}
-
 export function App() {
   const [initialTabs] = useState(loadTabs)
   const [tabs, setTabs] = useState<ProjectTab[]>(initialTabs.tabs)
@@ -392,19 +309,6 @@ export function App() {
   const undo = () => stepShownTab('undo')
   const redo = () => stepShownTab('redo')
 
-  /** The tab an agent command is for: its "project" argument (tab id or name), else the shown tab. */
-  const agentTarget = (project: unknown): string => {
-    if (project === undefined || project === '') return activeIdRef.current
-    const tabs = tabsRef.current
-    const wanted = String(project)
-    const byId = tabs.find((t) => t.id === wanted)
-    if (byId) return byId.id
-    const byName = tabs.filter((t) => t.name.toLowerCase() === wanted.toLowerCase())
-    if (byName.length === 1) return byName[0].id
-    const known = tabs.map((t) => `${t.name} (${t.id})`).join(', ')
-    throw new Error(`${byName.length > 1 ? 'Several' : 'No'} projects named "${wanted}"; use the id. Open: ${known}`)
-  }
-
   /** Undo or redo on a tab that is not shown: straight in storage, with its own history. Returns the tab's project. */
   const stepHiddenTab = (id: string, stored: Project, direction: 'undo' | 'redo'): Project => {
     const stepped = stepHistory(parkedHistory.current.get(id) ?? NO_HISTORY, snapshotOf(stored), direction)
@@ -435,77 +339,25 @@ export function App() {
     if (command === 'list_projects') {
       return { projects: tabsRef.current.map((t) => ({ id: t.id, name: t.name, shown: t.id === activeIdRef.current })) }
     }
-    const targetId = agentTarget(args.project)
-    const shown = targetId === activeIdRef.current
-    const stored = shown ? projectRef.current : readProject(targetId)
-    const current = asBuilt(stored)
-    switch (command) {
-      case 'get_layout':
-        return describeProject(current)
-      case 'screenshot': {
-        const bounds = layoutBounds(current)
-        if (!bounds) throw new Error('Nothing to draw')
+    const id = agentTargetId(tabsRef.current, activeIdRef.current, args.project)
+    const shown = id === activeIdRef.current
+    const stored = shown ? projectRef.current : readProject(id)
+    const result = runAgentCommand(command, args, {
+      project: stored,
+      change: (changes) => applyAgentChange(id, stored, changes),
+      step: (direction) => {
+        if (!shown) return stepHiddenTab(id, stored, direction)
+        stepShownTab(direction)
+        return projectRef.current
+      },
+      screenshot: (current, bounds) => {
         // The layout is not on screen for another tab, or while only the schematic is shown.
         const svg = shown ? document.querySelector<SVGSVGElement>('svg.canvas') : null
-        if (!svg) return screenshotHidden(current.netlist, current.layout, current.settings.isolation, bounds).then((png) => ({ png }))
-        return canvasToPng(svg, bounds).then((png) => ({ png }))
-      }
-      case 'undo':
-      case 'redo': {
-        if (!shown) return { problems: findProblems(asBuilt(stepHiddenTab(targetId, stored, command))) }
-        stepShownTab(command)
-        return { problems: findProblems(asBuilt(projectRef.current)) }
-      }
-      case 'get_schematic':
-        return describeSchematic(stored)
-      case 'set_schematic':
-      case 'set_wires':
-      case 'set_labels': {
-        const schematic = fullSchematicOf(stored)
-        const next =
-          command === 'set_wires'
-            ? { ...schematic, wires: wiresFromPolylines(args.wires) }
-            : command === 'set_labels'
-              ? { ...schematic, labels: labelsFromAgent(args.labels) }
-              : withPlacementChanges(schematic, current.netlist, agentPlacements(stored.netlist, args.placements))
-        applyAgentChange(targetId, stored, { schematic: next })
-        return describeSchematic({ ...stored, schematic: next })
-      }
-      case 'update_pcb': {
-        const updated = applyAgentChange(targetId, stored, snapshotOf(withSchematicNets(stored)))
-        return { problems: findProblems(asBuilt(updated)) }
-      }
-      case 'get_definitions':
-        return {
-          definitions: stored.definitions ?? {},
-          parts: stored.netlist.components.map((c) => ({ ref: c.ref, value: c.value, definition: c.definition, footprint: c.footprint })),
-        }
-      case 'set_definition': {
-        const id = String(args.id ?? '')
-        if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error('"id" must be lowercase letters, digits and dashes, e.g. "lm1875"')
-        const definitions = { ...stored.definitions, [id]: checkedDefinition(args.definition) }
-        applyAgentChange(targetId, stored, { definitions })
-        return { id, definitions: Object.keys(definitions) }
-      }
-      case 'assign_definition': {
-        const netlist = withAssignedDefinition(stored.netlist, stored.definitions, args.refs, args.definition)
-        applyAgentChange(targetId, stored, { netlist })
-        return { parts: netlist.components.map((c) => ({ ref: c.ref, definition: c.definition })) }
-      }
-      case 'set_values': {
-        const netlist = withValues(stored.netlist, args.values)
-        applyAgentChange(targetId, stored, { netlist })
-        return { components: netlist.components.map((c) => ({ ref: c.ref, value: c.value })) }
-      }
-      case 'add_component': {
-        const updated = applyAgentChange(targetId, stored, addComponent(stored, args))
-        const part = describeSchematic(updated).parts.find((p) => p.ref === args.ref)
-        return { part, problems: findProblems(asBuilt(updated)) }
-      }
-    }
-    const updated = applyAgentChange(targetId, stored, { layout: agentLayoutEdit(command, args, current, stored.netlist) })
+        return svg ? canvasToPng(svg, bounds) : screenshotHidden(current.netlist, current.layout, current.settings.isolation, bounds)
+      },
+    })
     if (shown && command === 'run_optimizer') refit()
-    return { problems: findProblems(asBuilt(updated)) }
+    return result
   }
 
   useEffect(

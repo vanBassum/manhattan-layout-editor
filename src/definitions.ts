@@ -1,7 +1,7 @@
 import { errorText } from './errorText'
 import { generatedGeometry, withFootprintChoices, type Geometry } from './layout'
 import { symbolTemplate } from './schematicSymbols'
-import type { BuiltNetlist, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, SymbolDefinition } from './types'
+import type { BuiltNetlist, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, SymbolDefinition } from './types'
 
 // A part's symbol and footprints come from the project's own definitions. Parts without one get a
 // built-in template, which is copied into the project when it is loaded or saved; until then the
@@ -117,6 +117,9 @@ function footprintOf(definition: ComponentDefinition, name: string, component: N
 /** The project's own netlist, built; for the schematic's nets, build those with buildNetlist. */
 export const buildProjectNetlist = (project: Project): BuiltNetlist =>
   buildNetlist(project.netlist, project.layout.placements, project.definitions)
+
+/** The project with its netlist built: what checks and agent edits read. */
+export const builtProject = (project: Project): BuiltProject => ({ ...project, netlist: buildProjectNetlist(project) })
 
 /**
  * The project with a definition for every part and every footprint in use, taken from the

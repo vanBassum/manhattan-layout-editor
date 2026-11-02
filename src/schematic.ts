@@ -1,7 +1,9 @@
+import { buildNetlist, buildProjectNetlist } from './definitions'
 import { rotatePoint, snapToGrid } from './geometry'
+import { followNetlist } from './layout'
 import { isRealNet, naturalCompare } from './netlist'
 import { NO_WIRING } from './selection'
-import type { BuiltComponent, BuiltNetlist, LabelSymbol, NetLabel, Netlist, Point, Schematic, SchematicPlacement, Wire, WiringSelection } from './types'
+import type { BuiltComponent, BuiltNetlist, LabelSymbol, NetLabel, Netlist, Point, Project, Schematic, SchematicPlacement, Wire, WiringSelection } from './types'
 
 /** A pin end in schematic coordinates, with the direction a wire leaves it. */
 export interface PinEnd extends Point {
@@ -451,6 +453,20 @@ export function labelsFromAgent(labels: unknown): NetLabel[] {
     }
     return label
   })
+}
+
+/** The project's schematic with every part placed. */
+export const projectSchematic = (project: Project): FullSchematic => completeSchematic(buildProjectNetlist(project), project.schematic)
+
+/** The nets the project's schematic gives, which the PCB does not use until it is updated. */
+export const projectSchematicNets = (project: Project): SchematicNets =>
+  deriveNets(project.netlist, buildProjectNetlist(project), projectSchematic(project))
+
+/** The project with the PCB brought in line with the schematic: its nets, and islands that follow them. */
+export function withSchematicNets(project: Project): Project {
+  const { netlist } = projectSchematicNets(project)
+  const built = buildNetlist(netlist, project.layout.placements, project.definitions)
+  return { ...project, netlist, layout: followNetlist(project.layout, project.netlist, built) }
 }
 
 /** Pins ("R1.2") whose net differs between two netlists of the same components, e.g. the PCB's and the schematic's. */
