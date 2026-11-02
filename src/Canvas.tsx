@@ -91,7 +91,7 @@ function layerClasses(layers: Layers): string {
 const GRID_PITCHES_MM = [1, 5, 25, 125]
 
 /** CSS variables --opacity-<layer>, read by the stylesheet. */
-function layerOpacities(layers: Layers): CSSProperties {
+export function layerOpacities(layers: Record<string, LayerView>): CSSProperties {
   return Object.fromEntries(Object.entries(layers).map(([layer, view]) => [`--opacity-${layer}`, view.opacity]))
 }
 

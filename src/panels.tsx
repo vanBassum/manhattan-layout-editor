@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { LayerName, Layers, LayerView } from './Canvas'
+import type { LayerName, LayerView } from './Canvas'
 import { componentGeometry } from './layout'
-import type { SchematicLayer, SchematicLayers } from './SchematicView'
+import type { SchematicLayer } from './SchematicView'
 import { selectedRefs, toggleSelected } from './selection'
 import type { Layout, NetComponent, Netlist, Placement, Selection } from './types'
 
@@ -99,27 +99,9 @@ export function ViewMenu({ children }: { children: ReactNode }) {
   )
 }
 
-const SCHEMATIC_LAYER_LABELS: Record<SchematicLayer, string> = {
-  grid: 'Grid',
-  references: 'References (R1, C1, …)',
-  values: 'Values (12k, 100nF, …)',
-  pinNumbers: 'Pin numbers (1, 2, 3)',
-}
+type LayerInfo<Name extends string> = Record<Name, { label: string; swatch: string }>
 
-export function SchematicLayerToggles({ layers, onChange }: { layers: SchematicLayers; onChange: (layers: SchematicLayers) => void }) {
-  return (
-    <div className="layer-list">
-      {(Object.keys(SCHEMATIC_LAYER_LABELS) as SchematicLayer[]).map((layer) => (
-        <label key={layer} className="check-row">
-          <input type="checkbox" checked={layers[layer]} onChange={(e) => onChange({ ...layers, [layer]: e.target.checked })} />
-          {SCHEMATIC_LAYER_LABELS[layer]}
-        </label>
-      ))}
-    </div>
-  )
-}
-
-const LAYER_INFO: Record<LayerName, { label: string; swatch: string }> = {
+export const PCB_LAYERS: LayerInfo<LayerName> = {
   islands: { label: 'Copper islands', swatch: '#d9904f' },
   parts: { label: 'Components', swatch: '#4a4a4a' },
   netLabels: { label: 'Net labels', swatch: '#5a3b1c' },
@@ -127,12 +109,28 @@ const LAYER_INFO: Record<LayerName, { label: string; swatch: string }> = {
   grid: { label: 'Grid', swatch: '#c7cdd4' },
 }
 
-export function LayerToggles({ layers, onChange }: { layers: Layers; onChange: (layers: Layers) => void }) {
-  const update = (layer: LayerName, change: Partial<LayerView>) => onChange({ ...layers, [layer]: { ...layers[layer], ...change } })
+export const SCHEMATIC_LAYERS: LayerInfo<SchematicLayer> = {
+  references: { label: 'References', swatch: '#333333' },
+  values: { label: 'Values', swatch: '#777777' },
+  pinNumbers: { label: 'Pin numbers', swatch: '#aaaaaa' },
+  grid: { label: 'Grid', swatch: '#c7cdd4' },
+}
+
+interface LayerTogglesProps<Name extends string> {
+  /** The layers in the order they are listed. */
+  info: LayerInfo<Name>
+  layers: Record<Name, LayerView>
+  onChange: (layers: Record<Name, LayerView>) => void
+  /** Added to the opacity tooltip, e.g. what a faint layer does differently. */
+  opacityNote?: string
+}
+
+export function LayerToggles<Name extends string>({ info, layers, onChange, opacityNote = '' }: LayerTogglesProps<Name>) {
+  const update = (layer: Name, change: Partial<LayerView>) => onChange({ ...layers, [layer]: { ...layers[layer], ...change } })
   return (
     <div className="layer-list">
-      {(Object.keys(LAYER_INFO) as LayerName[]).map((layer) => {
-        const { label, swatch } = LAYER_INFO[layer]
+      {(Object.keys(info) as Name[]).map((layer) => {
+        const { label, swatch } = info[layer]
         const view = layers[layer]
         return (
           <div key={layer} className={view.visible ? 'layer-row' : 'layer-row hidden'}>
@@ -154,7 +152,7 @@ export function LayerToggles({ layers, onChange }: { layers: Layers; onChange: (
               value={Math.round(view.opacity * 100)}
               disabled={!view.visible}
               onChange={(e) => update(layer, { opacity: Number(e.target.value) / 100 })}
-              title={`Opacity ${Math.round(view.opacity * 100)}% (below 50% the layer ignores clicks)`}
+              title={`Opacity ${Math.round(view.opacity * 100)}%${opacityNote}`}
               aria-label={`${label} opacity`}
             />
           </div>

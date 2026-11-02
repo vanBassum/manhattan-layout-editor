@@ -22,6 +22,7 @@ import type { SymbolGraphic } from './types'
 import { addToSelection, isToggleClick, selectedRefs, selectionOf, toggleSelected } from './selection'
 import type { NetComponent, NetLabel, Netlist, Point, Rect, SchematicPlacement, Selection } from './types'
 import { gridPitch, useViewport, ViewportGrid, type View } from './viewport'
+import { layerOpacities, type LayerView } from './Canvas'
 
 /**
  * Select: drag parts; drag from a pin end to draw a wire; drag a wire end to move it, or a wire
@@ -31,11 +32,11 @@ export type SchematicTool = 'select' | 'wire' | 'label'
 
 export type SchematicLayer = 'grid' | 'references' | 'values' | 'pinNumbers'
 
-/** View-only: which parts of the drawing are shown. A per-browser preference, not part of the project. */
-export type SchematicLayers = Record<SchematicLayer, boolean>
+/** View-only: which parts of the drawing are shown, and how strongly. A per-browser preference, not part of the project. */
+export type SchematicLayers = Record<SchematicLayer, LayerView>
 
 const hiddenLayerClasses = (layers: SchematicLayers) =>
-  (Object.keys(layers) as SchematicLayer[]).filter((layer) => !layers[layer]).map((layer) => ` hide-${layer}`).join('')
+  (Object.keys(layers) as SchematicLayer[]).filter((layer) => !layers[layer].visible).map((layer) => ` hide-${layer}`).join('')
 
 /** Schematic grid pitches in mm: 0.1 inch and up; every fifth line is solid. Pins sit on the finest one. */
 const GRID_PITCHES_MM = [SCHEMATIC_GRID, 12.7, 63.5, 317.5]
@@ -555,6 +556,7 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
       <svg
         ref={svgRef}
         className={`schematic tool-${tool}${overPoint || draft ? ' over-point' : ''}${hiddenLayerClasses(layers)}`}
+        style={layerOpacities(layers)}
         onPointerDownCapture={onPointerDownCapture}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onPointerMove}

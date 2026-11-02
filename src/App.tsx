@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
 import { buildNetlist, checkedDefinition, withAssignedDefinition, withDefinitions } from './definitions'
 import { applyBatch, describeProject, findProblems, layoutBounds, moveComponent, moveIsland, resetLeads as resetLeadsOf, setFootprint, setIsland, setLeadEnd } from './agentCommands'
-import { Canvas, type EditMode, type LayerName, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
+import { Canvas, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { exportDxf } from './exportDxf'
 import { downloadText, exportSvg } from './exportSvg'
 import { FootprintDialog } from './FootprintDialog'
@@ -27,8 +27,9 @@ import {
   LayerToggles,
   PartProperties,
   SaveChangesDialog,
+  PCB_LAYERS,
   SchematicCheck,
-  SchematicLayerToggles,
+  SCHEMATIC_LAYERS,
   Section,
   SelectionDetails,
   Validation,
@@ -73,7 +74,7 @@ import {
   withPlacementChanges,
   type FullSchematic,
 } from './schematic'
-import { SchematicView, type SchematicLayer, type SchematicLayers, type SchematicTool } from './SchematicView'
+import { SchematicView, type SchematicLayers, type SchematicTool } from './SchematicView'
 import type { Layout, Netlist, Placement, Project, Selection, Settings } from './types'
 import type { IconName } from './panels'
 import { ProjectTabs } from './ProjectTabs'
@@ -153,33 +154,21 @@ function parseLayerView(value: unknown): LayerView {
   return SHOWN
 }
 
-function loadLayers(): Layers {
-  const stored = readPreference(LAYERS_KEY)
-  if (!stored) return ALL_LAYERS
+/** The layer settings stored under `key`, with `defaults` for layers it does not mention. */
+function loadLayerViews<Name extends string>(key: string, defaults: Record<Name, LayerView>): Record<Name, LayerView> {
+  const stored = readPreference(key)
+  if (!stored) return defaults
   try {
     const parsed = JSON.parse(stored) as Record<string, unknown>
-    const layers = { ...ALL_LAYERS }
-    for (const layer of Object.keys(layers) as LayerName[]) layers[layer] = parseLayerView(parsed[layer])
+    const layers = { ...defaults }
+    for (const layer of Object.keys(layers) as Name[]) layers[layer] = parseLayerView(parsed[layer])
     return layers
   } catch {
-    return ALL_LAYERS
+    return defaults
   }
 }
 
-const ALL_SCHEMATIC_LAYERS: SchematicLayers = { grid: true, references: true, values: true, pinNumbers: true }
-
-function loadSchematicLayers(): SchematicLayers {
-  const stored = readPreference(SCHEMATIC_LAYERS_KEY)
-  if (!stored) return ALL_SCHEMATIC_LAYERS
-  try {
-    const parsed = JSON.parse(stored) as Record<string, unknown>
-    const layers = { ...ALL_SCHEMATIC_LAYERS }
-    for (const layer of Object.keys(layers) as SchematicLayer[]) layers[layer] = parsed[layer] !== false
-    return layers
-  } catch {
-    return ALL_SCHEMATIC_LAYERS
-  }
-}
+const ALL_SCHEMATIC_LAYERS: SchematicLayers = { grid: SHOWN, references: SHOWN, values: SHOWN, pinNumbers: SHOWN }
 
 /** The tab's project with a new netlist; it stays the same project, so it keeps its guid. */
 function projectFromNetlist(name: string, text: string, current: Project, keepLayout: boolean): Project {
@@ -337,8 +326,8 @@ export function App() {
   }
   /** Parts checked when the footprint dialog opened; null while it is closed. */
   const [footprintDialogRefs, setFootprintDialogRefs] = useState<string[] | null>(null)
-  const [layers, setLayersState] = useState<Layers>(loadLayers)
-  const [schematicLayers, setSchematicLayersState] = useState<SchematicLayers>(loadSchematicLayers)
+  const [layers, setLayersState] = useState(() => loadLayerViews(LAYERS_KEY, ALL_LAYERS))
+  const [schematicLayers, setSchematicLayersState] = useState(() => loadLayerViews(SCHEMATIC_LAYERS_KEY, ALL_SCHEMATIC_LAYERS))
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => buildNetlist(netlist, layout.placements, project.definitions), [netlist, layout.placements, project.definitions])
   const fullSchematic = useMemo(() => completeSchematic(builtNetlist, project.schematic), [builtNetlist, project.schematic])
@@ -1166,7 +1155,7 @@ export function App() {
                   </div>
                   <div className="rail-group view">
                     <ViewMenu>
-                      <SchematicLayerToggles layers={schematicLayers} onChange={setSchematicLayers} />
+                      <LayerToggles info={SCHEMATIC_LAYERS} layers={schematicLayers} onChange={setSchematicLayers} />
                     </ViewMenu>
                   </div>
                 </nav>
@@ -1234,7 +1223,7 @@ export function App() {
                   </div>
                   <div className="rail-group view">
                     <ViewMenu>
-                      <LayerToggles layers={layers} onChange={setLayers} />
+                      <LayerToggles info={PCB_LAYERS} layers={layers} onChange={setLayers} opacityNote=" (below 50% the layer ignores clicks)" />
                     </ViewMenu>
                   </div>
                 </nav>
