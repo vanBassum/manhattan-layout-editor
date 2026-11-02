@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LayerName, Layers, LayerView } from './Canvas'
 import { componentGeometry } from './layout'
+import type { SchematicLayer, SchematicLayers } from './SchematicView'
 import { selectedRefs, toggleSelected } from './selection'
 import type { Layout, NetComponent, Netlist, Placement, Selection } from './types'
 
@@ -66,6 +67,54 @@ export function Section({ title, fill = false, children }: SectionProps) {
       </button>
       {open && <div className="section-body">{children}</div>}
     </section>
+  )
+}
+
+/** A rail button that opens the pane's view options below it; a click outside closes them. */
+export function ViewMenu({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const closeOutside = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [open])
+  return (
+    <div className="menu" ref={menuRef}>
+      <button
+        className={open ? 'rail-button active' : 'rail-button'}
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        title="Choose what is drawn"
+      >
+        <Icon name="eye" />View
+      </button>
+      {open && <div className="menu-list view-menu">{children}</div>}
+    </div>
+  )
+}
+
+const SCHEMATIC_LAYER_LABELS: Record<SchematicLayer, string> = {
+  grid: 'Grid',
+  references: 'References (R1, C1, …)',
+  values: 'Values (12k, 100nF, …)',
+  pinNumbers: 'Pin numbers (1, 2, 3)',
+}
+
+export function SchematicLayerToggles({ layers, onChange }: { layers: SchematicLayers; onChange: (layers: SchematicLayers) => void }) {
+  return (
+    <div className="layer-list">
+      {(Object.keys(SCHEMATIC_LAYER_LABELS) as SchematicLayer[]).map((layer) => (
+        <label key={layer} className="check-row">
+          <input type="checkbox" checked={layers[layer]} onChange={(e) => onChange({ ...layers, [layer]: e.target.checked })} />
+          {SCHEMATIC_LAYER_LABELS[layer]}
+        </label>
+      ))}
+    </div>
   )
 }
 

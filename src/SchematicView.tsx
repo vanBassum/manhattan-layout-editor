@@ -29,6 +29,14 @@ import { gridPitch, useViewport, ViewportGrid, type View } from './viewport'
  */
 export type SchematicTool = 'select' | 'wire' | 'label'
 
+export type SchematicLayer = 'grid' | 'references' | 'values' | 'pinNumbers'
+
+/** View-only: which parts of the drawing are shown. A per-browser preference, not part of the project. */
+export type SchematicLayers = Record<SchematicLayer, boolean>
+
+const hiddenLayerClasses = (layers: SchematicLayers) =>
+  (Object.keys(layers) as SchematicLayer[]).filter((layer) => !layers[layer]).map((layer) => ` hide-${layer}`).join('')
+
 /** Schematic grid pitches in mm: 0.1 inch and up; every fifth line is solid. Pins sit on the finest one. */
 const GRID_PITCHES_MM = [SCHEMATIC_GRID, 12.7, 63.5, 317.5]
 
@@ -227,9 +235,10 @@ interface Props {
   onSelect: (selection: Selection) => void
   tool: SchematicTool
   fitRequest: number
+  layers: SchematicLayers
 }
 
-export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit, selection, onSelect, tool, fitRequest }: Props) {
+export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit, selection, onSelect, tool, fitRequest, layers }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const [item, setItem] = useState<Item | null>(null)
@@ -545,7 +554,7 @@ export function SchematicView({ netlist, schematic, nets, onChange, onBeginEdit,
     <div className="schematic-view">
       <svg
         ref={svgRef}
-        className={`schematic tool-${tool}${overPoint || draft ? ' over-point' : ''}`}
+        className={`schematic tool-${tool}${overPoint || draft ? ' over-point' : ''}${hiddenLayerClasses(layers)}`}
         onPointerDownCapture={onPointerDownCapture}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onPointerMove}

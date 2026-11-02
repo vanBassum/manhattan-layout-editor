@@ -28,9 +28,11 @@ import {
   PartProperties,
   SaveChangesDialog,
   SchematicCheck,
+  SchematicLayerToggles,
   Section,
   SelectionDetails,
   Validation,
+  ViewMenu,
   type SaveChoice,
 } from './panels'
 import { canUseFiles, fileLabel, mayUse, pickFileToOpen, pickFileToSave, readFile, writeFile } from './projectFiles'
@@ -70,7 +72,7 @@ import {
   withPlacementChanges,
   type FullSchematic,
 } from './schematic'
-import { SchematicView, type SchematicTool } from './SchematicView'
+import { SchematicView, type SchematicLayer, type SchematicLayers, type SchematicTool } from './SchematicView'
 import type { Layout, Netlist, Placement, Project, Selection, Settings } from './types'
 import type { IconName } from './panels'
 import { ProjectTabs } from './ProjectTabs'
@@ -104,6 +106,7 @@ const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
 const LAYERS_KEY = 'manhattan-layout-editor/layers'
+const SCHEMATIC_LAYERS_KEY = 'manhattan-layout-editor/schematic-layers'
 const THEME_KEY = 'manhattan-layout-editor/theme'
 const VIEW_KEY = 'manhattan-layout-editor/view'
 
@@ -159,6 +162,21 @@ function loadLayers(): Layers {
     return layers
   } catch {
     return ALL_LAYERS
+  }
+}
+
+const ALL_SCHEMATIC_LAYERS: SchematicLayers = { grid: true, references: true, values: true, pinNumbers: true }
+
+function loadSchematicLayers(): SchematicLayers {
+  const stored = readPreference(SCHEMATIC_LAYERS_KEY)
+  if (!stored) return ALL_SCHEMATIC_LAYERS
+  try {
+    const parsed = JSON.parse(stored) as Record<string, unknown>
+    const layers = { ...ALL_SCHEMATIC_LAYERS }
+    for (const layer of Object.keys(layers) as SchematicLayer[]) layers[layer] = parsed[layer] !== false
+    return layers
+  } catch {
+    return ALL_SCHEMATIC_LAYERS
   }
 }
 
@@ -319,6 +337,7 @@ export function App() {
   /** Parts checked when the footprint dialog opened; null while it is closed. */
   const [footprintDialogRefs, setFootprintDialogRefs] = useState<string[] | null>(null)
   const [layers, setLayersState] = useState<Layers>(loadLayers)
+  const [schematicLayers, setSchematicLayersState] = useState<SchematicLayers>(loadSchematicLayers)
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => buildNetlist(netlist, layout.placements, project.definitions), [netlist, layout.placements, project.definitions])
   const fullSchematic = useMemo(() => completeSchematic(builtNetlist, project.schematic), [builtNetlist, project.schematic])
@@ -709,6 +728,11 @@ export function App() {
   const setLayers = (next: Layers) => {
     setLayersState(next)
     writePreference(LAYERS_KEY, JSON.stringify(next))
+  }
+
+  const setSchematicLayers = (next: SchematicLayers) => {
+    setSchematicLayersState(next)
+    writePreference(SCHEMATIC_LAYERS_KEY, JSON.stringify(next))
   }
 
   const setLayout = (update: (layout: Layout) => Layout) =>
@@ -1126,6 +1150,11 @@ export function App() {
                       <Icon name="flipVertical" />Flip V
                     </button>
                   </div>
+                  <div className="rail-group view">
+                    <ViewMenu>
+                      <SchematicLayerToggles layers={schematicLayers} onChange={setSchematicLayers} />
+                    </ViewMenu>
+                  </div>
                 </nav>
                 <div className="canvas-frame">
                   <SchematicView
@@ -1138,6 +1167,7 @@ export function App() {
                     onSelect={setSelection}
                     tool={schematicTool}
                     fitRequest={fitRequest}
+                    layers={schematicLayers}
                   />
                 </div>
               </section>
@@ -1188,6 +1218,11 @@ export function App() {
                       <Icon name="convert" />Footprint
                     </button>
                   </div>
+                  <div className="rail-group view">
+                    <ViewMenu>
+                      <LayerToggles layers={layers} onChange={setLayers} />
+                    </ViewMenu>
+                  </div>
                 </nav>
                 <div className="canvas-frame">
                   <Canvas
@@ -1237,9 +1272,6 @@ export function App() {
                   <Icon name="optimize" />Optimize
                 </button>
               </div>
-            </Section>
-            <Section title="Layers">
-              <LayerToggles layers={layers} onChange={setLayers} />
             </Section>
             <Section title="Board settings">
               <div className="settings">

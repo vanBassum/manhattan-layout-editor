@@ -678,6 +678,10 @@ input:focus-visible {
   background-image: none;
 }
 
+.schematic.hide-grid .grid,
+.schematic.hide-references .sch-ref,
+.schematic.hide-values .sch-value,
+.schematic.hide-pinNumbers .sch-pin-number,
 .canvas.hide-grid .grid,
 .canvas.hide-islands .island,
 .canvas.hide-parts .part,
@@ -1594,6 +1598,18 @@ input:focus-visible {
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: 0 6px 20px var(--backdrop);
+}
+
+/* At the far end of a pane's rail, opening towards the pane's middle. */
+.rail-group.view {
+  margin-left: auto;
+}
+
+.menu-list.view-menu {
+  left: auto;
+  right: 0;
+  min-width: 280px;
+  padding: 8px 10px;
 }
 
 .menu-list button {
