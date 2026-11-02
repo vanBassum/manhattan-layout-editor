@@ -682,6 +682,7 @@ input:focus-visible {
 .schematic.hide-references .sch-ref,
 .schematic.hide-values .sch-value,
 .schematic.hide-pinNumbers .sch-pin-number,
+.schematic.hide-netNames .net-name:not(.conflict),
 .canvas.hide-grid .grid,
 .canvas.hide-islands .island,
 .canvas.hide-parts .part,
@@ -702,6 +703,7 @@ input:focus-visible {
 .schematic .sch-ref { opacity: var(--opacity-references, 1); }
 .schematic .sch-value { opacity: var(--opacity-values, 1); }
 .schematic .sch-pin-number { opacity: var(--opacity-pinNumbers, 1); }
+.schematic .net-name { opacity: var(--opacity-netNames, 1); }
 /* SVG presentation attributes cannot use var(), so the theme-dependent grid colours are set here. */
 .grid-minor { stroke: var(--grid-minor); }
 .grid-major { stroke: var(--grid-major); }

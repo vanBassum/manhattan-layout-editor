@@ -113,6 +113,7 @@ export const SCHEMATIC_LAYERS: LayerInfo<SchematicLayer> = {
   references: { label: 'References', swatch: '#333333' },
   values: { label: 'Values', swatch: '#777777' },
   pinNumbers: { label: 'Pin numbers', swatch: '#aaaaaa' },
+  netNames: { label: 'Net names', swatch: '#2a7fff' },
   grid: { label: 'Grid', swatch: '#c7cdd4' },
 }
 

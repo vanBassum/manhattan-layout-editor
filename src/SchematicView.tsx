@@ -40,7 +40,7 @@ import { layerOpacities, type LayerView } from './Canvas'
  */
 export type SchematicTool = 'select' | 'wire' | 'label'
 
-export type SchematicLayer = 'grid' | 'references' | 'values' | 'pinNumbers'
+export type SchematicLayer = 'grid' | 'references' | 'values' | 'pinNumbers' | 'netNames'
 
 /** View-only: which parts of the drawing are shown, and how strongly. A per-browser preference, not part of the project. */
 export type SchematicLayers = Record<SchematicLayer, LayerView>
@@ -169,7 +169,7 @@ function LabelMark({ label, direction, className, onPointerDown, onDoubleClick }
   const anchor = horizontal ? (direction.x > 0 ? 'start' : 'end') : 'middle'
   // No dot on the point: on a wire it would look like a junction. The name alone marks the label.
   return (
-    <g className={className} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}>
+    <g className={`${className} net-name`} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}>
       <text className="sch-net" x={textX} y={textY} textAnchor={anchor}>
         {name}
       </text>

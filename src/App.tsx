@@ -161,14 +161,23 @@ function loadLayerViews<Name extends string>(key: string, defaults: Record<Name,
   try {
     const parsed = JSON.parse(stored) as Record<string, unknown>
     const layers = { ...defaults }
-    for (const layer of Object.keys(layers) as Name[]) layers[layer] = parseLayerView(parsed[layer])
+    for (const layer of Object.keys(layers) as Name[]) {
+      if (layer in parsed) layers[layer] = parseLayerView(parsed[layer])
+    }
     return layers
   } catch {
     return defaults
   }
 }
 
-const ALL_SCHEMATIC_LAYERS: SchematicLayers = { grid: SHOWN, references: SHOWN, values: SHOWN, pinNumbers: SHOWN }
+/** Net names are off until asked for: the wires already show what connects, the names only add clutter. */
+const DEFAULT_SCHEMATIC_LAYERS: SchematicLayers = {
+  grid: SHOWN,
+  references: SHOWN,
+  values: SHOWN,
+  pinNumbers: SHOWN,
+  netNames: { visible: false, opacity: 1 },
+}
 
 /** The tab's project with a new netlist; it stays the same project, so it keeps its guid. */
 function projectFromNetlist(name: string, text: string, current: Project, keepLayout: boolean): Project {
@@ -327,7 +336,7 @@ export function App() {
   /** Parts checked when the footprint dialog opened; null while it is closed. */
   const [footprintDialogRefs, setFootprintDialogRefs] = useState<string[] | null>(null)
   const [layers, setLayersState] = useState(() => loadLayerViews(LAYERS_KEY, ALL_LAYERS))
-  const [schematicLayers, setSchematicLayersState] = useState(() => loadLayerViews(SCHEMATIC_LAYERS_KEY, ALL_SCHEMATIC_LAYERS))
+  const [schematicLayers, setSchematicLayersState] = useState(() => loadLayerViews(SCHEMATIC_LAYERS_KEY, DEFAULT_SCHEMATIC_LAYERS))
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => buildNetlist(netlist, layout.placements, project.definitions), [netlist, layout.placements, project.definitions])
   const fullSchematic = useMemo(() => completeSchematic(builtNetlist, project.schematic), [builtNetlist, project.schematic])
