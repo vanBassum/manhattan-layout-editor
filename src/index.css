@@ -521,11 +521,31 @@ input:focus-visible {
 /* Canvas area */
 
 .canvas-area {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
   min-height: 0;
+}
+
+.canvas-banners {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.canvas-banners > * {
+  max-width: 100%;
+  box-shadow: 0 4px 14px var(--backdrop);
+  pointer-events: auto;
 }
 
 /* Tool bar: icon above a one-word label, like a navigation rail. */

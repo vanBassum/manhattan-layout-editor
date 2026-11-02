@@ -1092,43 +1092,46 @@ export function App() {
         )}
 
         <main className="canvas-area">
-          {error && (
-            <div className="error-banner" role="alert">
-              {error}
-              <button className="icon-button" onClick={() => setError('')} aria-label="Dismiss">✕</button>
-            </div>
-          )}
-          {fileConflict?.id === activeId ? (
-            <div className="sync-banner" role="alert">
-              <span>"{tabLabel({ id: activeId, name: project.name })}" changed on disk, and this tab has changes that were not saved.</span>
-              <button className="header-button" onClick={() => loadFileVersion(activeId, fileConflict.project, projectFile(activeId).handle!)} title="Show the file; the recovered changes stay reachable with Undo">
-                Use file
-              </button>
-              <button className="header-button" onClick={() => keepRecoveryCopy(activeId, fileConflict.content)} title="Keep editing the recovered changes; Save overwrites the file">
-                Keep recovered changes
-              </button>
-            </div>
-          ) : (
-            projectFile(activeId).handle &&
-            !projectFile(activeId).checked && (
-              <div className="sync-banner" role="status">
-                <span>Showing the recovery copy of "{tabLabel({ id: activeId, name: project.name })}"; the file itself was not checked yet.</span>
-                <button className="header-button" onClick={() => checkFile(activeId, true)} title="Allow access to the file and compare it with the recovery copy">
-                  <Icon name="open" />Check file
+          {/* Floating over the canvas: a banner that pushed the canvas down would move it under a drag. */}
+          <div className="canvas-banners">
+            {error && (
+              <div className="error-banner" role="alert">
+                {error}
+                <button className="icon-button" onClick={() => setError('')} aria-label="Dismiss">✕</button>
+              </div>
+            )}
+            {fileConflict?.id === activeId ? (
+              <div className="sync-banner" role="alert">
+                <span>"{tabLabel({ id: activeId, name: project.name })}" changed on disk, and this tab has changes that were not saved.</span>
+                <button className="header-button" onClick={() => loadFileVersion(activeId, fileConflict.project, projectFile(activeId).handle!)} title="Show the file; the recovered changes stay reachable with Undo">
+                  Use file
+                </button>
+                <button className="header-button" onClick={() => keepRecoveryCopy(activeId, fileConflict.content)} title="Keep editing the recovered changes; Save overwrites the file">
+                  Keep recovered changes
                 </button>
               </div>
-            )
-          )}
-          {pinsNotInPcb.length > 0 && (
-            <div className="sync-banner" role="status">
-              <span title={pinsNotInPcb.join(' ')}>
-                The schematic has changes the PCB does not have yet: {pinsNotInPcb.length} pin{pinsNotInPcb.length === 1 ? '' : 's'} on another net.
-              </span>
-              <button className="header-button" onClick={updatePcb} title="Give the PCB the schematic's nets; islands follow renamed and merged nets (can be undone)">
-                <Icon name="convert" />Update PCB
-              </button>
-            </div>
-          )}
+            ) : (
+              projectFile(activeId).handle &&
+              !projectFile(activeId).checked && (
+                <div className="sync-banner" role="status">
+                  <span>Showing the recovery copy of "{tabLabel({ id: activeId, name: project.name })}"; the file itself was not checked yet.</span>
+                  <button className="header-button" onClick={() => checkFile(activeId, true)} title="Allow access to the file and compare it with the recovery copy">
+                    <Icon name="open" />Check file
+                  </button>
+                </div>
+              )
+            )}
+            {pinsNotInPcb.length > 0 && (
+              <div className="sync-banner" role="status">
+                <span title={pinsNotInPcb.join(' ')}>
+                  The schematic has changes the PCB does not have yet: {pinsNotInPcb.length} pin{pinsNotInPcb.length === 1 ? '' : 's'} on another net.
+                </span>
+                <button className="header-button" onClick={updatePcb} title="Give the PCB the schematic's nets; islands follow renamed and merged nets (can be undone)">
+                  <Icon name="convert" />Update PCB
+                </button>
+              </div>
+            )}
+          </div>
           <div className="canvas-panes">
             {view !== 'layout' && (
               <section className="canvas-pane" onPointerDownCapture={() => setActivePane('schematic')}>
