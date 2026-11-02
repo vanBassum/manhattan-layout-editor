@@ -1,7 +1,8 @@
 import { rotatePoint, snapToGrid } from './geometry'
 import { isRealNet, naturalCompare } from './netlist'
 import { componentSymbol } from './definitions'
-import type { NetComponent, NetLabel, Netlist, Point, Schematic, SchematicPlacement, Wire } from './types'
+import { NO_WIRING } from './selection'
+import type { NetComponent, NetLabel, Netlist, Point, Schematic, SchematicPlacement, Wire, WiringSelection } from './types'
 
 /** A pin end in schematic coordinates, with the direction a wire leaves it. */
 export interface PinEnd extends Point {
@@ -216,51 +217,172 @@ export function deriveNets(netlist: Netlist, built: Netlist, schematic: FullSche
 
 /**
  * A straight wire from `fixed` to `moved` after its other end moved off-line: a Z that jogs one grid
- * step before the moved end. The wire keeps lying where it was for as long as possible, so labels
- * and T-joins on it stay connected, and it still enters the moved pin in its own direction.
+ * step before the moved end, and never before `attached` (points joined to the wire's middle, such
+ * as labels and T-joins). The wire keeps lying where it was for as long as possible, so those stay
+ * connected, and it still enters the moved pin in its own direction.
  */
-function rubberBand(fixed: Point, moved: Point, horizontal: boolean): Wire[] {
+function rubberBand(fixed: Point, moved: Point, horizontal: boolean, attached: Point[] = []): Wire[] {
   const along = (p: Point) => (horizontal ? p.x : p.y)
-  const towardsFixed = Math.sign(along(fixed) - along(moved)) * SCHEMATIC_GRID
+  const direction = Math.sign(along(moved) - along(fixed))
   // Too short to step back from the moved end: jog right at the fixed end instead (an L).
-  const jog = Math.abs(along(fixed) - along(moved)) > SCHEMATIC_GRID ? along(moved) + towardsFixed : along(fixed)
+  const preferred = Math.abs(along(fixed) - along(moved)) > SCHEMATIC_GRID ? along(moved) - direction * SCHEMATIC_GRID : along(fixed)
+  const jog = attached.map(along).reduce((j, a) => (direction * (a - j) > 0 ? a : j), preferred)
   const corners = horizontal
     ? [{ x: jog, y: fixed.y }, { x: jog, y: moved.y }]
     : [{ x: fixed.x, y: jog }, { x: moved.x, y: jog }]
   return polylineWires([fixed, ...corners, moved])
 }
 
+/** What a move or drag changes: parts to their new placement, and the selected wiring by `delta`. */
+export interface SchematicMove {
+  /** Moved or rotated parts in their new placement; each pin goes from where it was to where it is now. */
+  placements: SchematicPlacement[]
+  wiring: WiringSelection
+  delta: Point
+  /**
+   * Drag (true): wiring outside the selection keeps every connection; wires attached to what moves
+   * stretch, staying horizontal and vertical, and where something moves away from a pin or the
+   * middle of a wire that stays put, a short wire bridges the gap. Move (false): only the selection
+   * moves, and connections across its edge break.
+   */
+  keepConnections: boolean
+}
+
+const straight = (a: Point, b: Point) => a.x === b.x || a.y === b.y
+const wireBetween = (a: Point, b: Point): Wire => ({ x1: a.x, y1: a.y, x2: b.x, y2: b.y })
+
 /**
- * The schematic with some parts moved or rotated. Wire ends and labels on their pins go along, so
- * the connections stay. A straight wire with only one end moving bends to stay horizontal and vertical.
+ * The schematic after a move or drag. Every wire stays at its index, so a selection of wires still
+ * names the same wires; wires that a drag adds (bends, bridges) come after them.
  */
-export function withPlacementChanges(schematic: FullSchematic, built: Netlist, changed: SchematicPlacement[]): FullSchematic {
+export function withSchematicMoved(schematic: FullSchematic, built: Netlist, move: SchematicMove): FullSchematic {
+  const { wiring, delta, keepConnections } = move
+  const shift = (p: Point): Point => ({ x: p.x + delta.x, y: p.y + delta.y })
   const components = new Map(built.components.map((c) => [c.ref, c]))
   const oldPlacements = new Map(schematic.placements.map((p) => [p.ref, p]))
-  const moves = new Map<string, Point>()
-  for (const placement of changed) {
+  const changedRefs = new Set(move.placements.map((p) => p.ref))
+
+  // Every point that moves, from where it was to where it goes. Pins win over wiring on the same spot.
+  const moves = new Map<string, { from: Point; to: Point }>()
+  const selectedWires = new Set(wiring.wires)
+  const movingWires = schematic.wires.filter((_, i) => selectedWires.has(i))
+  for (const p of [...movingWires.flatMap(wireEnds), ...wiring.points]) moves.set(pointKey(p), { from: p, to: shift(p) })
+  for (const placement of move.placements) {
     const component = components.get(placement.ref)
     const old = oldPlacements.get(placement.ref)
     if (!component || !old) continue
     const newEnds = pinEnds(component, placement)
-    pinEnds(component, old).forEach((end, k) => moves.set(pointKey(end), newEnds[k]))
+    pinEnds(component, old).forEach((end, k) => moves.set(pointKey(end), { from: end, to: newEnds[k] }))
   }
-  const moved = (p: Point) => moves.get(pointKey(p)) ?? p
-  const byRef = new Map(changed.map((p) => [p.ref, p]))
+  const attachedTo = (p: Point): Point | undefined =>
+    moves.get(pointKey(p))?.to ?? (movingWires.some((w) => onWireInterior(p, w)) ? shift(p) : undefined)
+  // Unselected wires whose two ends are carried by the same shift move as a whole, so whatever is
+  // joined to their middle (a T-join, a label) goes along too.
+  const carried = schematic.wires.flatMap((w, i) => {
+    if (selectedWires.has(i)) return []
+    const [a, b] = wireEnds(w)
+    const [a2, b2] = [attachedTo(a), attachedTo(b)]
+    if (!a2 || !b2) return []
+    const d = { x: a2.x - a.x, y: a2.y - a.y }
+    return samePoint(d, { x: b2.x - b.x, y: b2.y - b.y }) ? [{ wire: w, d }] : []
+  })
+  /** Where a point of the unselected wiring goes when it is attached to something that moves. */
+  const follow = (p: Point): Point | undefined => {
+    const direct = attachedTo(p)
+    if (direct) return direct
+    const host = carried.find(({ wire }) => onWireInterior(p, wire))
+    return host && { x: p.x + host.d.x, y: p.y + host.d.y }
+  }
+
+  // Things that can sit on the middle of a wire and must stay connected to it when it bends.
+  const attachmentPoints = [
+    ...schematic.labels,
+    ...schematic.wires.flatMap(wireEnds),
+    ...schematic.placements.flatMap((p) => {
+      const component = components.get(p.ref)
+      return component ? pinEnds(component, p) : []
+    }),
+  ]
+
+  const inPlace: Wire[] = []
+  const added: Wire[] = []
+  const emit = (segments: Wire[], fallback: Wire) => {
+    inPlace.push(segments[0] ?? fallback)
+    added.push(...segments.slice(1))
+  }
+  schematic.wires.forEach((w, i) => {
+    const [a, b] = wireEnds(w)
+    if (selectedWires.has(i)) return inPlace.push(wireBetween(shift(a), shift(b)))
+    const [a2, b2] = keepConnections ? [follow(a), follow(b)] : [undefined, undefined]
+    if (!a2 && !b2) return inPlace.push(w)
+    const [from, to] = [a2 ?? a, b2 ?? b]
+    if (straight(from, to)) return inPlace.push(wireBetween(from, to))
+    const oneEndMoved = !a2 || !b2
+    if (oneEndMoved && (isHorizontal(w) || isVertical(w))) {
+      const attached = attachmentPoints.filter((p) => onWireInterior(p, w) && !follow(p))
+      return emit(a2 ? rubberBand(b, a2, isHorizontal(w), attached) : rubberBand(a, b2!, isHorizontal(w), attached), wireBetween(from, to))
+    }
+    emit(polylineWires(route(from, to, isHorizontal(w))), wireBetween(from, to))
+  })
+
+  if (keepConnections) {
+    // What stays put and cannot stretch along: pins of parts that do not move, and the middle of
+    // wires that stay. Something moving away from those gets a bridging wire.
+    const fixedPins = new Set(
+      schematic.placements
+        .filter((p) => !changedRefs.has(p.ref))
+        .flatMap((p) => {
+          const component = components.get(p.ref)
+          return component ? pinEnds(component, p).map(pointKey) : []
+        }),
+    )
+    const staysPut = (p: Point) =>
+      fixedPins.has(pointKey(p)) ||
+      schematic.wires.some((w, i) => !selectedWires.has(i) && onWireInterior(p, w) && !(follow({ x: w.x1, y: w.y1 }) && follow({ x: w.x2, y: w.y2 })))
+    for (const { from, to } of moves.values()) {
+      if (!samePoint(from, to) && staysPut(from)) added.push(...polylineWires(route(from, to, true)))
+    }
+  }
+
+  const byRef = new Map(move.placements.map((p) => [p.ref, p]))
+  const selectedLabels = new Set(wiring.labels)
   return {
     placements: schematic.placements.map((p) => byRef.get(p.ref) ?? p),
-    wires: schematic.wires.flatMap((w) => {
-      const [a, b] = wireEnds(w)
-      const [a2, b2] = [moved(a), moved(b)]
-      const oneEndMoved = samePoint(a, a2) !== samePoint(b, b2)
-      const stillStraight = a2.x === b2.x || a2.y === b2.y
-      if (oneEndMoved && !stillStraight && (isHorizontal(w) || isVertical(w))) {
-        return samePoint(a, a2) ? rubberBand(a, b2, isHorizontal(w)) : rubberBand(b, a2, isHorizontal(w))
-      }
-      return [{ x1: a2.x, y1: a2.y, x2: b2.x, y2: b2.y }]
+    wires: [...inPlace, ...added],
+    labels: schematic.labels.map((l, i) => {
+      if (selectedLabels.has(i)) return { ...l, ...shift(l) }
+      const to = keepConnections ? follow(l) : undefined
+      return to ? { ...l, ...to } : l
     }),
-    labels: schematic.labels.map((l) => ({ ...l, ...moved(l) })),
   }
+}
+
+/**
+ * The schematic with some parts moved or rotated, dragging the wiring along: wire ends and labels on
+ * their pins go with them and wires stay horizontal and vertical.
+ */
+export function withPlacementChanges(schematic: FullSchematic, built: Netlist, changed: SchematicPlacement[]): FullSchematic {
+  return withSchematicMoved(schematic, built, { placements: changed, wiring: NO_WIRING, delta: { x: 0, y: 0 }, keepConnections: true })
+}
+
+/**
+ * The schematic without zero-length wires (a drag can fold one up) and without exact duplicates,
+ * with the selected wire indices renumbered to match.
+ */
+export function withTidyWires(schematic: FullSchematic, selectedWires: number[]): { schematic: FullSchematic; selectedWires: number[] } {
+  const seen = new Set<string>()
+  const newIndex = new Map<number, number>()
+  const wires: Wire[] = []
+  schematic.wires.forEach((w, i) => {
+    const [a, b] = [pointKey({ x: w.x1, y: w.y1 }), pointKey({ x: w.x2, y: w.y2 })]
+    const key = a < b ? `${a}|${b}` : `${b}|${a}`
+    if (a === b || seen.has(key)) return
+    seen.add(key)
+    newIndex.set(i, wires.length)
+    wires.push(w)
+  })
+  const renumbered = selectedWires.flatMap((i) => (newIndex.has(i) ? [newIndex.get(i)!] : []))
+  return { schematic: { ...schematic, wires }, selectedWires: renumbered }
 }
 
 /** An agent's placements, checked and snapped to the grid, rotation in quarter turns. */

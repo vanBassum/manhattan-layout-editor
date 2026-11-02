@@ -197,9 +197,19 @@ export interface Project {
   settings: Settings
 }
 
+/**
+ * Schematic wiring in a selection: wires and labels by their index in the schematic, and wire ends
+ * (corners, junctions) by position. Only the schematic view uses it; the PCB ignores it.
+ */
+export interface WiringSelection {
+  wires: number[]
+  labels: number[]
+  points: Point[]
+}
+
 export type Selection =
   | { kind: 'island'; net: string; rectIndex: number }
   | { kind: 'part'; ref: string }
-  /** Two or more items; a single item always uses one of the kinds above. */
-  | { kind: 'multi'; refs: string[]; nets: string[] }
+  /** Two or more items, or any wiring; a single part or island always uses one of the kinds above. */
+  | { kind: 'multi'; refs: string[]; nets: string[]; wiring?: WiringSelection }
   | null
