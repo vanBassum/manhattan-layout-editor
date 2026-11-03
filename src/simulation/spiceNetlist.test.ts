@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import sziklai from '../examples/Sziklai emittor follower.json?raw'
 import { projectFromFile } from '../documents/projectFormat'
 import type { Netlist, Simulation } from '../model/types'
-import { runSpice } from './ngspice'
+import { runInEngine } from './spiceEngine'
 import { operatingPointNetlist, partValue, readOperatingPoint, spiceCircuit } from './spiceNetlist'
 
 describe('partValue', () => {
@@ -76,7 +76,7 @@ describe('spiceCircuit', () => {
 describe('operating point in ngspice', () => {
   it('solves a divider', async () => {
     const circuit = spiceCircuit(divider, undefined, fiveVolts)
-    const point = readOperatingPoint(circuit, (await runSpice(operatingPointNetlist(circuit))).vectors)
+    const point = readOperatingPoint(circuit, (await runInEngine(operatingPointNetlist(circuit))).vectors)
     expect(point.volts.get('MID')).toBeCloseTo(3.75, 6)
     expect(point.volts.get('GND')).toBe(0)
     expect(point.supplies).toEqual([{ net: 'VCC', volts: 5, amps: expect.closeTo(1.25e-3, 9) }])
@@ -85,7 +85,7 @@ describe('operating point in ngspice', () => {
   it('biases the Sziklai example with both transistors on', async () => {
     const project = projectFromFile(sziklai)
     const circuit = spiceCircuit(project.netlist, project.definitions, project.simulation!)
-    const point = readOperatingPoint(circuit, (await runSpice(operatingPointNetlist(circuit))).vectors)
+    const point = readOperatingPoint(circuit, (await runInEngine(operatingPointNetlist(circuit))).vectors)
     expect(point.volts.get('VOUT')).toBeGreaterThan(4)
     expect(point.volts.get('VOUT')).toBeLessThan(7)
     const q2 = point.transistors.find((t) => t.ref === 'Q2')!
@@ -96,6 +96,6 @@ describe('operating point in ngspice', () => {
   })
 
   it('reports what ngspice could not parse', async () => {
-    await expect(runSpice('* bad\nV1 a 0 DC 5\nQ1 a a 0 NOPE\n.op\n.end')).rejects.toThrow(/can't find model 'nope'/)
+    await expect(runInEngine('* bad\nV1 a 0 DC 5\nQ1 a a 0 NOPE\n.op\n.end')).rejects.toThrow(/can't find model 'nope'/)
   })
 })
