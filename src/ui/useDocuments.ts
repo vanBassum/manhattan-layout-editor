@@ -15,6 +15,7 @@ import {
   setSavedProject,
   tabShowing,
   unlinkLocation,
+  type DriveRevision,
   type ProjectFile,
   type ProjectLocation,
 } from '../documents/projectStore'
@@ -24,19 +25,25 @@ import type { SaveChoice } from './FileDialog'
 import type { Project } from '../model/types'
 import type { TabSession } from './useTabs'
 
-/** The saved document changed elsewhere while tab `id` has unsaved changes: the user picks. */
+/**
+ * The saved document changed elsewhere while tab `id` has unsaved changes: the user picks. It holds
+ * `content` (`project`), at `driveRevision` for a document in Drive.
+ */
 export interface FileConflict {
   id: string
   project: Project
   content: string
-  location: ProjectLocation
+  driveRevision?: DriveRevision
 }
 
 /** The Open or Save dialog; a save resolves with where to save, or null when closed. */
 export type FileDialogState = { mode: 'open' } | { mode: 'save'; name: string; resolve: (choice: SaveChoice | null) => void }
 
+/** Where a project was just saved, with Drive's revision of it for a document in Drive. */
+type Saved = { location: ProjectLocation; driveRevision?: DriveRevision }
+
 /** A saved project's new place, and the name it is saved under. */
-type SavedAs = { name: string; location: ProjectLocation }
+type SavedAs = Saved & { name: string }
 
 /** `confirm` asks a yes/no question; true when the user picks `confirmLabel` rather than Cancel. */
 export function useDocuments(
@@ -87,20 +94,21 @@ export function useDocuments(
       : Promise.resolve<SaveChoice>({ place: 'local', name })
 
   /** Writes `project` where it is saved; null when nothing was saved. */
-  const saveToLocation = async (project: Project, name: string, file: ProjectFile, location: ProjectLocation): Promise<ProjectLocation | null> => {
+  const saveToLocation = async (project: Project, name: string, file: ProjectFile, location: ProjectLocation): Promise<Saved | null> => {
     if (location.kind === 'drive') {
       if (!isSignedIn() && !(await signInToGoogle())) return null
-      const result = await saveDriveDocument(project, location, file.savedContent)
-      if (result.kind === 'saved') return result.location
-      return (await confirmOverwrite(name)) ? overwriteDriveDocument(project, location) : null
+      const result = await saveDriveDocument(project, location, file)
+      if (result.kind === 'saved') return { location, driveRevision: result.revision }
+      if (!(await confirmOverwrite(name))) return null
+      return { location, driveRevision: await overwriteDriveDocument(project, location) }
     }
-    return (await saveToFile(project, location.handle, file.savedContent, confirmOverwrite)) ? location : null
+    return (await saveToFile(project, location.handle, file.savedContent, confirmOverwrite)) ? { location } : null
   }
 
   /** Saves `project` as `name` in Google Drive folder `folderId`. */
   const saveToNewDriveDocument = async (project: Project, name: string, folderId: string): Promise<SavedAs | null> => {
-    const location = await saveInDriveFolder(project, name, folderId, confirmOverwrite)
-    return location && { name, location }
+    const saved = await saveInDriveFolder(project, name, folderId, confirmOverwrite)
+    return saved && { name, location: saved.location, driveRevision: saved.revision }
   }
 
   /** Saves `project` to a file picked in the computer's own save dialog, offered as `name`. */
@@ -120,8 +128,8 @@ export function useDocuments(
     try {
       let saved: SavedAs | null
       if (file.location && !saveAs) {
-        const location = await saveToLocation(current, tabName(id), file, file.location)
-        saved = location && { name: tabName(id), location }
+        const savedThere = await saveToLocation(current, tabName(id), file, file.location)
+        saved = savedThere && { ...savedThere, name: tabName(id) }
       } else {
         const choice = await askSaveAs(tabName(id))
         if (!choice) return false
@@ -134,7 +142,7 @@ export function useDocuments(
         saved = choice.place === 'drive' ? await saveToNewDriveDocument(current, choice.name, choice.folderId) : await saveToNewLocalFile(current, choice.name)
       }
       if (!saved) return false
-      setSavedProject(id, current, saved.location)
+      setSavedProject(id, current, saved.location, saved.driveRevision)
       renameTab(id, saved.name)
       return true
     } catch (e) {
@@ -153,7 +161,7 @@ export function useDocuments(
     }
     if (!isSignedIn() && !(await signInToGoogle())) return
     const opened = await openDriveDocument(location.fileId)
-    openInNewTab(opened.project, opened.name, opened.location)
+    openInNewTab(opened.project, opened.name, opened.location, opened.revision)
   }
 
   // Without the File System Access API a project file is uploaded through this hidden input.
@@ -187,7 +195,7 @@ export function useDocuments(
   const openFromDrive = async (fileId: string) => {
     setFileDialog(null)
     try {
-      await openLocation({ kind: 'drive', fileId, version: '' })
+      await openLocation({ kind: 'drive', fileId })
     } catch (e) {
       setError(`Could not open from Google Drive: ${errorText(e)}`)
     }
@@ -208,11 +216,11 @@ export function useDocuments(
     try {
       if (location.kind === 'local') {
         if (!(await mayUse(location.handle, ask))) return
-        showComparison(id, await compareWithFile(location.handle, file), location)
+        showComparison(id, await compareWithFile(location.handle, file))
       } else {
         if (!isSignedIn() && !(ask && (await signInToGoogle()))) return
         const checked = await compareWithDrive(location, file)
-        showComparison(id, checked.comparison, checked.location)
+        showComparison(id, checked.comparison, checked.revision)
       }
     } catch (e) {
       if (e instanceof SignInNeeded) return
@@ -222,22 +230,24 @@ export function useDocuments(
     }
   }
 
-  const showComparison = (id: string, comparison: FileComparison, location: ProjectLocation) => {
+  /** `driveRevision`: the document's revision now, for a document in Drive. */
+  const showComparison = (id: string, comparison: FileComparison, driveRevision?: DriveRevision) => {
     if (id !== activeIdRef.current) return
-    if (comparison.kind === 'unchanged') acceptSavedContent(id, comparison.content, location)
-    else if (comparison.kind === 'newer') loadSavedVersion(id, comparison.project, location)
-    else setFileConflict({ id, project: comparison.project, content: comparison.content, location })
+    if (comparison.kind === 'unchanged') acceptSavedContent(id, comparison.content, driveRevision)
+    else if (comparison.kind === 'newer') loadSavedVersion(id, comparison.project, driveRevision)
+    else setFileConflict({ id, project: comparison.project, content: comparison.content, driveRevision })
   }
 
-  const loadSavedVersion = (id: string, saved: Project, location: ProjectLocation) => {
+  /** Shows the saved document's `saved` project in tab `id`, which stays at its location. */
+  const loadSavedVersion = (id: string, saved: Project, driveRevision?: DriveRevision) => {
     // The changes it replaces stay reachable with Undo.
     commitEdit(() => saved)
-    setSavedProject(id, saved, location)
+    setSavedProject(id, saved, projectFile(id).location, driveRevision)
     setFileConflict(null)
   }
 
-  const keepRecoveryCopy = (id: string, savedContent: string, location: ProjectLocation) => {
-    acceptSavedContent(id, savedContent, location)
+  const keepRecoveryCopy = (id: string, savedContent: string, driveRevision?: DriveRevision) => {
+    acceptSavedContent(id, savedContent, driveRevision)
     setFileConflict(null)
   }
 

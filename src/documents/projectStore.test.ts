@@ -100,6 +100,21 @@ describe('reopening a tab', () => {
   })
 })
 
+describe('a Drive tab from before November 2026', () => {
+  it('has its location reduced to the document, and the version moved to the saved revision', async () => {
+    await seedSession([{ id: 'doc', name: 'Amp' }], {
+      doc: { project: projectFromFile(example), savedContent: example, location: { kind: 'drive', fileId: 'f1', version: '7' } },
+    })
+    vi.resetModules()
+    const store = await import('./projectStore')
+    await store.openProjectStore()
+    const file = store.projectFile('doc')
+    expect(file.location).toEqual({ kind: 'drive', fileId: 'f1' })
+    expect(file.driveRevision).toEqual({ version: '7' })
+    expect(file).toMatchObject({ dirty: false, checked: false })
+  })
+})
+
 /** Stands in for the BroadcastChannel, so a test can deliver a message from another browser tab. */
 class FakeChannel {
   static last: FakeChannel

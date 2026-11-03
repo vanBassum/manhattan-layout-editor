@@ -534,8 +534,8 @@ export function App() {
             tabName={tabName(activeId)}
             file={projectFile(activeId)}
             conflict={fileConflict?.id === activeId ? fileConflict : undefined}
-            onUseSavedVersion={(conflict) => loadSavedVersion(activeId, conflict.project, conflict.location)}
-            onKeepChangesHere={(conflict) => keepRecoveryCopy(activeId, conflict.content, conflict.location)}
+            onUseSavedVersion={(conflict) => loadSavedVersion(activeId, conflict.project, conflict.driveRevision)}
+            onKeepChangesHere={(conflict) => keepRecoveryCopy(activeId, conflict.content, conflict.driveRevision)}
             onCheckSaved={() => checkSaved(activeId, true)}
             pinsNotInPcb={pinsNotInPcb}
             onUpdatePcb={updatePcb}

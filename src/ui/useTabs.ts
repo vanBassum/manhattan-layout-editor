@@ -14,6 +14,7 @@ import {
   setSavedProject,
   writeProject,
   writeTabs,
+  type DriveRevision,
   type ProjectLocation,
   type ProjectTab,
   type RemoteChange,
@@ -145,9 +146,9 @@ export function useTabs(onEnterTab: () => void) {
     if (id !== activeIdRef.current) showTab(id, readProject(id))
   }
 
-  const openInNewTab = (opened: Project, name: string, location?: ProjectLocation) => {
+  const openInNewTab = (opened: Project, name: string, location?: ProjectLocation, driveRevision?: DriveRevision) => {
     const id = newTabId()
-    setSavedProject(id, opened, location)
+    setSavedProject(id, opened, location, driveRevision)
     replaceTabs([...tabsRef.current, { id, name }])
     showTab(id, opened)
   }

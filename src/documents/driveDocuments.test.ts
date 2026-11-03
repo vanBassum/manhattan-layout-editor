@@ -16,7 +16,9 @@ vi.mock('./googleDrive', () => ({
 const project = projectFromFile(example)
 const saved = projectToFile(project)
 const changed = { ...project, settings: { ...project.settings, snap: 1 } }
-const location: DriveLocation = { kind: 'drive', fileId: 'doc', version: '3' }
+const location: DriveLocation = { kind: 'drive', fileId: 'doc' }
+/** The tab saved or opened the document at version 3. */
+const file = (dirty: boolean): ProjectFile => ({ location, savedContent: saved, driveRevision: { version: '3' }, dirty, checked: false })
 
 /** The document in Drive is at `version` and holds `text`. */
 function driveHolds(version: string, text: string) {
@@ -32,7 +34,7 @@ beforeEach(() => {
 describe('saveDriveDocument', () => {
   it('writes without reading when the document is still at the version saved here', async () => {
     driveHolds('3', saved)
-    expect(await saveDriveDocument(changed, location, saved)).toEqual({ kind: 'saved', location: { kind: 'drive', fileId: 'doc', version: '4' } })
+    expect(await saveDriveDocument(changed, location, file(true))).toEqual({ kind: 'saved', revision: { version: '4' } })
     expect(writeFile).toHaveBeenCalledWith(projectToFile(changed), { id: 'doc' })
     expect(readFile).not.toHaveBeenCalled()
   })
@@ -40,13 +42,13 @@ describe('saveDriveDocument', () => {
   it('writes when only the version changed, not the project', async () => {
     // An older version of the editor wrote the same project.
     driveHolds('5', example)
-    expect(await saveDriveDocument(changed, location, saved)).toMatchObject({ kind: 'saved', location: { version: '4' } })
+    expect(await saveDriveDocument(changed, location, file(true))).toMatchObject({ kind: 'saved', revision: { version: '4' } })
   })
 
   it('writes nothing to a document changed elsewhere, and returns what it holds at which version', async () => {
     driveHolds('5', projectToFile(changed))
-    const result = await saveDriveDocument(project, location, saved)
-    expect(result).toMatchObject({ kind: 'changedElsewhere', inDrive: { content: projectToFile(changed) }, location: { ...location, version: '5' } })
+    const result = await saveDriveDocument(project, location, file(false))
+    expect(result).toMatchObject({ kind: 'changedElsewhere', inDrive: { content: projectToFile(changed) }, revision: { version: '5' } })
     expect(result.kind === 'changedElsewhere' && result.inDrive.project?.settings.snap).toBe(1)
     expect(writeFile).not.toHaveBeenCalled()
     expect(fileVersion).toHaveBeenCalledTimes(1)
@@ -55,25 +57,29 @@ describe('saveDriveDocument', () => {
 
   it('returns a document that is no project anymore as changed elsewhere, without a project', async () => {
     driveHolds('5', 'hello')
-    expect(await saveDriveDocument(project, location, saved)).toMatchObject({ kind: 'changedElsewhere', inDrive: { project: null, content: 'hello' } })
+    expect(await saveDriveDocument(project, location, file(false))).toMatchObject({ kind: 'changedElsewhere', inDrive: { project: null, content: 'hello' } })
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('refuses a tab that does not know which version it saved', async () => {
+    driveHolds('3', saved)
+    await expect(saveDriveDocument(changed, location, { ...file(true), driveRevision: undefined })).rejects.toThrow('its version in Google Drive is not known')
     expect(writeFile).not.toHaveBeenCalled()
   })
 })
 
 describe('overwriteDriveDocument', () => {
   it('writes without looking at what the document holds', async () => {
-    expect(await overwriteDriveDocument(project, location)).toEqual({ kind: 'drive', fileId: 'doc', version: '4' })
+    expect(await overwriteDriveDocument(project, location)).toEqual({ version: '4' })
     expect(writeFile).toHaveBeenCalledWith(saved, { id: 'doc' })
     expect(fileVersion).not.toHaveBeenCalled()
   })
 })
 
 describe('compareWithDrive', () => {
-  const file = (dirty: boolean): ProjectFile => ({ location, savedContent: saved, dirty, checked: false })
-
   it('does not read a document still at the version saved here', async () => {
     driveHolds('3', 'unread')
-    expect(await compareWithDrive(location, file(false))).toEqual({ comparison: { kind: 'unchanged', content: saved }, location })
+    expect(await compareWithDrive(location, file(false))).toEqual({ comparison: { kind: 'unchanged', content: saved }, revision: { version: '3' } })
     expect(readFile).not.toHaveBeenCalled()
   })
 
@@ -81,7 +87,7 @@ describe('compareWithDrive', () => {
     driveHolds('5', projectToFile(changed))
     const newer = await compareWithDrive(location, file(false))
     expect(newer.comparison).toMatchObject({ kind: 'newer', content: projectToFile(changed) })
-    expect(newer.location).toEqual({ ...location, version: '5' })
+    expect(newer.revision).toEqual({ version: '5' })
     expect((await compareWithDrive(location, file(true))).comparison).toMatchObject({ kind: 'conflict' })
   })
 

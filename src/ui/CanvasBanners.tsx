@@ -40,7 +40,7 @@ export function CanvasBanners(props: CanvasBannersProps) {
       {conflict ? (
         <div className="banner banner-warn" role="alert">
           <span>
-            "{tabName}" changed {conflict.location.kind === 'drive' ? 'in Google Drive' : 'on disk'},
+            "{tabName}" changed {file.location?.kind === 'drive' ? 'in Google Drive' : 'on disk'},
             and this tab has changes that were not saved.
           </span>
           <button className="header-button" onClick={() => props.onUseSavedVersion(conflict)} title="Show the saved version; the changes here stay reachable with Undo">

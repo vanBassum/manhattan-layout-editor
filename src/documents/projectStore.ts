@@ -24,11 +24,13 @@ export interface ProjectTab {
   name: string
 }
 
-/**
- * Where a project is saved: a file on this computer, or a document in Google Drive. `version` is
- * Drive's version of the document as last saved or opened here.
- */
-export type ProjectLocation = { kind: 'local'; handle: FileSystemFileHandle } | { kind: 'drive'; fileId: string; version: string }
+/** Where a project is saved: a file on this computer, or a document in Google Drive. */
+export type ProjectLocation = { kind: 'local'; handle: FileSystemFileHandle } | { kind: 'drive'; fileId: string }
+
+/** What Google Drive said of a document when it was last saved or opened here. */
+export interface DriveRevision {
+  version: string
+}
 
 /**
  * Where a tab's project is saved and how it stands against that document. The store owns it, per
@@ -39,6 +41,8 @@ export interface ProjectFile {
   location?: ProjectLocation
   /** Document content as last saved or opened. */
   savedContent: string
+  /** The Drive document's revision as last saved or opened; only for a location in Drive. */
+  driveRevision?: DriveRevision
   /** The project differs from `savedContent`. */
   dirty: boolean
   /** The saved document was compared with `savedContent` in this session. Always true without a location. */
@@ -56,8 +60,19 @@ interface StoredProject {
   project: Project
   savedContent: string
   location?: ProjectLocation
+  driveRevision?: DriveRevision
   /** Before locations: the linked file. */
   handle?: FileSystemFileHandle
+}
+
+/** Until November 2026 a stored Drive location also held Drive's version as last saved or opened. */
+type StoredRecord = Omit<StoredProject, 'location'> & { location?: ProjectLocation & { version?: string } }
+
+/** Record `stored` as this version keeps it: a Drive location's version moves to the record's revision. */
+function convertedRecord(stored: StoredRecord): StoredProject {
+  const { location, ...rest } = stored
+  if (location?.kind !== 'drive' || location.version === undefined) return { ...rest, location }
+  return { ...rest, location: { kind: 'drive', fileId: location.fileId }, driveRevision: { version: location.version } }
 }
 
 type Message = { kind: 'tabs'; tabs: ProjectTab[] } | { kind: 'project'; id: string; stored: StoredProject } | { kind: 'removed'; id: string }
@@ -123,7 +138,12 @@ function tell(message: Message) {
   } catch {}
 }
 
-const storedOf = (open: OpenProject): StoredProject => ({ project: open.project, savedContent: open.savedContent, location: open.location })
+const storedOf = (open: OpenProject): StoredProject => ({
+  project: open.project,
+  savedContent: open.savedContent,
+  location: open.location,
+  driveRevision: open.driveRevision,
+})
 
 function persist(id: string) {
   const open = openProjects.get(id)
@@ -210,11 +230,12 @@ function readLegacyTabs(): { tabs: ProjectTab[]; projects: Map<string, Project> 
 // --- Public API ----------------------------------------------------------------------------------
 
 /** Opens tab `tab` from its IndexedDB record again. */
-function restoreTab(tab: ProjectTab, stored: StoredProject | undefined) {
-  if (!stored) throw new Error('its recovery copy is missing')
+function restoreTab(tab: ProjectTab, record: StoredRecord | undefined) {
+  if (!record) throw new Error('its recovery copy is missing')
+  const stored = convertedRecord(record)
   const project = checkedProject(stored.project)
   const location: ProjectLocation | undefined = stored.location ?? (stored.handle && { kind: 'local', handle: stored.handle })
-  remember(tab.id, { project, savedContent: readSavedProject(stored.savedContent).content, location }, false)
+  remember(tab.id, { project, savedContent: readSavedProject(stored.savedContent).content, location, driveRevision: stored.driveRevision }, false)
   // Tabs from when projects held a name of their own may still show it instead of their file's.
   openTabs.push(location?.kind === 'local' ? { ...tab, name: projectNameOf(location.handle.name) } : tab)
 }
@@ -223,7 +244,7 @@ async function restoreSession(db: IDBDatabase) {
   const tabs = (await request(db.transaction(META_STORE).objectStore(META_STORE).get(TABS_RECORD))) as ProjectTab[] | undefined
   for (const tab of tabs ?? []) {
     try {
-      restoreTab(tab, (await request(db.transaction(PROJECTS_STORE).objectStore(PROJECTS_STORE).get(tab.id))) as StoredProject | undefined)
+      restoreTab(tab, (await request(db.transaction(PROJECTS_STORE).objectStore(PROJECTS_STORE).get(tab.id))) as StoredRecord | undefined)
     } catch (e) {
       // A record that is there stays in IndexedDB as it is, but is not opened: the editor cannot draw it.
       restoreErrors.push(`Could not open "${tab.name}" again: ${errorText(e)}.`)
@@ -301,11 +322,11 @@ export const projectFile = (id: string): ProjectFile => openProject(id)
 
 /**
  * Tab `id` now holds `project` as saved at `location`, or as a new project never saved: just opened,
- * or just saved. It has no unsaved changes.
+ * or just saved. It has no unsaved changes. A document in Drive comes with its `driveRevision`.
  */
-export function setSavedProject(id: string, project: Project, location?: ProjectLocation) {
+export function setSavedProject(id: string, project: Project, location?: ProjectLocation, driveRevision?: DriveRevision) {
   const content = projectToFile(project)
-  openProjects.set(id, { project, content, savedContent: content, location, dirty: false, checked: true })
+  openProjects.set(id, { project, content, savedContent: content, location, driveRevision, dirty: false, checked: true })
   persist(id)
   notifyFiles()
 }
@@ -322,13 +343,13 @@ export function writeProject(id: string, project: Project) {
 }
 
 /**
- * The saved document, now at `location`, holds `savedContent`; the tab keeps its own project, which
- * may now count as unsaved.
+ * The saved document holds `savedContent`, at `driveRevision` for a document in Drive; the tab keeps
+ * its own project, which may now count as unsaved.
  */
-export function acceptSavedContent(id: string, savedContent: string, location: ProjectLocation) {
+export function acceptSavedContent(id: string, savedContent: string, driveRevision?: DriveRevision) {
   const open = openProjects.get(id)
   if (!open) return
-  Object.assign(open, { savedContent, location, dirty: open.content !== savedContent, checked: true })
+  Object.assign(open, { savedContent, driveRevision, dirty: open.content !== savedContent, checked: true })
   persist(id)
   notifyFiles()
 }
@@ -337,7 +358,7 @@ export function acceptSavedContent(id: string, savedContent: string, location: P
 export function unlinkLocation(id: string) {
   const open = openProjects.get(id)
   if (!open) return
-  Object.assign(open, { location: undefined, savedContent: '', dirty: true, checked: true })
+  Object.assign(open, { location: undefined, driveRevision: undefined, savedContent: '', dirty: true, checked: true })
   persist(id)
   notifyFiles()
 }
