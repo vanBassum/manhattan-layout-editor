@@ -9,25 +9,31 @@
 // remembers its own active project in sessionStorage, so two browser tabs can work on different
 // projects without overwriting each other.
 
-import { checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from './definitions'
-import { errorText } from './errorText'
-import { withoutCutLines } from './migrateCutLayout'
-import { migrateGappedIslands } from './migrateIslands'
-import { findStrategy, STRATEGIES } from './optimize'
-import type { Project, Settings } from './types'
+import { errorText } from '../errorText'
+import { migrateGappedIslands } from '../migrateIslands'
+import type { Project } from '../types'
+import { firstVisitExample } from './examples'
+import { checkedProject, projectNameOf, projectToFile, readSavedProject } from './projectFormat'
 
+/**
+ * A tab as the tab bar shows it. The tabs own its name: the name of its document when it was
+ * opened or saved, or the one it started with. Where its project is saved is its ProjectFile.
+ */
 export interface ProjectTab {
   id: string
   name: string
 }
 
 /**
- * Where a project is saved: a file on this computer, or a document in the editor's folder in
- * Google Drive. `version` is Drive's version of the document as last saved or opened here.
+ * Where a project is saved: a file on this computer, or a document in Google Drive. `version` is
+ * Drive's version of the document as last saved or opened here.
  */
 export type ProjectLocation = { kind: 'local'; handle: FileSystemFileHandle } | { kind: 'drive'; fileId: string; version: string }
 
-/** Where a tab's project stands against its saved document. */
+/**
+ * Where a tab's project is saved and how it stands against that document. The store owns it, per
+ * tab id (projectFile); the tab's shown name is in its ProjectTab.
+ */
 export interface ProjectFile {
   /** None for a project that was never saved (or saved by download). */
   location?: ProjectLocation
@@ -65,8 +71,6 @@ type Message = { kind: 'tabs'; tabs: ProjectTab[] } | { kind: 'project'; id: str
 /** Something changed in another browser tab. */
 export type RemoteChange = { kind: 'tabs'; tabs: ProjectTab[] } | { kind: 'project'; id: string; project: Project }
 
-export const DEFAULT_SETTINGS: Settings = { snap: 0.5, isolation: 0.4, strategy: STRATEGIES[0].id, clearance: 3, maxLead: 10 }
-
 const DB_NAME = 'manhattan-layout-editor'
 const PROJECTS_STORE = 'projects'
 const META_STORE = 'meta'
@@ -86,71 +90,7 @@ const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastCh
 const fileListeners = new Set<() => void>()
 const remoteListeners = new Set<(change: RemoteChange) => void>()
 
-export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
-  guid: crypto.randomUUID(),
-  netlist: { components: [], nets: [] },
-  layout: { islands: [], placements: [] },
-  settings,
-})
-
 export const newTabId = () => Math.random().toString(36).slice(2, 10)
-
-/**
- * A project read from storage or a file; projects from before guids get one here, parts without a
- * component definition get one from the built-in templates, and a cut-line layout becomes islands.
- * The name older versions stored is dropped. Throws without a netlist or layout, and for an invalid
- * component definition, naming it.
- */
-function checkedProject(data: unknown): Project {
-  const project = { ...(data as Partial<Project> & { name?: unknown }) }
-  if (!project?.netlist?.components || !project.layout?.islands) throw new Error('the project is damaged: netlist or layout is missing')
-  delete project.name
-  const definitions = checkedDefinitions(project.definitions)
-  const checked = withoutCutLines(
-    withDefinitions({
-      ...(project as Project),
-      guid: project.guid || crypto.randomUUID(),
-      // Recovery copies from before definitions were checked may still refer to one a re-import made unfit.
-      netlist: withoutUnfitDefinitions(project.netlist, definitions),
-      definitions,
-      settings: { ...DEFAULT_SETTINGS, ...project.settings },
-    }),
-  )
-  return { ...checked, settings: { ...checked.settings, strategy: findStrategy(checked.settings.strategy).id } }
-}
-
-// A saved project file. Bump the version when the stored layout changes meaning, and convert
-// older files in projectFromFile.
-// v6: component definitions (symbol and footprints) are stored in the project.
-// v7: no name inside: a project is called by its file's name.
-const FILE_FORMAT = 'manhattan-layout-editor'
-const FILE_VERSION = 7
-
-export function projectToFile(project: Project): string {
-  return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, project: withDefinitions(project) }, null, 2)
-}
-
-/**
- * `text` as this version of the editor writes it, so saved contents compare equal whatever version
- * wrote them; text that is no project stays as it is.
- */
-export function asCurrentFormat(text: string): string {
-  try {
-    return projectToFile(projectFromFile(text))
-  } catch {
-    return text
-  }
-}
-
-/** "amp.manhattan.json" → "amp". */
-export const projectNameOf = (fileName: string) => fileName.replace(/(\.manhattan)?\.json$/i, '')
-
-export function projectFromFile(text: string): Project {
-  const data = JSON.parse(text) as { format?: unknown; version?: unknown; project?: unknown }
-  if (data?.format !== FILE_FORMAT || typeof data.version !== 'number') throw new Error('Not a Manhattan project file.')
-  if (data.version > FILE_VERSION) throw new Error('This project was saved by a newer version of the editor.')
-  return checkedProject(data.project)
-}
 
 // --- IndexedDB -----------------------------------------------------------------------------------
 
@@ -276,7 +216,7 @@ function restoreTab(tab: ProjectTab, stored: StoredProject | undefined) {
   if (!stored) throw new Error('its recovery copy is missing')
   const project = checkedProject(stored.project)
   const location: ProjectLocation | undefined = stored.location ?? (stored.handle && { kind: 'local', handle: stored.handle })
-  remember(tab.id, { project, savedContent: asCurrentFormat(stored.savedContent), location }, false)
+  remember(tab.id, { project, savedContent: readSavedProject(stored.savedContent).content, location }, false)
   // Tabs from when projects held a name of their own may still show it instead of their file's.
   openTabs.push(location?.kind === 'local' ? { ...tab, name: projectNameOf(location.handle.name) } : tab)
 }
@@ -310,7 +250,7 @@ export async function openProjectStore() {
   }
   if (openTabs.length === 0) {
     const legacy = readLegacyTabs()
-    for (const tab of legacy.tabs) addProject(tab.id, legacy.projects.get(tab.id)!)
+    for (const tab of legacy.tabs) setSavedProject(tab.id, legacy.projects.get(tab.id)!)
     openTabs = legacy.tabs
     writeTabs(openTabs)
   }
@@ -331,25 +271,6 @@ export async function openProjectStore() {
   })
 }
 
-// Every project file in src/examples is offered under File > Examples, called by its file name.
-const EXAMPLE_FILES = import.meta.glob<string>('./examples/*.manhattan.json', { query: '?raw', import: 'default', eager: true })
-const FIRST_VISIT_EXAMPLE = './examples/Astable multivibrator.manhattan.json'
-
-export interface Example {
-  name: string
-  /** A fresh copy: each is a project of its own, so it gets its own guid. */
-  open: () => Project
-}
-
-const exampleFrom = (path: string, text: string): Example => ({
-  name: path.replace(/^.*\//, '').replace(/\.manhattan\.json$/, ''),
-  open: () => ({ ...projectFromFile(text), guid: crypto.randomUUID() }),
-})
-
-export const EXAMPLES: Example[] = Object.entries(EXAMPLE_FILES)
-  .map(([path, text]) => exampleFrom(path, text))
-  .sort((a, b) => a.name.localeCompare(b.name))
-
 /** A new, unsaved project's name until it is saved. */
 export const UNTITLED = 'Untitled'
 
@@ -357,8 +278,8 @@ export const UNTITLED = 'Untitled'
 export function loadTabs(): { tabs: ProjectTab[]; activeId: string } {
   if (openTabs.length === 0) {
     const id = newTabId()
-    const example = exampleFrom(FIRST_VISIT_EXAMPLE, EXAMPLE_FILES[FIRST_VISIT_EXAMPLE])
-    addProject(id, example.open())
+    const example = firstVisitExample()
+    setSavedProject(id, example.open())
     openTabs = [{ id, name: example.name }]
     writeTabs(openTabs)
   }
@@ -380,8 +301,11 @@ export const readProject = (id: string): Project => openProject(id).project
 
 export const projectFile = (id: string): ProjectFile => openProject(id)
 
-/** A project that just opened in a tab, from `location` or new; it starts without unsaved changes. */
-export function addProject(id: string, project: Project, location?: ProjectLocation) {
+/**
+ * Tab `id` now holds `project` as saved at `location`, or as a new project never saved: just opened,
+ * or just saved. It has no unsaved changes.
+ */
+export function setSavedProject(id: string, project: Project, location?: ProjectLocation) {
   const content = projectToFile(project)
   openProjects.set(id, { project, content, savedContent: content, location, dirty: false, checked: true })
   persist(id)
@@ -397,14 +321,6 @@ export function writeProject(id: string, project: Project) {
   Object.assign(open, { project, content, dirty: content !== open.savedContent })
   persist(id)
   if (open.dirty !== wasDirty) notifyFiles()
-}
-
-/** `project` is now saved at `location`. */
-export function markSaved(id: string, project: Project, location?: ProjectLocation) {
-  const content = projectToFile(project)
-  openProjects.set(id, { project, content, savedContent: content, location, dirty: false, checked: true })
-  persist(id)
-  notifyFiles()
 }
 
 /**
@@ -448,19 +364,21 @@ async function isSameLocation(a: ProjectLocation, b: ProjectLocation): Promise<b
   return a.handle.isSameEntry(b.handle)
 }
 
+async function recentWithout(location: ProjectLocation): Promise<RecentDocument[]> {
+  const kept: RecentDocument[] = []
+  for (const document of recent) if (!(await isSameLocation(document.location, location))) kept.push(document)
+  return kept
+}
+
 /** Puts the document at `location` first in the recent documents. */
 export async function rememberRecent(name: string, location: ProjectLocation) {
-  const others: RecentDocument[] = []
-  for (const document of recent) if (!(await isSameLocation(document.location, location))) others.push(document)
-  recent = [{ name, location }, ...others].slice(0, MAX_RECENT)
+  recent = [{ name, location }, ...(await recentWithout(location))].slice(0, MAX_RECENT)
   put(META_STORE, RECENT_RECORD, recent)
 }
 
 /** Takes a document off the recent list, for one that cannot be opened anymore. */
 export async function forgetRecent(location: ProjectLocation) {
-  const kept: RecentDocument[] = []
-  for (const document of recent) if (!(await isSameLocation(document.location, location))) kept.push(document)
-  recent = kept
+  recent = await recentWithout(location)
   put(META_STORE, RECENT_RECORD, recent)
 }
 

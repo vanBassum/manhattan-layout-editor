@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { errorText } from './errorText'
-import { driveConfigured, isFolder, listFolder, projectsFolder, SAVE_FOLDER_NAME, SignInNeeded, type DriveItem } from './googleDrive'
-import { pickDriveFile, pickDriveFolder } from './googlePicker'
+import { driveConfigured, isFolder, listFolder, projectsFolder, SAVE_FOLDER_NAME, SignInNeeded, type DriveItem } from './documents/googleDrive'
+import { pickDriveFile, pickDriveFolder } from './documents/googlePicker'
+import { isProjectFileName, projectNameOf } from './documents/projectFormat'
+import type { RecentDocument } from './documents/projectStore'
 import { Icon } from './panels'
-import { projectNameOf, type RecentDocument } from './projectStore'
 
 /** Where Save puts the project: through the computer's own save dialog, or in a Google Drive folder. */
 export type SaveChoice = { place: 'local'; name: string } | { place: 'drive'; name: string; folderId: string }
@@ -30,7 +31,6 @@ interface DriveFolder {
 /** The Drive folders shown last, so the dialog opens there again in this session. */
 let lastDrivePath: DriveFolder[] | null = null
 
-const isProjectFile = (item: DriveItem) => /\.json$/i.test(item.name)
 const formatModified = (time: string) => new Date(time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const formatSize = (size?: string) => (size ? `${Math.max(1, Math.round(Number(size) / 1024))} KB` : '—')
 
@@ -68,7 +68,7 @@ export function FileDialog(props: FileDialogProps) {
     if (place !== 'drive' || !signedIn || !folder) return
     let current = true
     listFolder(folder.id).then(
-      (listed) => current && setItems(listed.filter((item) => isFolder(item) || isProjectFile(item))),
+      (listed) => current && setItems(listed.filter((item) => isFolder(item) || isProjectFileName(item.name))),
       (e) => current && setProblem(e instanceof SignInNeeded ? '' : `Could not read this folder: ${errorText(e)}`),
     )
     return () => {

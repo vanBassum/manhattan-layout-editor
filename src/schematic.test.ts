@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import example from './examples/Astable multivibrator.manhattan.json?raw'
 import { buildProjectNetlist } from './definitions'
-import { projectFromFile } from './projectStore'
+import { projectFromFile } from './documents/projectFormat'
 import { pinEnds, pinsWithOtherNet, projectSchematic, withPlacementChanges, withTidyWires, type FullSchematic } from './schematic'
 import type { BuiltNetlist, Netlist } from './types'
 

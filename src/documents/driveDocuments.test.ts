@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import example from './examples/Astable multivibrator.manhattan.json?raw'
+import example from '../examples/Astable multivibrator.manhattan.json?raw'
 import { compareWithDrive, saveDriveDocument, type DriveLocation } from './driveDocuments'
 import { fileVersion, readFile, writeFile } from './googleDrive'
-import { projectFromFile, projectToFile, type ProjectFile } from './projectStore'
+import { projectFromFile, projectToFile } from './projectFormat'
+import type { ProjectFile } from './projectStore'
 
 vi.mock('./googleDrive', () => ({
   fileVersion: vi.fn(),

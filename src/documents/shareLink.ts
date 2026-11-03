@@ -1,5 +1,5 @@
-import { projectFromFile, projectToFile } from './projectStore'
-import type { Project } from './types'
+import type { Project } from '../types'
+import { projectFromFile, projectToFile } from './projectFormat'
 
 // A share link carries the whole project in the URL fragment, deflated and base64url-encoded. The
 // fragment never goes to a server, so the project only travels with the link itself.

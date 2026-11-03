@@ -3,9 +3,9 @@ import { connectAgentBridge } from './agentBridge'
 import { buildNetlist, buildProjectNetlist, withDefinitions, withoutUnfitDefinitions } from './definitions'
 import { agentTargetId, runAgentCommand } from './agentDispatch'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
-import { compareWithDrive, openDriveDocument, saveDriveDocument, saveInDriveFolder, type DriveLocation } from './driveDocuments'
+import { compareWithDrive, openDriveDocument, saveDriveDocument, saveInDriveFolder, type DriveLocation } from './documents/driveDocuments'
 import { exportDxf } from './exportDxf'
-import { driveConfigured, isSignedIn, onSignInChange, signIn, signOut, SignInNeeded } from './googleDrive'
+import { driveConfigured, isSignedIn, onSignInChange, signIn, signOut, SignInNeeded } from './documents/googleDrive'
 import { FileDialog, type SaveChoice } from './FileDialogs'
 import { errorText } from './errorText'
 import { downloadText, exportSvg } from './exportSvg'
@@ -41,30 +41,25 @@ import {
   Validation,
   type Question,
 } from './panels'
-import { canUseFiles, compareWithFile, fileLabel, mayUse, pickFileToOpen, readFile, saveLocalFile, type FileComparison } from './projectFiles'
+import { EXAMPLES } from './documents/examples'
+import { canUseFiles, compareWithFile, mayUse, pickFileToOpen, readFile, saveToFile, saveToNewFile, type FileComparison } from './documents/projectFiles'
+import { DEFAULT_SETTINGS, emptyProject, projectFileName, projectFromFile, projectNameOf, projectToFile } from './documents/projectFormat'
 import {
   acceptSavedContent,
-  addProject,
-  DEFAULT_SETTINGS,
-  emptyProject,
   UNTITLED,
-  EXAMPLES,
   forgetRecent,
   loadTabs,
-  markSaved,
   newTabId,
   onFileChange,
   onRemoteChange,
   projectFile,
-  projectFromFile,
-  projectNameOf,
-  projectToFile,
   readProject,
   recentDocuments,
   rememberActiveTab,
   rememberRecent,
   removeProject,
   restoreErrors,
+  setSavedProject,
   tabShowing,
   unlinkLocation,
   writeProject,
@@ -73,9 +68,9 @@ import {
   type ProjectTab,
   type ProjectFile,
   type RecentDocument,
-} from './projectStore'
+} from './documents/projectStore'
 import { canvasToPng } from './screenshot'
-import { shareLinkOf, takeSharedProject } from './shareLink'
+import { shareLinkOf, takeSharedProject } from './documents/shareLink'
 import { selectedRefs, selectedWiring, selectionOf } from './selection'
 import { screenshotHidden } from './hiddenScreenshot'
 import {
@@ -489,7 +484,7 @@ export function App() {
 
   const openInNewTab = (opened: Project, name: string, location?: ProjectLocation) => {
     const id = newTabId()
-    addProject(id, opened, location)
+    setSavedProject(id, opened, location)
     if (location) rememberRecent(name, location)
     const next = [...tabsRef.current, { id, name }]
     setTabs(next)
@@ -572,8 +567,7 @@ export function App() {
       if (!isSignedIn() && !(await signInToGoogle())) return null
       return saveDriveDocument(project, name, location, file.savedContent, confirmOverwrite)
     }
-    const handle = await saveLocalFile(project, name, location.handle, file.savedContent, confirmOverwrite)
-    return handle && { kind: 'local', handle }
+    return (await saveToFile(project, location.handle, file.savedContent, confirmOverwrite)) ? location : null
   }
 
   /** A saved project's new place, and the name it is saved under. */
@@ -587,8 +581,8 @@ export function App() {
 
   /** Saves `project` to a file picked in the computer's own save dialog, offered as `name`. */
   const saveToNewLocalFile = async (project: Project, name: string): Promise<SavedAs | null> => {
-    const handle = await saveLocalFile(project, name, undefined, '', confirmOverwrite)
-    return handle && { name: fileLabel(handle), location: { kind: 'local', handle } }
+    const handle = await saveToNewFile(project, name)
+    return handle && { name: projectNameOf(handle.name), location: { kind: 'local', handle } }
   }
 
   /**
@@ -608,15 +602,15 @@ export function App() {
         const choice = await askSaveAs(tabName(id))
         if (!choice) return false
         if (choice.place === 'local' && !canUseFiles) {
-          downloadText(`${choice.name}.manhattan.json`, projectToFile(current), 'application/json')
-          markSaved(id, current)
+          downloadText(projectFileName(choice.name), projectToFile(current), 'application/json')
+          setSavedProject(id, current)
           renameTab(id, choice.name)
           return true
         }
         saved = choice.place === 'drive' ? await saveToNewDriveDocument(current, choice.name, choice.folderId) : await saveToNewLocalFile(current, choice.name)
       }
       if (!saved) return false
-      markSaved(id, current, saved.location)
+      setSavedProject(id, current, saved.location)
       renameTab(id, saved.name)
       rememberRecent(saved.name, saved.location)
       return true
@@ -632,7 +626,7 @@ export function App() {
     if (shown) return switchTab(shown)
     if (location.kind === 'local') {
       if (!(await mayUse(location.handle, true))) throw new Error(`no permission to open "${location.handle.name}"`)
-      return openInNewTab(projectFromFile(await readFile(location.handle)), fileLabel(location.handle), location)
+      return openInNewTab(projectFromFile(await readFile(location.handle)), projectNameOf(location.handle.name), location)
     }
     if (!isSignedIn() && !(await signInToGoogle())) return
     const opened = await openDriveDocument(location.fileId)
@@ -708,7 +702,7 @@ export function App() {
   const loadSavedVersion = (id: string, saved: Project, location: ProjectLocation) => {
     rememberEdit()
     showProject(saved)
-    markSaved(id, saved, location)
+    setSavedProject(id, saved, location)
     setFileConflict(null)
   }
 
@@ -779,7 +773,7 @@ export function App() {
     if (remaining.length === 0) {
       // Always keep one tab: closing the last one leaves a fresh, empty project.
       const created = emptyProject(project.settings)
-      addProject(id, created)
+      setSavedProject(id, created)
       const fresh = [{ id, name: UNTITLED }]
       setTabs(fresh)
       writeTabs(fresh)

@@ -1,7 +1,7 @@
 // Google's own file picker, for opening a project from anywhere in the user's Drive. With
 // scope drive.file the editor only sees what it made itself, and what the user picks here.
 
-import { currentAccessToken, PICKER_API_KEY, PICKER_APP_ID, SignInNeeded } from './googleDrive'
+import { accessToken, PICKER_API_KEY, PICKER_APP_ID, SignInNeeded } from './googleDrive'
 
 const PICKER_SCRIPT = 'https://apis.google.com/js/api.js'
 
@@ -65,7 +65,7 @@ function loadPicker(): Promise<PickerApi> {
 
 /** Shows Google's picker with `view`; resolves with what was picked, or null when cancelled. */
 async function pick(title: string, makeView: (api: PickerApi) => DocsView): Promise<PickedDocument | null> {
-  const token = currentAccessToken()
+  const token = accessToken()
   if (!token) throw new SignInNeeded()
   const api = await loadPicker()
   return new Promise((resolve) =>

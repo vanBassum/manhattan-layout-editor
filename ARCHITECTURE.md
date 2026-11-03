@@ -35,7 +35,7 @@ Rules that follow from the table:
 | `migrateIslands`, `migrateCutLayout` | model (`model/migrations/`) |
 | `optimize/*` | optimize (already in place) |
 | `exportSvg`, `exportDxf` | export (`downloadText` moves to `ui`: it touches the DOM) |
-| `projectStore`, `projectFiles`, `driveDocuments`, `googleDrive`, `googlePicker`, `shareLink` | documents |
+| `projectStore`, `projectFiles`, `driveDocuments`, `googleDrive`, `googlePicker`, `shareLink` | documents (in place, with the file format split off into `projectFormat` and the examples into `examples`) |
 | `agentBridge`, `agentCommands`, `agentDispatch` | agent |
 | `App`, `ProjectTabs`, `panels`, `viewport`, `FileDialogs`, `FootprintDialog` | ui |
 | `Canvas`, `screenshot`, `hiddenScreenshot` | ui (`ui/pcb/`): they render or read the drawn board |

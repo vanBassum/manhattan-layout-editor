@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
-import { openProjectStore } from './projectStore'
+import { openProjectStore } from './documents/projectStore'
 import './index.css'
 
 await openProjectStore()

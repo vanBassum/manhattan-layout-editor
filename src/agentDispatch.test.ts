@@ -3,7 +3,7 @@ import server from '../mcp/server.mjs?raw'
 import { AGENT_COMMANDS, agentTargetId, runAgentCommand, type AgentTab } from './agentDispatch'
 import example from './examples/Astable multivibrator.manhattan.json?raw'
 import { STRATEGIES } from './optimize'
-import { emptyProject, projectFromFile } from './projectStore'
+import { emptyProject, projectFromFile } from './documents/projectFormat'
 
 describe('agent commands', () => {
   it('are the tools the MCP server offers, except list_projects which App answers itself', () => {

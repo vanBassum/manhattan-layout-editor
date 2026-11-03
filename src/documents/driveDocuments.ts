@@ -1,10 +1,11 @@
 // Projects saved in Google Drive: the counterpart of projectFiles.ts, for files in Drive instead of
 // on this computer. A project is called by its file's name.
 
+import type { Project } from '../types'
 import { fileInfo, fileVersion, findFile, readFile, writeFile } from './googleDrive'
-import { compareSaved, readSavedProject, type FileComparison } from './projectFiles'
-import { projectFromFile, projectNameOf, projectToFile, type ProjectFile, type ProjectLocation } from './projectStore'
-import type { Project } from './types'
+import { compareSaved, type FileComparison } from './projectFiles'
+import { projectFileName, projectFromFile, projectNameOf, projectToFile, readSavedProject } from './projectFormat'
+import type { ProjectFile, ProjectLocation } from './projectStore'
 
 export type DriveLocation = Extract<ProjectLocation, { kind: 'drive' }>
 
@@ -45,7 +46,7 @@ export async function saveInDriveFolder(
   folderId: string,
   confirmOverwrite: (name: string) => Promise<boolean>,
 ): Promise<DriveLocation | null> {
-  const fileName = `${name}.manhattan.json`
+  const fileName = projectFileName(name)
   const existing = await findFile(folderId, fileName)
   if (existing && !(await confirmOverwrite(name))) return null
   const text = projectToFile(project)

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import example from './examples/Astable multivibrator.manhattan.json?raw'
-import { compareSaved, compareWithFile, saveLocalFile } from './projectFiles'
-import { asCurrentFormat, projectFromFile, projectToFile, type ProjectFile } from './projectStore'
+import example from '../examples/Astable multivibrator.manhattan.json?raw'
+import { compareSaved, compareWithFile, saveToFile } from './projectFiles'
+import { projectFromFile, projectToFile, readSavedProject } from './projectFormat'
+import type { ProjectFile } from './projectStore'
 
 /** A file with permission already granted; `written` collects what the editor writes to it. */
 function fakeFile(content: string) {
@@ -25,32 +26,32 @@ const saved = projectToFile(project)
 const linked = (file: ReturnType<typeof fakeFile>, dirty = false): ProjectFile => ({ location: { kind: 'local', handle: asHandle(file) }, savedContent: saved, dirty, checked: true })
 const changedElsewhere = projectToFile({ ...project, settings: { ...project.settings, snap: 1 } })
 
-describe('saveLocalFile', () => {
+describe('saveToFile', () => {
   it('writes to the linked file without asking when it did not change on disk', async () => {
     const file = fakeFile(saved)
     const changed = { ...project, settings: { ...project.settings, snap: 1 } }
-    const handle = await saveLocalFile(changed, 'amp', asHandle(file), saved, async () => {
+    const written = await saveToFile(changed, asHandle(file), saved, async () => {
       throw new Error('should not ask')
     })
-    expect(handle).toBe(asHandle(file))
+    expect(written).toBe(true)
     expect(file.written).toEqual([projectToFile(changed)])
   })
 
   it('asks before overwriting a file that changed on disk, and writes nothing when refused', async () => {
     const file = fakeFile(changedElsewhere)
     const asked: string[] = []
-    const handle = await saveLocalFile(project, 'amp', asHandle(file), saved, async (name) => {
+    const written = await saveToFile(project, asHandle(file), saved, async (name) => {
       asked.push(name)
       return false
     })
     expect(asked).toEqual(['amp.manhattan.json'])
-    expect(handle).toBeNull()
+    expect(written).toBe(false)
     expect(file.written).toEqual([])
   })
 
   it('refuses to overwrite a file it cannot read, without asking', async () => {
     const file = { ...fakeFile(saved), getFile: async () => Promise.reject(new Error('the file is locked')) }
-    const save = saveLocalFile(project, 'amp', asHandle(file), saved, async () => {
+    const save = saveToFile(project, asHandle(file), saved, async () => {
       throw new Error('should not ask')
     })
     await expect(save).rejects.toThrow('the file is locked')
@@ -72,17 +73,9 @@ describe('compareWithFile', () => {
   })
 })
 
-describe('projectFromFile', () => {
-  it('drops the name older files stored: a project is called by its file name', () => {
-    expect(JSON.parse(example).project.name).toBe('Astable multivibrator')
-    expect(projectFromFile(example)).not.toHaveProperty('name')
-    expect(JSON.parse(projectToFile(projectFromFile(example))).project).not.toHaveProperty('name')
-  })
-})
-
 describe('compareSaved', () => {
   it('finds no change between the same project written by an older and a newer version', () => {
     const olderSaved: ProjectFile = { savedContent: example, dirty: false, checked: false }
-    expect(compareSaved(projectToFile(projectFromFile(example)), { ...olderSaved, savedContent: asCurrentFormat(example) })).toMatchObject({ kind: 'unchanged' })
+    expect(compareSaved(projectToFile(projectFromFile(example)), { ...olderSaved, savedContent: readSavedProject(example).content })).toMatchObject({ kind: 'unchanged' })
   })
 })

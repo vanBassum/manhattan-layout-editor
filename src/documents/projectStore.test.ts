@@ -1,6 +1,7 @@
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import example from './examples/Astable multivibrator.manhattan.json?raw'
+import example from '../examples/Astable multivibrator.manhattan.json?raw'
+import { emptyProject, projectFromFile } from './projectFormat'
 
 // projectStore keeps its state in the module, so each test loads a fresh copy on a fresh database.
 beforeEach(() => {
@@ -30,7 +31,6 @@ async function seedSession(tabs: { id: string; name: string }[], projects: Recor
 
 describe('openProjectStore', () => {
   it('reopens the tabs it can, and tells why each other tab could not be opened', async () => {
-    const { projectFromFile } = await import('./projectStore')
     await seedSession(
       [
         { id: 'good', name: 'Good' },
@@ -59,13 +59,12 @@ describe('open projects', () => {
     await store.openProjectStore()
     expect(() => store.readProject('nope')).toThrow('no open project has id "nope"')
     expect(() => store.projectFile('nope')).toThrow('no open project has id "nope"')
-    expect(() => store.writeProject('nope', store.emptyProject())).toThrow('no open project has id "nope"')
+    expect(() => store.writeProject('nope', emptyProject())).toThrow('no open project has id "nope"')
   })
 })
 
 describe('reopening a tab', () => {
   it('compares its saved content as this version writes it, and names a local file tab after its file', async () => {
-    const { projectFromFile } = await import('./projectStore')
     const handle = { name: 'amp.manhattan.json' }
     // Before locations, a record kept its linked file as `handle`; `example` was written by an older version.
     await seedSession([{ id: 'amp', name: 'Old name' }], { amp: { project: projectFromFile(example), savedContent: example, handle } })

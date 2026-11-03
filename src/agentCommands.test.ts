@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import example from './examples/Astable multivibrator.manhattan.json?raw'
 import { addComponent } from './agentCommands'
 import { buildNetlist } from './definitions'
-import { projectFromFile } from './projectStore'
+import { projectFromFile } from './documents/projectFormat'
 import { completeSchematic, deriveNets, pinsWithOtherNet } from './schematic'
 import type { Project } from './types'
 

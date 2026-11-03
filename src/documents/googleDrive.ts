@@ -1,5 +1,6 @@
-// Google sign-in and Google Drive, over plain fetch. Projects live in folders the user picks in their
-// Drive (googlePicker.ts). The editor only sees what it made itself and what the user picked (scope
+// Google sign-in and Google Drive, over plain fetch. Projects are saved in the editor's own folder in
+// My Drive or one of its subfolders, or in any folder the user picks with Google's picker
+// (googlePicker.ts). The editor only sees what it made itself and what the user picked (scope
 // drive.file), never the rest of the user's Drive. Nothing is loaded from Google until someone
 // chooses Google Drive: the sign-in script is only added then.
 
@@ -57,14 +58,13 @@ function readToken(): StoredToken | null {
 }
 
 /** The access token, or null when signed out, expired, or granted without all the scopes (as by older versions). */
-function accessToken(): string | null {
+export function accessToken(): string | null {
   const token = readToken()
   if (!token || token.expiresAt <= Date.now()) return null
   return SCOPES.every((scope) => token.scope?.includes(scope)) ? token.accessToken : null
 }
 
 export const isSignedIn = () => accessToken() !== null
-export const currentAccessToken = accessToken
 
 const signInListeners = new Set<() => void>()
 const notifySignIn = () => signInListeners.forEach((listener) => listener())
@@ -202,8 +202,8 @@ export const SAVE_FOLDER_NAME = 'Manhattan Layout Editor'
 let saveFolder: { token: string; id: Promise<string> } | null = null
 
 /**
- * The folder in My Drive that new projects are saved in, made on first use. Google's picker cannot
- * save, so there is no choosing; the user moves files elsewhere in Drive itself.
+ * The editor's folder in My Drive, made on first use: where the Open and Save dialogs start in
+ * Google Drive. Another folder is chosen with Google's picker.
  */
 export function projectsFolder(): Promise<string> {
   const token = accessToken()

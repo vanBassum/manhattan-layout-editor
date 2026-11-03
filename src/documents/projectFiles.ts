@@ -1,8 +1,9 @@
 // Project files on this computer through the File System Access API (Chromium browsers). Elsewhere
 // the editor falls back to downloading and uploading.
 
-import { projectFromFile, projectNameOf, projectToFile, type ProjectFile } from './projectStore'
-import type { Project } from './types'
+import type { Project } from '../types'
+import { projectFileName, projectToFile, readSavedProject } from './projectFormat'
+import type { ProjectFile } from './projectStore'
 
 // Not in TypeScript's DOM types yet.
 declare global {
@@ -79,39 +80,27 @@ export async function writeFile(handle: FileSystemFileHandle, text: string) {
 }
 
 /**
- * A saved document's project and its content as the editor would save it, so it compares with what
- * the editor saved even when the document came from an older version; `project` is null when unreadable.
+ * Writes `project` to the file it is saved in. A file that changed on disk since `savedContent` is
+ * only overwritten when `confirmOverwrite` says so. False when nothing was saved.
  */
-export function readSavedProject(text: string): { project: Project | null; content: string } {
-  try {
-    const project = projectFromFile(text)
-    return { project, content: projectToFile(project) }
-  } catch {
-    return { project: null, content: text }
-  }
-}
-
-/**
- * Writes `project` to `handle`, or without one to a file the user picks, offered as `name`. A file
- * that changed on disk since `savedContent` is only overwritten when `confirmOverwrite` says so.
- * Returns the file written, or null when nothing was saved.
- */
-export async function saveLocalFile(
+export async function saveToFile(
   project: Project,
-  name: string,
-  handle: FileSystemFileHandle | undefined,
+  handle: FileSystemFileHandle,
   savedContent: string,
   confirmOverwrite: (name: string) => Promise<boolean>,
-): Promise<FileSystemFileHandle | null> {
-  if (handle) {
-    if (!(await mayUse(handle, true))) return null
-    // A file that cannot be read cannot be compared either: refuse rather than overwrite it unseen.
-    const onDisk = readSavedProject(await readFile(handle))
-    if (onDisk.content !== savedContent && !(await confirmOverwrite(handle.name))) return null
-  } else {
-    handle = (await pickFileToSave(`${name}.manhattan.json`)) ?? undefined
-    if (!handle) return null
-  }
+): Promise<boolean> {
+  if (!(await mayUse(handle, true))) return false
+  // A file that cannot be read cannot be compared either: refuse rather than overwrite it unseen.
+  const onDisk = readSavedProject(await readFile(handle))
+  if (onDisk.content !== savedContent && !(await confirmOverwrite(handle.name))) return false
+  await writeFile(handle, projectToFile(project))
+  return true
+}
+
+/** Writes `project` to a file the user picks, offered as `name`. Returns the file, or null when cancelled. */
+export async function saveToNewFile(project: Project, name: string): Promise<FileSystemFileHandle | null> {
+  const handle = await pickFileToSave(projectFileName(name))
+  if (!handle) return null
   await writeFile(handle, projectToFile(project))
   return handle
 }
@@ -136,6 +125,3 @@ export function compareSaved(text: string, file: ProjectFile): FileComparison {
 export async function compareWithFile(handle: FileSystemFileHandle, file: ProjectFile): Promise<FileComparison> {
   return compareSaved(await readFile(handle), file)
 }
-
-/** "amp.manhattan.json" → "amp". */
-export const fileLabel = (handle: FileSystemFileHandle) => projectNameOf(handle.name)
