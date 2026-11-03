@@ -6,7 +6,7 @@ import { alignedTarget, moveBoundary, type Axis, type Side } from '../../model/b
 import { islandEdges, type IslandEdge } from '../../model/islandEdges'
 import { draggedLayout, type LayoutDrag } from '../../model/layoutDrag'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from '../../model/selection'
-import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, Placement, Point, Rect, Selection } from '../../model/types'
+import type { BuiltComponent, BuiltNetlist, FootprintDefinition, Island, Layout, Placement, Point, Rect, Selection } from '../../model/types'
 import { layerClasses, layerOpacities, type Layers } from '../layers'
 import {
   CLICK_TOLERANCE_PX,
@@ -119,7 +119,7 @@ function islandStyle(plane: boolean, selected: boolean, violating: boolean): { f
 interface DrawnPart {
   component: BuiltComponent
   placement: Placement
-  geometry: Geometry
+  geometry: FootprintDefinition
   leads: LeadInfo[]
 }
 

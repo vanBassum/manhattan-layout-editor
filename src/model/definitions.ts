@@ -1,8 +1,8 @@
 import { errorText } from '../errorText'
-import { generatedGeometry } from './footprintTemplates'
+import { generatedFootprint } from './footprintTemplates'
 import { isJsonObject } from './netlist'
 import { symbolTemplate } from './schematicSymbols'
-import type { BuiltNetlist, Geometry, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Project, SymbolDefinition } from './types'
+import type { BuiltNetlist, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, PinDefinition, Project, SymbolDefinition } from './types'
 
 // A part's symbol and footprints come from the project's own definitions. Parts without one get a
 // built-in template, which is copied into the project when it is loaded or saved; until then the
@@ -10,38 +10,16 @@ import type { BuiltNetlist, Geometry, BuiltProject, ComponentDefinition, Footpri
 
 type Definitions = Record<string, ComponentDefinition>
 
-function footprintFromGeometry(geometry: Geometry, component: NetComponent): FootprintDefinition {
-  return {
-    shape: geometry.shape,
-    body: geometry.body,
-    pins: component.pins.map((pin, k) => ({
-      number: pin.number,
-      ...geometry.anchors[k],
-      dx: geometry.directions[k].x,
-      dy: geometry.directions[k].y,
-    })),
-    leadLength: geometry.leadLength,
-    maxLeadLength: geometry.maxLeadLength,
-    ...(geometry.led ? { led: true } : {}),
-    ...(geometry.band ? { band: true } : {}),
-  }
-}
-
-/** The footprint as runtime geometry, in the part's pin order; undefined when it lacks one of the part's pins. */
-function geometryFromFootprint(footprint: FootprintDefinition, component: NetComponent): Geometry | undefined {
+/** The footprint with just the part's pins, in the part's pin order; undefined when it lacks one of them. */
+function footprintForPins(footprint: FootprintDefinition, component: NetComponent): FootprintDefinition | undefined {
   const byNumber = new Map(footprint.pins.map((p) => [p.number, p]))
-  const pins = component.pins.map((p) => byNumber.get(p.number))
-  if (pins.some((p) => p === undefined)) return undefined
-  return {
-    shape: footprint.shape,
-    body: footprint.body,
-    anchors: pins.map((p) => ({ x: p!.x, y: p!.y })),
-    directions: pins.map((p) => ({ x: p!.dx, y: p!.dy })),
-    leadLength: footprint.leadLength,
-    maxLeadLength: footprint.maxLeadLength,
-    led: footprint.led ?? false,
-    band: footprint.band ?? false,
+  const pins: PinDefinition[] = []
+  for (const { number } of component.pins) {
+    const pin = byNumber.get(number)
+    if (!pin) return undefined
+    pins.push(pin)
   }
+  return { ...footprint, pins }
 }
 
 const hasPins = (symbol: SymbolDefinition, component: NetComponent) => {
@@ -112,7 +90,7 @@ export function buildNetlist(netlist: Netlist, definitions: Definitions | undefi
       const { id, definition } = resolvedDefinition(component, definitions)
       // Every footprint has all the symbol's pins (checkedDefinition, footprintOf) and the part only
       // uses a definition whose symbol has its pins, so this only fails for an unchecked definition.
-      const geometry = geometryFromFootprint(footprintOf(definition, component.footprint, component), component)
+      const geometry = footprintForPins(footprintOf(definition, component.footprint, component), component)
       if (!geometry) throw new Error(`${component.ref}: footprint "${component.footprint}" of definition "${id}" lacks some of its pins`)
       return { ...component, geometry, symbol: definition.symbol }
     }),
@@ -128,7 +106,7 @@ function footprintOf(definition: ComponentDefinition, name: string, component: N
   const stored = definition.footprints[name]
   if (stored) return stored
   const withSymbolPins = { ...component, footprint: name, pins: definition.symbol.pins.map((p) => ({ number: p.number, net: '' })) }
-  return footprintFromGeometry(generatedGeometry(withSymbolPins), withSymbolPins)
+  return generatedFootprint(withSymbolPins)
 }
 
 /** The project's own netlist, built; for the schematic's nets, build those with buildNetlist. */

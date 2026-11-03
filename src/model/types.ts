@@ -2,25 +2,6 @@
 
 export type Shape = 'axial' | 'radial' | 'smd' | 'to92' | 'to126' | 'trimmer' | 'dip' | 'row'
 
-/**
- * Simple symbolic geometry in local coordinates (component center at 0,0, before rotation).
- * Not a footprint: each lead leaves the body at a fixed anchor and runs to its copper island.
- */
-export interface Geometry {
-  shape: Shape
-  body: Rect
-  anchors: Point[]
-  /** Unit vectors pointing away from the body; used for leads that have no island to go to. */
-  directions: Point[]
-  /** How far the unbent leads stick out beyond the anchors. */
-  leadLength: number
-  maxLeadLength: number
-  /** Drawn in its own color: an LED has the same round body as a capacitor can. */
-  led: boolean
-  /** Drawn with a band at pin 1: a diode's cathode. */
-  band: boolean
-}
-
 export interface Pin {
   number: string
   net: string
@@ -45,7 +26,8 @@ export interface NetComponent {
  * definition applied.
  */
 export interface BuiltComponent extends Omit<NetComponent, 'chosenFootprint'> {
-  geometry: Geometry
+  /** The footprint it is built with, holding just the part's pins, in the order of `pins`. */
+  geometry: FootprintDefinition
   symbol: SymbolDefinition
 }
 
@@ -84,19 +66,22 @@ export interface SymbolDefinition {
   label: Point
 }
 
-/** Footprint in mm around its center, before rotation. `shape` picks how the body is drawn on the PCB. */
+/**
+ * Footprint in mm around its center, before rotation. `shape` picks how the body is drawn on the PCB.
+ * Not a pad layout: each lead leaves the body at a fixed point and runs to its copper island.
+ */
 export interface FootprintDefinition {
-  shape: 'axial' | 'radial' | 'smd' | 'to92' | 'to126' | 'trimmer' | 'dip' | 'row'
+  shape: Shape
   body: Rect
-  /** Where each lead leaves the body, and the direction it points. */
+  /** Where each lead leaves the body, and the unit direction it points away from it. */
   pins: PinDefinition[]
   /** How far unbent leads stick out beyond the body. */
   leadLength: number
   /** Leads longer than this are flagged. */
   maxLeadLength: number
-  /** Drawn in LED colour. */
+  /** Drawn in LED colour: an LED has the same round body as a capacitor can. */
   led?: boolean
-  /** A band on the body at pin 1, the way a diode marks its cathode. */
+  /** A band on the body at the part's first pin, the way a diode marks its cathode (pin 1). */
   band?: boolean
 }
 

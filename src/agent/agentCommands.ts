@@ -49,7 +49,7 @@ function placedComponents(project: BuiltProject) {
 export function layoutBounds(project: BuiltProject): Rect | null {
   const parts = placedComponents(project).map(({ component, placement }) => {
     const { geometry } = component
-    return bodyBounds(geometry, placement, geometry.anchors)
+    return bodyBounds(geometry, placement, geometry.pins)
   })
   const lead = placedComponents(project).flatMap(({ component, placement }) =>
     analyzeLeads(component, placement, project.layout.islands, project.settings.isolation).map((l) => ({ ...l.end, w: 0, h: 0 })),

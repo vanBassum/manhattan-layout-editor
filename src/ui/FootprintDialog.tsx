@@ -98,7 +98,7 @@ function FootprintDrawing({ component, isolation, frame, className }: FootprintD
       {pads.map((r, k) => (
         <rect key={k} x={r.x} y={r.y} width={r.w} height={r.h} fill={COPPER_COLOR} />
       ))}
-      {geometry.anchors.map((a, k) => (
+      {geometry.pins.map((a, k) => (
         <line key={k} x1={a.x} y1={a.y} x2={ends[k].x} y2={ends[k].y} stroke={LEAD_COLOR} strokeWidth={0.35} strokeLinecap="round" />
       ))}
       <BodyShape geometry={geometry} stroke="#111" strokeWidth={0.12} />

@@ -1,16 +1,17 @@
 import { boundsOf, coversSquare, rectsOverlap, rotatePoint, snapToGrid, withoutFloatNoise } from './geometry'
 import { isRealNet, pinsByNet } from './netlist'
-import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, NetComponent, Netlist, Placement, Point, Project, Rect } from './types'
+import type { BuiltComponent, BuiltNetlist, FootprintDefinition, Island, Layout, NetComponent, Netlist, Placement, Point, Project, Rect } from './types'
 
 const ISLAND_WIDTH = 12
 const ISLAND_HEIGHT = 8
 const ISLAND_SPACING = 4
 const PART_SPACING = 6
 
-export function defaultLeadEnds(geometry: Geometry): Point[] {
-  return geometry.anchors.map((a, k) => ({
-    x: a.x + geometry.directions[k].x * geometry.leadLength,
-    y: a.y + geometry.directions[k].y * geometry.leadLength,
+/** Where each unbent lead ends, in the footprint's pin order. */
+export function defaultLeadEnds(footprint: FootprintDefinition): Point[] {
+  return footprint.pins.map((pin) => ({
+    x: pin.x + pin.dx * footprint.leadLength,
+    y: pin.y + pin.dy * footprint.leadLength,
   }))
 }
 
@@ -33,8 +34,8 @@ function onCopper(island: Island, p: Point, isolation: number): boolean {
 }
 
 /** World-space bounding box of the body, and optionally extra local points such as lead ends. */
-export function bodyBounds(geometry: Geometry, placement: Placement, extraLocalPoints: Point[] = []): Rect {
-  const { x, y, w, h } = geometry.body
+export function bodyBounds(footprint: FootprintDefinition, placement: Placement, extraLocalPoints: Point[] = []): Rect {
+  const { x, y, w, h } = footprint.body
   const corners = [{ x, y }, { x: x + w, y }, { x, y: y + h }, { x: x + w, y: y + h }, ...extraLocalPoints]
   return boundsOf(corners.map((p) => ({ ...toWorld(p, placement), w: 0, h: 0 })))!
 }
@@ -122,7 +123,7 @@ export function analyzeLeads(
   const { geometry } = component
   const defaults = defaultLeadEnds(geometry)
   return component.pins.map((pin, k) => {
-    const anchor = toWorld(geometry.anchors[k], placement)
+    const anchor = toWorld(geometry.pins[k], placement)
     const end = toWorld(placement.leads?.[pin.number] ?? defaults[k], placement)
     const touched = contactIslands(islands, end, isolation)
     let status: PinStatus

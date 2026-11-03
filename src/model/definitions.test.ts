@@ -142,7 +142,7 @@ describe('diode footprints', () => {
     const project = projectWith([diode])
     expect(build(project).components[0].geometry.band).toBe(true)
     expect(build(withDefinitions(project)).components[0].geometry.band).toBe(true)
-    expect(build(projectWith([resistor()])).components[0].geometry.band).toBe(false)
+    expect(build(projectWith([resistor()])).components[0].geometry.band).toBeUndefined()
   })
 })
 

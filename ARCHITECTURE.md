@@ -20,7 +20,7 @@ Rules that follow from the table:
 - Dependencies point down the table and never back: nothing outside `ui` imports from `ui`, and
   `model` imports nothing outside `model`.
 - A shared type lives with the concept it belongs to, not in the component that happened to use it
-  first: `Geometry` in `model/types.ts`, layer settings in `ui/layers.ts` rather than in `Canvas`.
+  first: `FootprintDefinition` in `model/types.ts`, layer settings in `ui/layers.ts` rather than in `Canvas`.
 - No import cycles: `npx madge --circular --extensions ts,tsx src` stays empty.
 - `src/` itself keeps only `main.tsx`, `index.css` and `errorText.ts`, which every domain may use.
 - Tests sit next to the module they test.

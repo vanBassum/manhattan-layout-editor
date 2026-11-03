@@ -17,13 +17,13 @@ const drawn = (component: BuiltComponent) => {
     body: geometry.body,
     pins: component.pins.map((pin, k) => ({
       number: pin.number,
-      anchor: geometry.anchors[k],
-      direction: geometry.directions[k],
+      anchor: { x: geometry.pins[k].x, y: geometry.pins[k].y },
+      direction: { x: geometry.pins[k].dx, y: geometry.pins[k].dy },
     })),
     leadLength: geometry.leadLength,
     maxLeadLength: geometry.maxLeadLength,
-    led: geometry.led,
-    band: geometry.band,
+    led: geometry.led === true,
+    band: geometry.band === true,
   }
 }
 

@@ -1,9 +1,9 @@
-import type { Geometry } from '../../model/types'
+import type { FootprintDefinition, Shape } from '../../model/types'
 
 export const COPPER_COLOR = '#d9945a'
 export const LEAD_COLOR = '#777777'
 
-const BODY_FILLS: Record<Geometry['shape'], string> = {
+const BODY_FILLS: Record<Shape, string> = {
   axial: '#9a7444',
   radial: '#3c6ea8',
   smd: '#6b5a3a',
@@ -15,7 +15,7 @@ const BODY_FILLS: Record<Geometry['shape'], string> = {
 }
 const LED_FILL = '#e03131'
 
-export function BodyShape({ geometry, stroke, strokeWidth }: { geometry: Geometry; stroke: string; strokeWidth: number }) {
+export function BodyShape({ geometry, stroke, strokeWidth }: { geometry: FootprintDefinition; stroke: string; strokeWidth: number }) {
   const { x, y, w, h } = geometry.body
   const fill = geometry.led ? LED_FILL : BODY_FILLS[geometry.shape]
   const style = { fill, fillOpacity: 0.85, stroke, strokeWidth }
@@ -76,9 +76,9 @@ export function BodyShape({ geometry, stroke, strokeWidth }: { geometry: Geometr
 }
 
 /** A light band across the body at the end where pin 1 (the cathode) leaves it. */
-function CathodeBand({ geometry }: { geometry: Geometry }) {
+function CathodeBand({ geometry }: { geometry: FootprintDefinition }) {
   const { x, y, w, h } = geometry.body
-  const pin1 = geometry.anchors[0]
+  const pin1 = geometry.pins[0]
   const alongX = w >= h
   const thickness = Math.max(alongX ? w : h, 1) * 0.16
   // Inset from the end so the band sits on the body, not on its rounded corner.

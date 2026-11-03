@@ -1,9 +1,9 @@
-// Built-in footprint templates: a part's geometry read from its footprint name, and from its
+// Built-in footprint templates: a part's footprint read from its footprint name, and from its
 // reference and pin count when the name says too little. What else a footprint name or reference
 // says about a part (LED, electrolytic, its kind of package) is read here too, so the PCB and the
 // schematic symbols agree.
 
-import type { Geometry, NetComponent, Rect, Shape } from './types'
+import type { FootprintDefinition, NetComponent, PinEnd, Rect, Shape } from './types'
 
 const PITCH = 2.54
 /** Spacing of TO-92 legs where they leave the package (datasheet dimension G). */
@@ -76,26 +76,33 @@ function chipSize(footprint: string): [number, number] | undefined {
   return code ? CHIP_SIZES[code] : undefined
 }
 
+/** The body, and where each lead leaves it with the direction it points, in pin order. */
+interface Leads {
+  body: Rect
+  ends: PinEnd[]
+}
+
 /** Leads in a row along the bottom edge of the body, pointing down. */
-function rowLeads(pinCount: number, pitch: number, width: number, height: number) {
+function rowLeads(pinCount: number, pitch: number, width: number, height: number): Leads {
   const span = (pinCount - 1) * pitch
   return {
     body: { x: -width / 2, y: -height, w: width, h: height },
-    anchors: Array.from({ length: pinCount }, (_, k) => ({ x: -span / 2 + k * pitch, y: 0 })),
-    directions: Array.from({ length: pinCount }, () => ({ x: 0, y: 1 })),
+    ends: Array.from({ length: pinCount }, (_, k) => ({ x: -span / 2 + k * pitch, y: 0, dx: 0, dy: 1 })),
   }
 }
 
 /** Two leads leaving the left and right ends of the body. */
-function endLeads(length: number, width: number) {
+function endLeads(length: number, width: number): Leads {
   return {
     body: { x: -length / 2, y: -width / 2, w: length, h: width },
-    anchors: [{ x: -length / 2, y: 0 }, { x: length / 2, y: 0 }],
-    directions: [{ x: -1, y: 0 }, { x: 1, y: 0 }],
+    ends: [
+      { x: -length / 2, y: 0, dx: -1, dy: 0 },
+      { x: length / 2, y: 0, dx: 1, dy: 0 },
+    ],
   }
 }
 
-function leadsFor(shape: Shape, component: NetComponent) {
+function leadsFor(shape: Shape, component: NetComponent): Leads {
   const footprint = component.footprint
   const pinCount = component.pins.length
   const length = footprintDimension(footprint, 'L')
@@ -117,8 +124,10 @@ function leadsFor(shape: Shape, component: NetComponent) {
       const leadSpacing = footprintDimension(footprint, 'P') ?? bodyLength / 2
       return {
         body: { x: -bodyLength / 2, y: -bodyWidth / 2, w: bodyLength, h: bodyWidth },
-        anchors: [{ x: -leadSpacing / 2, y: 0 }, { x: leadSpacing / 2, y: 0 }],
-        directions: [{ x: -1, y: 0 }, { x: 1, y: 0 }],
+        ends: [
+          { x: -leadSpacing / 2, y: 0, dx: -1, dy: 0 },
+          { x: leadSpacing / 2, y: 0, dx: 1, dy: 0 },
+        ],
       }
     }
     case 'smd': {
@@ -146,12 +155,11 @@ function leadsFor(shape: Shape, component: NetComponent) {
       // Numbered counter-clockwise from top left, like a DIP seen from above.
       const perSide = pinCount / 2
       const top = (-(perSide - 1) * PITCH) / 2
-      const left = Array.from({ length: perSide }, (_, k) => ({ x: -2.8, y: top + k * PITCH }))
-      const right = Array.from({ length: perSide }, (_, k) => ({ x: 2.8, y: top + (perSide - 1 - k) * PITCH }))
+      const left = Array.from({ length: perSide }, (_, k) => ({ x: -2.8, y: top + k * PITCH, dx: -1, dy: 0 }))
+      const right = Array.from({ length: perSide }, (_, k) => ({ x: 2.8, y: top + (perSide - 1 - k) * PITCH, dx: 1, dy: 0 }))
       return {
         body: { x: -2.8, y: top - 1.2, w: 5.6, h: (perSide - 1) * PITCH + 2.4 },
-        anchors: [...left, ...right],
-        directions: [...left.map(() => ({ x: -1, y: 0 })), ...right.map(() => ({ x: 1, y: 0 }))],
+        ends: [...left, ...right],
       }
     }
   }
@@ -173,17 +181,22 @@ function defaultLeadLength(shape: Shape, footprint: string, body: Rect): number 
   return PITCH
 }
 
-/** The built-in footprint template, read from the footprint name (and reference and pin count when it says too little). */
-export function generatedGeometry(component: NetComponent): Geometry {
+/**
+ * The built-in footprint template for the part's pins, read from the footprint name (and reference
+ * and pin count when it says too little).
+ */
+export function generatedFootprint(component: NetComponent): FootprintDefinition {
   const shape = shapeOf(component)
-  const leads = leadsFor(shape, component)
+  const { body, ends } = leadsFor(shape, component)
+  // Diode templates number the cathode 1 (see schematicSymbols.ts); an LED shows it by its colour.
+  const band = /^D\d/i.test(component.ref) && !isLed(component)
   return {
     shape,
-    ...leads,
-    leadLength: defaultLeadLength(shape, component.footprint, leads.body),
+    body,
+    pins: component.pins.map((pin, k) => ({ number: pin.number, ...ends[k] })),
+    leadLength: defaultLeadLength(shape, component.footprint, body),
     maxLeadLength: MAX_LEAD_LENGTH[shape],
-    led: isLed(component),
-    // Diode templates number the cathode 1 (see schematicSymbols.ts); an LED shows it by its colour.
-    band: /^D\d/i.test(component.ref) && !isLed(component),
+    ...(isLed(component) ? { led: true } : {}),
+    ...(band ? { band: true } : {}),
   }
 }
