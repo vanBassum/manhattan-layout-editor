@@ -1,7 +1,7 @@
 import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid, withoutFloatNoise } from '../model/geometry'
 import { onCopper, solderPoint, toLocal, toWorld } from '../model/layout'
 import { isGroundNet, isRealNet, naturalCompare, pinsByNet } from '../model/netlist'
-import type { BuiltNetlist, Island, Point, Rect, Settings } from '../model/types'
+import type { BuiltNetlist, Island, Layout, Point, Rect, Settings } from '../model/types'
 import type { Strategy } from './strategy'
 import { leadCost, leadLimit, placeComponents, spiralOffsets, type PlacedPart } from './common'
 
@@ -53,17 +53,24 @@ const median = (values: number[]) => {
 
 /**
  * Glued-pad Manhattan: the copper-clad board is the ground net, every other net gets exactly one
- * standard pad glued on top, shared by all its leads. Components are placed first; each pad then
- * goes where its leads reach it most easily without touching other leads or pads, and leads are
- * bent onto their pad. Ground leads solder straight to the board.
+ * standard pad glued on top, shared by all its leads. Components are placed first; the copper
+ * follows them.
  */
-function manhattanLayout(netlist: BuiltNetlist, settings: Settings) {
+function manhattanLayout(netlist: BuiltNetlist, settings: Settings): Layout {
+  return manhattanCopper(netlist, placeComponents(netlist, settings), settings)
+}
+
+/**
+ * The copper for parts that are already placed: each pad goes where its leads reach it most easily
+ * without touching other leads or pads, and leads are bent onto their pad. Ground leads solder
+ * straight to the board, which reaches a margin beyond every part and pad.
+ */
+function manhattanCopper(netlist: BuiltNetlist, parts: PlacedPart[], settings: Settings): Layout {
   const pinsOnNet = pinsByNet(netlist)
   const pinCount = (net: string) => pinsOnNet.get(net)?.length ?? 0
   const busiest = [...netlist.nets].sort((a, b) => pinCount(b) - pinCount(a))[0]
   const ground = netlist.nets.find(isGroundNet) ?? busiest
 
-  const parts = placeComponents(netlist, settings)
   const leads: Lead[] = parts.flatMap((part) => {
     const { geometry } = part.component
     return part.component.pins.flatMap((pin, index) =>
