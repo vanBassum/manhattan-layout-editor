@@ -105,9 +105,9 @@ export async function saveLocalFile(
 ): Promise<FileSystemFileHandle | null> {
   if (handle) {
     if (!(await mayUse(handle, true))) return null
-    const onDisk = await readFile(handle).then(readSavedProject, () => null)
-    const changedOnDisk = onDisk !== null && onDisk.content !== savedContent
-    if (changedOnDisk && !(await confirmOverwrite(handle.name))) return null
+    // A file that cannot be read cannot be compared either: refuse rather than overwrite it unseen.
+    const onDisk = readSavedProject(await readFile(handle))
+    if (onDisk.content !== savedContent && !(await confirmOverwrite(handle.name))) return null
   } else {
     handle = (await pickFileToSave(`${name}.manhattan.json`)) ?? undefined
     if (!handle) return null

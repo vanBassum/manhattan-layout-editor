@@ -47,6 +47,15 @@ describe('saveLocalFile', () => {
     expect(handle).toBeNull()
     expect(file.written).toEqual([])
   })
+
+  it('refuses to overwrite a file it cannot read, without asking', async () => {
+    const file = { ...fakeFile(saved), getFile: async () => Promise.reject(new Error('the file is locked')) }
+    const save = saveLocalFile(project, 'amp', asHandle(file), saved, async () => {
+      throw new Error('should not ask')
+    })
+    await expect(save).rejects.toThrow('the file is locked')
+    expect(file.written).toEqual([])
+  })
 })
 
 describe('compareWithFile', () => {

@@ -98,12 +98,12 @@ export const newTabId = () => Math.random().toString(36).slice(2, 10)
 /**
  * A project read from storage or a file; projects from before guids get one here, parts without a
  * component definition get one from the built-in templates, and a cut-line layout becomes islands.
- * The name older versions stored is dropped. Null without a netlist or layout; an invalid component
- * definition throws, naming it.
+ * The name older versions stored is dropped. Throws without a netlist or layout, and for an invalid
+ * component definition, naming it.
  */
-function checkedProject(data: unknown): Project | null {
+function checkedProject(data: unknown): Project {
   const project = { ...(data as Partial<Project> & { name?: unknown }) }
-  if (!project?.netlist?.components || !project.layout?.islands) return null
+  if (!project?.netlist?.components || !project.layout?.islands) throw new Error('the project is damaged: netlist or layout is missing')
   delete project.name
   return withoutCutLines(
     withDefinitions({
@@ -145,9 +145,7 @@ export function projectFromFile(text: string): Project {
   const data = JSON.parse(text) as { format?: unknown; version?: unknown; project?: unknown }
   if (data?.format !== FILE_FORMAT || typeof data.version !== 'number') throw new Error('Not a Manhattan project file.')
   if (data.version > FILE_VERSION) throw new Error('This project was saved by a newer version of the editor.')
-  const project = checkedProject(data.project)
-  if (!project) throw new Error('The project file is damaged: netlist or layout is missing.')
-  return project
+  return checkedProject(data.project)
 }
 
 // --- IndexedDB -----------------------------------------------------------------------------------
@@ -227,6 +225,14 @@ function readLegacyJson(key: string): unknown {
   }
 }
 
+/** Tab `id`'s project as stored before IndexedDB, in the v5 or else the v3 layout; null when neither is stored. */
+function readLegacyProject(id: string): Project | null {
+  const v5 = readLegacyJson(`${LEGACY_PROJECT_PREFIX}/${id}`)
+  if (v5 !== null) return checkedProject(v5)
+  const v3 = readLegacyJson(`${V3_PROJECT_PREFIX}/${id}`)
+  return v3 === null ? null : migrateGappedIslands(checkedProject(v3))
+}
+
 /**
  * The tabs and projects from before IndexedDB, or from before tabs (a single v3 project under the
  * bare prefix). localStorage is left as it is, as a way back.
@@ -236,17 +242,24 @@ function readLegacyTabs(): { tabs: ProjectTab[]; projects: Map<string, Project> 
   const tabs = Array.isArray(listed) ? (listed as ProjectTab[]).filter((t) => typeof t?.id === 'string') : []
   const projects = new Map<string, Project>()
   for (const tab of tabs) {
-    const current = checkedProject(readLegacyJson(`${LEGACY_PROJECT_PREFIX}/${tab.id}`))
-    const v3 = current ? null : checkedProject(readLegacyJson(`${V3_PROJECT_PREFIX}/${tab.id}`))
-    const project = current ?? (v3 ? migrateGappedIslands(v3) : null)
-    if (project) projects.set(tab.id, project)
+    try {
+      const project = readLegacyProject(tab.id)
+      if (project) projects.set(tab.id, project)
+      else restoreErrors.push(`Could not open "${tab.name}" again: its project is missing.`)
+    } catch (e) {
+      restoreErrors.push(`Could not open "${tab.name}" again: ${errorText(e)}.`)
+    }
   }
   if (tabs.length === 0) {
-    const single = checkedProject(readLegacyJson(V3_PROJECT_PREFIX))
-    if (single) {
-      const id = newTabId()
-      tabs.push({ id, name: UNTITLED })
-      projects.set(id, migrateGappedIslands(single))
+    const single = readLegacyJson(V3_PROJECT_PREFIX)
+    if (single !== null) {
+      try {
+        const id = newTabId()
+        projects.set(id, migrateGappedIslands(checkedProject(single)))
+        tabs.push({ id, name: UNTITLED })
+      } catch (e) {
+        restoreErrors.push(`Could not open the project from an older version again: ${errorText(e)}.`)
+      }
     }
   }
   return { tabs: tabs.filter((t) => projects.has(t.id)), projects }
@@ -254,32 +267,42 @@ function readLegacyTabs(): { tabs: ProjectTab[]; projects: Map<string, Project> 
 
 // --- Public API ----------------------------------------------------------------------------------
 
+/** Opens tab `tab` from its IndexedDB record again. */
+function restoreTab(tab: ProjectTab, stored: StoredProject | undefined) {
+  if (!stored) throw new Error('its recovery copy is missing')
+  const project = checkedProject(stored.project)
+  const location: ProjectLocation | undefined = stored.location ?? (stored.handle && { kind: 'local', handle: stored.handle })
+  remember(tab.id, { project, savedContent: asCurrentFormat(stored.savedContent), location }, false)
+  // Tabs from when projects held a name of their own may still show it instead of their file's.
+  openTabs.push(location?.kind === 'local' ? { ...tab, name: projectNameOf(location.handle.name) } : tab)
+}
+
+async function restoreSession(db: IDBDatabase) {
+  const tabs = (await request(db.transaction(META_STORE).objectStore(META_STORE).get(TABS_RECORD))) as ProjectTab[] | undefined
+  for (const tab of tabs ?? []) {
+    try {
+      restoreTab(tab, (await request(db.transaction(PROJECTS_STORE).objectStore(PROJECTS_STORE).get(tab.id))) as StoredProject | undefined)
+    } catch (e) {
+      // A record that is there stays in IndexedDB as it is, but is not opened: the editor cannot draw it.
+      restoreErrors.push(`Could not open "${tab.name}" again: ${errorText(e)}.`)
+    }
+  }
+  recent = ((await request(db.transaction(META_STORE).objectStore(META_STORE).get(RECENT_RECORD))) as RecentDocument[] | undefined) ?? []
+}
+
 /** Loads the open projects into memory. Call once, before the editor starts. */
 export async function openProjectStore() {
   try {
     db = await openDatabase()
-    const transaction = db.transaction([PROJECTS_STORE, META_STORE])
-    const tabs = (await request(transaction.objectStore(META_STORE).get(TABS_RECORD))) as ProjectTab[] | undefined
-    for (const tab of tabs ?? []) {
-      const stored = (await request(db.transaction(PROJECTS_STORE).objectStore(PROJECTS_STORE).get(tab.id))) as StoredProject | undefined
-      if (!stored) continue
-      let project: Project | null
-      try {
-        project = checkedProject(stored.project)
-      } catch (e) {
-        // Left in IndexedDB as it is, but not opened: the editor cannot draw it.
-        restoreErrors.push(`Could not open "${tab.name}" again: ${errorText(e)}.`)
-        continue
-      }
-      if (!project) continue
-      const location: ProjectLocation | undefined = stored.location ?? (stored.handle && { kind: 'local', handle: stored.handle })
-      remember(tab.id, { project, savedContent: asCurrentFormat(stored.savedContent), location }, false)
-      // Tabs from when projects held a name of their own may still show it instead of their file's.
-      openTabs.push(location?.kind === 'local' ? { ...tab, name: projectNameOf(location.handle.name) } : tab)
-    }
-    recent = ((await request(db.transaction(META_STORE).objectStore(META_STORE).get(RECENT_RECORD))) as RecentDocument[] | undefined) ?? []
   } catch {
     // No IndexedDB (private window, disabled): work from memory for this session.
+  }
+  if (db) {
+    try {
+      await restoreSession(db)
+    } catch (e) {
+      restoreErrors.push(`Could not reopen the tabs of the last session: ${errorText(e)}.`)
+    }
   }
   if (openTabs.length === 0) {
     const legacy = readLegacyTabs()
@@ -343,13 +366,15 @@ export function loadTabs(): { tabs: ProjectTab[]; activeId: string } {
   return { tabs: openTabs, activeId }
 }
 
-export function readProject(id: string): Project {
-  return openProjects.get(id)?.project ?? emptyProject()
+function openProject(id: string): OpenProject {
+  const open = openProjects.get(id)
+  if (!open) throw new Error(`no open project has id "${id}"`)
+  return open
 }
 
-export function projectFile(id: string): ProjectFile {
-  return openProjects.get(id) ?? { savedContent: '', dirty: false, checked: true }
-}
+export const readProject = (id: string): Project => openProject(id).project
+
+export const projectFile = (id: string): ProjectFile => openProject(id)
 
 /** A project that just opened in a tab, from `location` or new; it starts without unsaved changes. */
 export function addProject(id: string, project: Project, location?: ProjectLocation) {
@@ -361,9 +386,8 @@ export function addProject(id: string, project: Project, location?: ProjectLocat
 
 /** The recovery copy of a tab's project. */
 export function writeProject(id: string, project: Project) {
-  const open = openProjects.get(id)
+  const open = openProject(id)
   const content = projectToFile(project)
-  if (!open) return addProject(id, project)
   if (content === open.content) return
   const wasDirty = open.dirty
   Object.assign(open, { project, content, dirty: content !== open.savedContent })
