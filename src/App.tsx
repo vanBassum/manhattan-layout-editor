@@ -2,38 +2,29 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
 import { buildNetlist, buildProjectNetlist, importedProject, reimportedProject } from './definitions'
 import { runAgentCommand, type AgentTab } from './agentDispatch'
-import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
+import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type MoveMode, type Tool } from './Canvas'
 import { exportDxf } from './exportDxf'
-import { driveConfigured, signOut } from './documents/googleDrive'
 import { FileDialog } from './FileDialogs'
 import { errorText } from './errorText'
 import { downloadText, exportSvg } from './exportSvg'
 import { FootprintDialog } from './FootprintDialog'
 import { boundsOf } from './geometry'
-import { changeFootprints, createLayout, findPinIssues, findProblemNets, findSpacingViolations, findSplitNets, keepFootprintChoices } from './layout'
+import { changeFootprints, createLayout, findPinIssues, findSpacingViolations, findSplitNets, keepFootprintChoices } from './layout'
 import { withValues } from './netlist'
-import { findStrategy, STRATEGIES } from './optimize'
+import { findStrategy } from './optimize'
 import {
   AiHelpDialog,
   ComponentList,
-  GRID_LINES_PER_MAJOR_OPTIONS,
-  GridSettings,
   HelpDialog,
   Icon,
-  LayerToggles,
-  MenuGroup,
   PartProperties,
   QuestionDialog,
-  PCB_LAYERS,
   SchematicCheck,
-  SCHEMATIC_LAYERS,
   Section,
   SelectionDetails,
-  RailMenu,
   Validation,
   type Question,
 } from './panels'
-import { EXAMPLES } from './documents/examples'
 import { DEFAULT_SETTINGS } from './documents/projectFormat'
 import { projectFile, recentDocuments, restoreErrors } from './documents/projectStore'
 import { canvasToPng } from './screenshot'
@@ -51,121 +42,39 @@ import {
   withSchematicNets,
   type FullSchematic,
 } from './schematic'
-import { SchematicView, type SchematicLayers, type SchematicTool } from './SchematicView'
+import { SchematicView, type SchematicTool } from './SchematicView'
 import type { Layout, NetLabel, Placement, Project, Selection, Settings } from './types'
-import type { IconName } from './panels'
 import { ProjectTabs } from './ProjectTabs'
+import { AppMenu } from './ui/AppMenu'
+import { CanvasBanners } from './ui/CanvasBanners'
+import { PcbSettings } from './ui/PcbSettings'
+import { PcbToolRail } from './ui/PcbToolRail'
+import {
+  ALL_LAYERS,
+  DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR,
+  DEFAULT_SCHEMATIC_LAYERS,
+  LAYERS_KEY,
+  parseGridLinesPerMajor,
+  parseLayerViews,
+  parseTheme,
+  parseView,
+  PCB_GRID_KEY,
+  SCHEMATIC_GRID_KEY,
+  SCHEMATIC_LAYERS_KEY,
+  THEME_KEY,
+  usePreference,
+  VIEW_KEY,
+  type ViewMode,
+} from './ui/preferences'
+import { SchematicToolRail } from './ui/SchematicToolRail'
+import { useShortcuts } from './ui/shortcuts'
 import { useDocuments } from './ui/useDocuments'
 import { useTabs, type UndoDirection } from './ui/useTabs'
 
-/** Which views are shown: one of them, or both side by side. */
-type ViewMode = 'schematic' | 'split' | 'layout'
 type Pane = 'schematic' | 'layout'
 
-const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title: string }[] = [
-  {
-    id: 'select',
-    icon: 'select',
-    label: 'Select',
-    title:
-      'Select (V): click parts, wires, labels and wire corners; Shift+click adds. Drag empty space to the right to ' +
-      'select what lies inside, to the left for what it touches. Dragging the selection keeps its connections; ' +
-      'Shift+drag moves it alone. Drag from a pin end to draw a wire (Shift: from a wire end). Del removes wires and labels',
-  },
-  {
-    id: 'wire',
-    icon: 'wire',
-    label: 'Wire',
-    title:
-      'Wire (W): drag for one wire, or click corner by corner and double-click or Esc to stop. Space flips the bend. ' +
-      'Ending on a pin, a wire end or the middle of a wire connects; crossing wires do not',
-  },
-  { id: 'label', icon: 'label', label: 'Label', title: 'Label (L): click a point to name its net; labels with the same name are connected. Double-click a label to rename it' },
-]
-
-const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
 /** The name of a project opened from a share link, until it is saved. */
 const SHARED_PROJECT = 'Shared project'
-// Layer visibility is a per-browser view preference, deliberately not part of the project.
-const LAYERS_KEY = 'manhattan-layout-editor/layers'
-const SCHEMATIC_LAYERS_KEY = 'manhattan-layout-editor/schematic-layers'
-const PCB_GRID_KEY = 'manhattan-layout-editor/pcb-grid-lines-per-major'
-const SCHEMATIC_GRID_KEY = 'manhattan-layout-editor/schematic-grid-lines-per-major'
-const DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR = 6
-const THEME_KEY = 'manhattan-layout-editor/theme'
-const VIEW_KEY = 'manhattan-layout-editor/view'
-
-// Storage can be disabled (private window, blocked site data); preferences then last one session.
-function readPreference(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function writePreference(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value)
-  } catch {}
-}
-
-function loadGridLinesPerMajor(key: string, fallback: number): number {
-  const stored = Number(readPreference(key))
-  return GRID_LINES_PER_MAJOR_OPTIONS.includes(stored) ? stored : fallback
-}
-
-function initialView(): ViewMode {
-  const stored = readPreference(VIEW_KEY)
-  if (stored === 'schematic' || stored === 'split' || stored === 'layout') return stored
-  return 'split'
-}
-
-type Theme = 'light' | 'dark'
-
-function initialTheme(): Theme {
-  const stored = readPreference(THEME_KEY)
-  if (stored === 'light' || stored === 'dark') return stored
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-const SHOWN: LayerView = { visible: true, opacity: 1 }
-const ALL_LAYERS: Layers = { islands: SHOWN, parts: SHOWN, references: SHOWN, values: SHOWN, netLabels: SHOWN, leads: SHOWN, grid: SHOWN }
-
-/** Reads a stored layer setting, including the older true/false and 'on'/'faded'/'off' forms. */
-function parseLayerView(value: unknown): LayerView {
-  if (value === false || value === 'off') return { visible: false, opacity: 1 }
-  if (value === 'faded') return { visible: true, opacity: 0.15 }
-  if (typeof value === 'object' && value !== null) {
-    const { visible, opacity } = value as Partial<LayerView>
-    return { visible: visible !== false, opacity: typeof opacity === 'number' ? Math.min(1, Math.max(0, opacity)) : 1 }
-  }
-  return SHOWN
-}
-
-/** The layer settings stored under `key`, with `defaults` for layers it does not mention. */
-function loadLayerViews<Name extends string>(key: string, defaults: Record<Name, LayerView>): Record<Name, LayerView> {
-  const stored = readPreference(key)
-  if (!stored) return defaults
-  try {
-    const parsed = JSON.parse(stored) as Record<string, unknown>
-    const layers = { ...defaults }
-    for (const layer of Object.keys(layers) as Name[]) {
-      if (layer in parsed) layers[layer] = parseLayerView(parsed[layer])
-    }
-    return layers
-  } catch {
-    return defaults
-  }
-}
-
-/** Net names are off until asked for: the wires already show what connects, the names only add clutter. */
-const DEFAULT_SCHEMATIC_LAYERS: SchematicLayers = {
-  grid: SHOWN,
-  references: SHOWN,
-  values: SHOWN,
-  pinNumbers: SHOWN,
-  netNames: { visible: false, opacity: 1 },
-}
 
 /** A project update that changes the layout with `update`. */
 const layoutUpdate =
@@ -181,24 +90,13 @@ export function App() {
   const [selection, setSelection] = useState<Selection>(null)
   const [tool, setTool] = useState<Tool>('select')
   const [moveMode, setMoveMode] = useState<MoveMode>('part')
-  const [view, setView] = useState<ViewMode>(initialView)
+  const [view, setView] = usePreference(VIEW_KEY, parseView)
   /** The pane last clicked in; keyboard shortcuts act on it when both are shown. */
   const [activePane, setActivePane] = useState<Pane>(() => (view === 'schematic' ? 'schematic' : 'layout'))
   const [schematicTool, setSchematicTool] = useState<SchematicTool>('select')
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!menuOpen) return
-    const closeOutside = (e: PointerEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
-    }
-    document.addEventListener('pointerdown', closeOutside)
-    return () => document.removeEventListener('pointerdown', closeOutside)
-  }, [menuOpen])
   const showView = (mode: ViewMode) => {
     setView(mode)
     if (mode !== 'split') setActivePane(mode)
-    writePreference(VIEW_KEY, mode)
   }
   const [fitRequest, setFitRequest] = useState(1)
   const refit = () => setFitRequest((n) => n + 1)
@@ -240,22 +138,17 @@ export function App() {
   const [agentConnected, setAgentConnected] = useState(false)
   const [showAiHelp, setShowAiHelp] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
-  const [theme, setTheme] = useState(initialTheme)
+  const [theme, setTheme] = usePreference(THEME_KEY, parseTheme)
   useEffect(() => {
     document.documentElement.dataset.theme = theme
   }, [theme])
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    writePreference(THEME_KEY, next)
-  }
   /** Parts checked when the footprint dialog opened; null while it is closed. */
   const [footprintDialogRefs, setFootprintDialogRefs] = useState<string[] | null>(null)
-  const [layers, setLayersState] = useState(() => loadLayerViews(LAYERS_KEY, ALL_LAYERS))
-  const [schematicLayers, setSchematicLayersState] = useState(() => loadLayerViews(SCHEMATIC_LAYERS_KEY, DEFAULT_SCHEMATIC_LAYERS))
-  const [pcbGrid, setPcbGridState] = useState(() => loadGridLinesPerMajor(PCB_GRID_KEY, DEFAULT_PCB_GRID_LINES_PER_MAJOR))
-  const [schematicGrid, setSchematicGridState] = useState(() =>
-    loadGridLinesPerMajor(SCHEMATIC_GRID_KEY, DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR),
+  const [layers, setLayers] = usePreference(LAYERS_KEY, (stored) => parseLayerViews(stored, ALL_LAYERS))
+  const [schematicLayers, setSchematicLayers] = usePreference(SCHEMATIC_LAYERS_KEY, (stored) => parseLayerViews(stored, DEFAULT_SCHEMATIC_LAYERS))
+  const [pcbGrid, setPcbGrid] = usePreference(PCB_GRID_KEY, (stored) => parseGridLinesPerMajor(stored, DEFAULT_PCB_GRID_LINES_PER_MAJOR))
+  const [schematicGrid, setSchematicGrid] = usePreference(SCHEMATIC_GRID_KEY, (stored) =>
+    parseGridLinesPerMajor(stored, DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR),
   )
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => buildNetlist(netlist, layout.placements, project.definitions), [netlist, layout.placements, project.definitions])
@@ -387,26 +280,6 @@ export function App() {
     closeSavedTab(id)
   }
 
-  const setLayers = (next: Layers) => {
-    setLayersState(next)
-    writePreference(LAYERS_KEY, JSON.stringify(next))
-  }
-
-  const setSchematicLayers = (next: SchematicLayers) => {
-    setSchematicLayersState(next)
-    writePreference(SCHEMATIC_LAYERS_KEY, JSON.stringify(next))
-  }
-
-  const setPcbGrid = (linesPerMajor: number) => {
-    setPcbGridState(linesPerMajor)
-    writePreference(PCB_GRID_KEY, String(linesPerMajor))
-  }
-
-  const setSchematicGrid = (linesPerMajor: number) => {
-    setSchematicGridState(linesPerMajor)
-    writePreference(SCHEMATIC_GRID_KEY, String(linesPerMajor))
-  }
-
   // The canvases call onBeginEdit once when a drag starts and then send every update of it here, so
   // the whole drag is one undo step. An action done in one go is a commitEdit instead.
   const updateLayout = (update: (layout: Layout) => Layout) => updateProject(layoutUpdate(update))
@@ -420,7 +293,8 @@ export function App() {
     [layout.islands],
   )
   const splitNets = useMemo(() => findSplitNets(layout.islands), [layout.islands])
-  const problemNets = useMemo(() => findProblemNets(layout.islands), [layout.islands])
+  // The same nets as findProblemNets, from the two checks already done above.
+  const problemNets = useMemo(() => new Set([...spacingViolations, ...splitNets]), [spacingViolations, splitNets])
   const pinIssues = useMemo(() => findPinIssues(builtNetlist, layout, settings.isolation), [builtNetlist, layout, settings.isolation])
 
   const boardSize = useMemo(() => boundsOf(layout.islands.flatMap((i) => i.rects)), [layout.islands])
@@ -551,176 +425,58 @@ export function App() {
 
   const exportLayoutDxf = () => downloadText(`${tabName(activeId)}-isolation.dxf`, exportDxf(layout.islands, settings.isolation), 'application/dxf')
 
-  // Keyboard shortcuts; handlers are recreated each render so they always see current state.
-  const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {})
-  shortcuts.current = (e: KeyboardEvent) => {
-    // An open dialog handles its own keys (Escape closes it); the canvas shortcuts stay out of the way.
-    if (e.target instanceof Element && e.target.closest('dialog')) return
-    const key = e.key.toLowerCase()
-    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement
-    if (e.ctrlKey || e.metaKey) commandShortcut(e, key, typing)
-    else if (!typing) plainShortcut(e, key)
-  }
-
-  /** Ctrl/Cmd shortcuts. The file ones also work while typing in a field, instead of the browser's own. */
-  const commandShortcut = (e: KeyboardEvent, key: string, typing: boolean) => {
-    const action = commandAction(key, e.shiftKey, typing)
-    if (!action) return
-    e.preventDefault()
-    action()
-  }
-
-  const commandAction = (key: string, shift: boolean, typing: boolean): (() => void) | undefined => {
-    switch (key) {
-      case 's':
-        return () => saveTab(activeId, shift)
-      case 'o':
-        return showOpenDialog
-      case 'n':
-        return newProject
-    }
-    if (typing) return undefined
-    switch (key) {
-      case 'z':
-        return shift ? redo : undo
-      case 'y':
-        return redo
-      case 'a':
-        return selectAll
-    }
-  }
-
-  const plainShortcut = (e: KeyboardEvent, key: string) => {
-    switch (key) {
-      case ' ':
-        // Also stops a focused button from being clicked by the same key press.
-        e.preventDefault()
-        if (!e.repeat) rotateSelected(e.shiftKey ? 15 : 90, activePane)
-        return
-      case 'delete':
-      case 'backspace':
-        return removeRect()
-      case 'escape':
-        return setSelection(null)
-      case 'f':
-        return refit()
-      case 'v':
-        setTool('select')
-        return setSchematicTool('select')
-      case 'w':
-        return setSchematicTool('wire')
-      case 'l':
-        return setSchematicTool('label')
-      case 'h':
-        return setTool('pan')
-      case 'x':
-        if (activePane === 'schematic') flipSelected('horizontal')
-        return
-      case 'y':
-        if (activePane === 'schematic') flipSelected('vertical')
-        return
-      case 'm':
-        return setMoveMode((mode) => (mode === 'part' ? 'body' : 'part'))
-    }
-  }
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => shortcuts.current(e)
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  useShortcuts({
+    save: () => saveTab(activeId),
+    saveAs: () => saveTab(activeId, true),
+    open: showOpenDialog,
+    newProject,
+    undo,
+    redo,
+    selectAll,
+    rotate: () => rotateSelected(90, activePane),
+    rotateFine: () => rotateSelected(15, activePane),
+    removeRect,
+    clearSelection: () => setSelection(null),
+    fit: refit,
+    selectTool: () => {
+      setTool('select')
+      setSchematicTool('select')
+    },
+    wireTool: () => setSchematicTool('wire'),
+    labelTool: () => setSchematicTool('label'),
+    panTool: () => setTool('pan'),
+    flipHorizontal: () => {
+      if (activePane === 'schematic') flipSelected('horizontal')
+    },
+    flipVertical: () => {
+      if (activePane === 'schematic') flipSelected('vertical')
+    },
+    toggleMoveMode: () => setMoveMode((mode) => (mode === 'part' ? 'body' : 'part')),
+  })
 
   return (
     <div className="app">
       {/* Same columns as the workspace below, so the project tabs start where the canvas does. */}
       <header className={`header view-${view}`}>
         <div className="header-start">
-          <div className="menu" ref={menuRef}>
-            <button
-              className="header-button"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen(!menuOpen)}
-              title={agentConnected ? 'Menu (AI agent connected)' : 'Menu'}
-            >
-              <Icon name="menu" />Menu
-              {agentConnected && <span className="agent-dot connected" aria-label="Agent connected" />}
-            </button>
-            {menuOpen && (
-              <div className="menu-list" role="menu" onClick={() => setMenuOpen(false)}>
-                <span className="menu-heading">File</span>
-                <button onClick={newProject} title="An empty project in a new tab">
-                  <Icon name="newFile" />New project<kbd>Ctrl+N</kbd>
-                </button>
-                <button onClick={showOpenDialog} title="Open a project from this computer or Google Drive in a new tab">
-                  <Icon name="open" />Open…<kbd>Ctrl+O</kbd>
-                </button>
-                <button onClick={() => saveTab(activeId)} title="Save this tab's project where it is saved; a new project asks where">
-                  <Icon name="save" />Save<kbd>Ctrl+S</kbd>
-                </button>
-                <button onClick={() => saveTab(activeId, true)} title="Save under another name or somewhere else; the tab continues there">
-                  <Icon name="save" />Save as…<kbd>Ctrl+Shift+S</kbd>
-                </button>
-                <MenuGroup icon="sample" label="Examples">
-                  {EXAMPLES.map((example) => (
-                    <button key={example.name} onClick={() => openInNewTab(example.open(), example.name)} title="A copy of this example in a new tab">
-                      {example.name}
-                    </button>
-                  ))}
-                </MenuGroup>
-                <hr />
-                <MenuGroup icon="importExport" label="Import / Export">
-                  <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
-                  <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
-                  <button onClick={exportLayoutDxf} title="Area to burn as closed contours in mm (board outline + copper as holes), ready to hatch in EzCad">
-                    <Icon name="export" />Export DXF
-                  </button>
-                  <button onClick={copyShareLink} title="Copy a link that holds this whole project; opening it gives a copy in a new tab">
-                    <Icon name="link" />Copy share link
-                  </button>
-                </MenuGroup>
-                <MenuGroup icon="settings" label="Settings">
-                  <button onClick={toggleTheme}>
-                    <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-                    {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-                  </button>
-                </MenuGroup>
-                <MenuGroup icon="help" label="Help">
-                  <button onClick={() => setShowAiHelp(true)} title="Let an AI assistant edit this layout (MCP)">
-                    <Icon name="ai" />AI assistant…
-                    <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
-                  </button>
-                  <button onClick={() => setShowHelp(true)}>
-                    <Icon name="help" />Keyboard and mouse
-                  </button>
-                </MenuGroup>
-                {driveConfigured && (
-                  <>
-                    <hr />
-                    <MenuGroup icon="user" label="Google account">
-                      {signedIn ? (
-                        <button onClick={signOut} title="Google Drive projects stay open here; they save again after signing in">
-                          <Icon name="cloud" />Sign out
-                        </button>
-                      ) : (
-                        <button onClick={signInToGoogle} title="Sign in to open and save projects in Google Drive">
-                          <Icon name="cloud" />Sign in with Google
-                        </button>
-                      )}
-                    </MenuGroup>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-          {!signedIn && tabs.some((tab) => projectFile(tab.id).location?.kind === 'drive') && (
-            <button
-              className="header-button"
-              onClick={signInToGoogle}
-              title="Google Drive documents are open; they save again after signing in, and changes stay here until then"
-            >
-              <Icon name="cloud" />Sign in to Google Drive
-            </button>
-          )}
+          <AppMenu
+            agentConnected={agentConnected}
+            signedIn={signedIn}
+            theme={theme}
+            onNewProject={newProject}
+            onOpen={showOpenDialog}
+            onSave={() => saveTab(activeId)}
+            onSaveAs={() => saveTab(activeId, true)}
+            onOpenInNewTab={openInNewTab}
+            onImportNetlist={() => fileInputRef.current!.click()}
+            onExportSvg={exportLayout}
+            onExportDxf={exportLayoutDxf}
+            onCopyShareLink={copyShareLink}
+            onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            onShowAiHelp={() => setShowAiHelp(true)}
+            onShowHelp={() => setShowHelp(true)}
+            onSignIn={signInToGoogle}
+          />
           {/* Outside the menu, so they stay mounted while the file dialog is open. */}
           <input
             ref={uploadInputRef}
@@ -799,106 +555,35 @@ export function App() {
         )}
 
         <main className="canvas-area">
-          {/* Floating over the canvas: a banner that pushed the canvas down would move it under a drag. */}
-          <div className="canvas-banners">
-            {error && (
-              <div className="error-banner" role="alert">
-                {error}
-                <button className="icon-button" onClick={() => setError('')} aria-label="Dismiss">✕</button>
-              </div>
-            )}
-            {notice && (
-              <div className="notice-banner" role="status">
-                {notice}
-                <button className="icon-button" onClick={() => setNotice('')} aria-label="Dismiss">✕</button>
-              </div>
-            )}
-            {fileConflict?.id === activeId ? (
-              <div className="sync-banner" role="alert">
-                <span>
-                  "{tabName(activeId)}" changed {fileConflict.location.kind === 'drive' ? 'in Google Drive' : 'on disk'},
-                  and this tab has changes that were not saved.
-                </span>
-                <button className="header-button" onClick={() => loadSavedVersion(activeId, fileConflict.project, fileConflict.location)} title="Show the saved version; the changes here stay reachable with Undo">
-                  Use saved version
-                </button>
-                <button className="header-button" onClick={() => keepRecoveryCopy(activeId, fileConflict.content, fileConflict.location)} title="Keep editing the changes here; saving overwrites the saved version">
-                  Keep changes here
-                </button>
-              </div>
-            ) : (
-              projectFile(activeId).location &&
-              !projectFile(activeId).checked && (
-                <div className="sync-banner" role="status">
-                  {projectFile(activeId).location?.kind === 'drive' ? (
-                    <>
-                      <span>Showing the recovery copy of "{tabName(activeId)}"; sign in to compare it with Google Drive and save it there.</span>
-                      <button className="header-button" onClick={() => checkSaved(activeId, true)}>
-                        <Icon name="cloud" />Sign in to Google Drive
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span>Showing the recovery copy of "{tabName(activeId)}"; the file itself was not checked yet.</span>
-                      <button className="header-button" onClick={() => checkSaved(activeId, true)} title="Allow access to the file and compare it with the recovery copy">
-                        <Icon name="open" />Check file
-                      </button>
-                    </>
-                  )}
-                </div>
-              )
-            )}
-            {pinsNotInPcb.length > 0 && (
-              <div className="sync-banner" role="status">
-                <span title={pinsNotInPcb.join(' ')}>
-                  The schematic has changes the PCB does not have yet: {pinsNotInPcb.length} pin{pinsNotInPcb.length === 1 ? '' : 's'} connected differently.
-                </span>
-                <button className="header-button" onClick={updatePcb} title="Give the PCB the schematic's nets; islands follow renamed and merged nets (can be undone)">
-                  <Icon name="convert" />Update PCB
-                </button>
-              </div>
-            )}
-          </div>
+          <CanvasBanners
+            error={error}
+            onDismissError={() => setError('')}
+            notice={notice}
+            onDismissNotice={() => setNotice('')}
+            tabName={tabName(activeId)}
+            file={projectFile(activeId)}
+            conflict={fileConflict?.id === activeId ? fileConflict : undefined}
+            onUseSavedVersion={(conflict) => loadSavedVersion(activeId, conflict.project, conflict.location)}
+            onKeepChangesHere={(conflict) => keepRecoveryCopy(activeId, conflict.content, conflict.location)}
+            onCheckSaved={() => checkSaved(activeId, true)}
+            pinsNotInPcb={pinsNotInPcb}
+            onUpdatePcb={updatePcb}
+          />
           <div className="canvas-panes">
             {view !== 'layout' && (
               <section className="canvas-pane" onPointerDownCapture={() => setActivePane('schematic')}>
-                <nav className="tool-rail" aria-label="Schematic tools">
-                  <div className="rail-group" role="group" aria-label="Tools">
-                    {SCHEMATIC_TOOLS.map(({ id, icon, label, title }) => (
-                      <button
-                        key={id}
-                        className={schematicTool === id ? 'rail-button active' : 'rail-button'}
-                        onClick={() => setSchematicTool(id)}
-                        aria-pressed={schematicTool === id}
-                        title={title}
-                      >
-                        <Icon name={icon} />{label}
-                      </button>
-                    ))}
-                    <button className="rail-button" onClick={refit} title="Fit the schematic in view (F)">
-                      <Icon name="fit" />Fit
-                    </button>
-                  </div>
-                  <div className="rail-group" role="group" aria-label="Component">
-                    <button className="rail-button" onClick={() => rotateSelected(90, 'schematic')} disabled={!canTurnSchematic} title="Rotate a quarter turn (Space)">
-                      <Icon name="rotate" />Rotate
-                    </button>
-                    <button className="rail-button" onClick={() => flipSelected('horizontal')} disabled={!canTurnSchematic} title="Mirror left to right (X)">
-                      <Icon name="flipHorizontal" />Flip H
-                    </button>
-                    <button className="rail-button" onClick={() => flipSelected('vertical')} disabled={!canTurnSchematic} title="Mirror top to bottom (Y)">
-                      <Icon name="flipVertical" />Flip V
-                    </button>
-                  </div>
-                  <div className="rail-group view">
-                    <RailMenu icon="grid" label="Grid" title="Grid settings">
-                      <GridSettings linesPerMajor={schematicGrid} onChange={setSchematicGrid} />
-                    </RailMenu>
-                    <RailMenu icon="eye" label="View" title="Choose what is drawn">
-                      <LayerToggles info={SCHEMATIC_LAYERS} layers={schematicLayers} onChange={setSchematicLayers} />
-                    </RailMenu>
-                  </div>
-                </nav>
+                <SchematicToolRail
+                  tool={schematicTool}
+                  onToolChange={setSchematicTool}
+                  onFit={refit}
+                  canTurn={canTurnSchematic}
+                  onRotate={() => rotateSelected(90, 'schematic')}
+                  onFlip={flipSelected}
+                  gridLinesPerMajor={schematicGrid}
+                  onGridChange={setSchematicGrid}
+                  layers={schematicLayers}
+                  onLayersChange={setSchematicLayers}
+                />
                 <div className="canvas-frame">
                   <SchematicView
                     netlist={schematicNetlist}
@@ -918,59 +603,21 @@ export function App() {
             )}
             {view !== 'schematic' && (
               <section className="canvas-pane" onPointerDownCapture={() => setActivePane('layout')}>
-                <nav className="tool-rail" aria-label="Tools">
-                  <div className="rail-group" role="group" aria-label="View">
-                    <button
-                      className={tool === 'select' ? 'rail-button active' : 'rail-button'}
-                      onClick={() => setTool('select')}
-                      aria-pressed={tool === 'select'}
-                      title="Select (V): drag empty space to select, Shift+drag adds"
-                    >
-                      <Icon name="select" />Select
-                    </button>
-                    <button
-                      className={tool === 'pan' ? 'rail-button active' : 'rail-button'}
-                      onClick={() => setTool('pan')}
-                      aria-pressed={tool === 'pan'}
-                      title="Pan (H): drag empty space to move the view; middle mouse always pans"
-                    >
-                      <Icon name="pan" />Pan
-                    </button>
-                    <button className="rail-button" onClick={refit} title="Fit the board in view (F)">
-                      <Icon name="fit" />Fit
-                    </button>
-                  </div>
-                  <div className="rail-group" role="group" aria-label="Component">
-                    <button
-                      className={moveMode === 'body' ? 'rail-button active' : 'rail-button'}
-                      onClick={() => setMoveMode(moveMode === 'body' ? 'part' : 'body')}
-                      aria-pressed={moveMode === 'body'}
-                      title={
-                        'Anchor leads (M). On: dragging a part moves only its body, lead ends stay where they are soldered. ' +
-                        'Off: the leads move along. Shift+drag always takes the leads along.'
-                      }
-                    >
-                      <Icon name="moveBody" />Anchor
-                    </button>
-                    <button className="rail-button" onClick={() => rotateSelected(90, 'layout')} disabled={refsToEdit.length === 0} title="Rotate: Space = 90°, Shift+Space = 15°">
-                      <Icon name="rotate" />Rotate
-                    </button>
-                    <button className="rail-button" onClick={resetLeads} disabled={refsToEdit.length === 0} title="Straighten the selected parts' leads">
-                      <Icon name="leads" />Leads
-                    </button>
-                    <button className="rail-button" onClick={openFootprintDialog} disabled={refsToEdit.length === 0} title="Choose another footprint for the selected parts">
-                      <Icon name="convert" />Footprint
-                    </button>
-                  </div>
-                  <div className="rail-group view">
-                    <RailMenu icon="grid" label="Grid" title="Grid settings">
-                      <GridSettings linesPerMajor={pcbGrid} onChange={setPcbGrid} />
-                    </RailMenu>
-                    <RailMenu icon="eye" label="View" title="Choose what is drawn">
-                      <LayerToggles info={PCB_LAYERS} layers={layers} onChange={setLayers} opacityNote=" (below 50% the layer ignores clicks)" />
-                    </RailMenu>
-                  </div>
-                </nav>
+                <PcbToolRail
+                  tool={tool}
+                  onToolChange={setTool}
+                  onFit={refit}
+                  moveMode={moveMode}
+                  onMoveModeChange={setMoveMode}
+                  partsSelected={refsToEdit.length > 0}
+                  onRotate={() => rotateSelected(90, 'layout')}
+                  onResetLeads={resetLeads}
+                  onChangeFootprint={openFootprintDialog}
+                  gridLinesPerMajor={pcbGrid}
+                  onGridChange={setPcbGrid}
+                  layers={layers}
+                  onLayersChange={setLayers}
+                />
                 <div className="canvas-frame">
                   <Canvas
                     netlist={builtNetlist}
@@ -1006,76 +653,7 @@ export function App() {
                 onChangeFootprint={openFootprintDialog}
               />
             </Section>
-            <Section title="Optimizer">
-              <div className="settings">
-                <label title={findStrategy(settings.strategy).description}>
-                  Mode
-                  <select value={settings.strategy} onChange={(e) => setSettings({ strategy: findStrategy(e.target.value).id })}>
-                    {STRATEGIES.map((s) => (
-                      <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <button className="optimize-button" onClick={optimize} title={findStrategy(settings.strategy).description}>
-                  <Icon name="optimize" />Optimize
-                </button>
-              </div>
-            </Section>
-            <Section title="Board settings">
-              <div className="settings">
-                <label>
-                  Snap
-                  <select value={settings.snap} onChange={(e) => setSettings({ snap: Number(e.target.value) })}>
-                    {SNAP_OPTIONS.map((s) => (
-                      <option key={s} value={s}>{s === 0 ? 'off' : `${s} mm`}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Isolation
-                  <span className="unit-input">
-                    <input
-                      type="number"
-                      min={0.05}
-                      step={0.05}
-                      value={settings.isolation}
-                      onChange={(e) => setSettings({ isolation: Math.max(0.05, Number(e.target.value) || 0.05) })}
-                    />
-                    mm
-                  </span>
-                </label>
-                <label title="Free space the optimizer keeps around each component, for soldering and probing">
-                  Clearance
-                  <span className="unit-input">
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.5}
-                      value={settings.clearance}
-                      onChange={(e) => setSettings({ clearance: Math.max(0, Number(e.target.value) || 0) })}
-                    />
-                    mm
-                  </span>
-                </label>
-                <label title="Longest lead the optimizer bends without a heavy penalty">
-                  Max lead
-                  <span className="unit-input">
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={settings.maxLead}
-                      onChange={(e) => setSettings({ maxLead: Math.max(1, Number(e.target.value) || 1) })}
-                    />
-                    mm
-                  </span>
-                </label>
-                <button className="reset-grid" onClick={resetToGrid}><Icon name="grid" />Reset to grid</button>
-                {boardSize && (
-                  <p className="board-size">Board {boardSize.w.toFixed(1)} × {boardSize.h.toFixed(1)} mm</p>
-                )}
-              </div>
-            </Section>
+            <PcbSettings settings={settings} onChange={setSettings} onOptimize={optimize} onResetToGrid={resetToGrid} boardSize={boardSize} />
             <Section title="Design rule check">
               <Validation
                 components={netlist.components.length}

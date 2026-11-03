@@ -5,6 +5,7 @@ import type { SchematicLayer } from './SchematicView'
 import { labelSymbol } from './schematic'
 import { selectedRefs, selectedWiring, toggleSelected } from './selection'
 import type { BuiltComponent, BuiltNetlist, LabelSymbol, Layout, NetLabel, Placement, Selection } from './types'
+import { useDropdown } from './ui/useDropdown'
 
 const ICON_PATHS = {
   app: 'M4 4h6v6H4z M14 14h6v6h-6z M10 7h4v10 M7 10v7h7',
@@ -91,16 +92,7 @@ interface RailMenuProps {
 
 /** A rail button that opens the pane's options below it; a click outside closes them. */
 export function RailMenu({ icon, label, title, children }: RailMenuProps) {
-  const [open, setOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const closeOutside = (e: PointerEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', closeOutside)
-    return () => document.removeEventListener('pointerdown', closeOutside)
-  }, [open])
+  const { open, setOpen, menuRef } = useDropdown()
   return (
     <div className="menu" ref={menuRef}>
       <button

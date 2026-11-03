@@ -788,39 +788,31 @@ input:focus-visible {
   background: var(--ok);
 }
 
-.error-banner {
+.banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 4px 4px 4px 12px;
-  border: 1px solid var(--error);
+  border: 1px solid;
   border-radius: var(--radius);
+}
+
+.banner-error {
+  border-color: var(--error);
   background: var(--error-soft);
   color: var(--error);
 }
 
-/* The schematic's nets differ from the PCB's until the user updates the PCB. */
-.sync-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 4px 4px 12px;
-  border: 1px solid var(--warn);
-  border-radius: var(--radius);
+/* Something to decide: a file conflict, a recovery copy, or schematic changes the PCB does not have yet. */
+.banner-warn {
+  border-color: var(--warn);
   background: var(--warn-soft);
   color: var(--warn);
 }
 
-.notice-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 4px 4px 12px;
-  border: 1px solid var(--ok);
-  border-radius: var(--radius);
+.banner-ok {
+  border-color: var(--ok);
   background: var(--ok-soft);
   color: var(--ok);
 }

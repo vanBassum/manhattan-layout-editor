@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from './panels'
+import { useDropdown } from './ui/useDropdown'
 
 export interface TabInfo {
   id: string
@@ -63,8 +64,7 @@ export function ProjectTabs({ tabs, activeId, onSwitch, onClose }: ProjectTabsPr
   const tabElements = useRef(new Map<string, HTMLDivElement>())
   const [room, setRoom] = useState(0)
   const [shown, setShown] = useState<Set<string> | null>(null)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const { open: menuOpen, setOpen: setMenuOpen, menuRef } = useDropdown()
 
   useEffect(() => {
     const strip = stripRef.current!
@@ -80,15 +80,6 @@ export function ProjectTabs({ tabs, activeId, onSwitch, onClose }: ProjectTabsPr
     const widths = new Map([...tabElements.current].map(([id, element]) => [id, element.offsetWidth]))
     setShown(tabsThatFit(tabs, widths, activeId, room))
   }, [drawn, activeId, room])
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const closeOutside = (e: PointerEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
-    }
-    document.addEventListener('pointerdown', closeOutside)
-    return () => document.removeEventListener('pointerdown', closeOutside)
-  }, [menuOpen])
 
   const isShown = (tab: TabInfo) => shown === null || shown.has(tab.id)
   const overflowing = tabs.filter((tab) => !isShown(tab))
