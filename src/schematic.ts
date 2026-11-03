@@ -1,5 +1,5 @@
 import { buildNetlist, buildProjectNetlist } from './definitions'
-import { boundsOf, inflate, rectContains, rectsOverlap, rotatePoint, snapToGrid } from './geometry'
+import { boundsOf, inflate, rectContains, rectsOverlap, rotatePoint, samePoint, snapToGrid } from './geometry'
 import { followNetlist } from './layout'
 import { isRealNet, naturalCompare } from './netlist'
 import { NO_WIRING, selectedRefs, selectedWiring } from './selection'
@@ -50,7 +50,6 @@ export const pointKey = (p: Point) => `${Math.round(p.x * 1000) / 1000},${Math.r
  */
 const withoutFloatNoise = (v: number) => Math.round(v * 1e6) / 1e6
 
-const samePoint = (a: Point, b: Point) => pointKey(a) === pointKey(b)
 export const wireEnds = (w: Wire): [Point, Point] => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]
 const isHorizontal = (w: Wire) => w.y1 === w.y2 && w.x1 !== w.x2
 const isVertical = (w: Wire) => w.x1 === w.x2 && w.y1 !== w.y2

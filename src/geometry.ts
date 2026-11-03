@@ -14,6 +14,11 @@ export function rectBetween(a: Point, b: Point): Rect {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }
 }
 
+/** True when `a` and `b` are the same point, apart from float noise. */
+export function samePoint(a: Point, b: Point): boolean {
+  return Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6
+}
+
 export function rectContains(r: Rect, p: Point): boolean {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
 }

@@ -1,3 +1,4 @@
+import { samePoint } from './geometry'
 import type { Point, Selection, WiringSelection } from './types'
 
 /** One part or one island: the selections that the single-item tools (rotate, resize, add rect) work on. */
@@ -11,8 +12,6 @@ export type SchematicItem =
   | { kind: 'point'; point: Point }
 
 export const NO_WIRING: WiringSelection = { wires: [], labels: [], points: [] }
-
-const samePoint = (a: Point, b: Point) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6
 
 const isEmptyWiring = (wiring: WiringSelection) => wiring.wires.length + wiring.labels.length + wiring.points.length === 0
 
