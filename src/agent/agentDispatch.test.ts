@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import server from '../../mcp/server.mjs?raw'
 import llms from '../../public/llms.txt?raw'
+import { BATCH_COMMANDS } from './agentCommands'
 import { AGENT_COMMANDS, agentTargetId, runAgentCommand, type AgentEditor, type AgentTab } from './agentDispatch'
 import example from '../examples/Astable multivibrator.manhattan.json?raw'
 import { STRATEGIES } from '../optimize'
@@ -59,6 +60,11 @@ describe('agent commands', () => {
   it('offer exactly the optimizer strategies the editor has', () => {
     const offered = /strategy: z\.enum\(\[([^\]]*)\]\)/.exec(server)![1].match(/[a-z-]+/g)
     expect(offered).toEqual(STRATEGIES.map((s) => s.id))
+  })
+
+  it('offer exactly the batch edits the editor applies', () => {
+    const offered = /command: z\.enum\(\[([^\]]*)\]\)/.exec(server)![1].match(/[a-z_]+/g)
+    expect(offered).toEqual(BATCH_COMMANDS)
   })
 
   it('refuse an unknown strategy instead of running another one', () => {

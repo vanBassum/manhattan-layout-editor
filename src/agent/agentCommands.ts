@@ -267,6 +267,9 @@ const BATCH_EDITS: Record<string, (project: BuiltProject, args: Args) => Layout>
   move_island: moveIsland,
 }
 
+/** The edits a batch can hold; the MCP server's batch tool lists the same ones (see agentDispatch.test.ts). */
+export const BATCH_COMMANDS = Object.keys(BATCH_EDITS)
+
 /** Applies several edits in order, each seeing the result of the previous one. All or nothing. */
 export function applyBatch(project: BuiltProject, args: Args): Layout {
   const edits = args.edits
