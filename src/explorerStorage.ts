@@ -1,10 +1,10 @@
-// What the file explorer browses: Google Drive (the editor's folder and its subfolders) and the work
-// folders the user picked on this computer. Both kinds of folder go through the same functions.
+// What the file explorer browses: the work folders the user added, on this computer or in Google
+// Drive, and their subfolders. Both kinds of folder go through the same functions.
 
-import { createFolder, deleteFile, editorFolder, isFolder, listAppData, listFolder, readFile, renameItem, trashItem, writeFile } from './googleDrive'
-import { projectFromFile, type ProjectLocation } from './projectStore'
+import { createFolder, isFolder, listFolder, renameItem, trashItem, writeFile } from './googleDrive'
+import type { FolderRef, ProjectLocation } from './projectStore'
 
-export type FolderRef = { kind: 'drive'; id: string } | { kind: 'local'; handle: FileSystemDirectoryHandle }
+export type { FolderRef }
 
 /** A folder or project file in a folder. */
 export interface ExplorerEntry {
@@ -56,33 +56,6 @@ export async function mayUseFolder(handle: FileSystemDirectoryHandle, ask: boole
 }
 
 const byFolderThenName = (a: ExplorerEntry, b: ExplorerEntry) => Number(!a.folder) - Number(!b.folder) || a.name.localeCompare(b.name)
-
-let appDataMoved: Promise<void> | null = null
-
-/**
- * Earlier versions saved to a hidden folder in Drive: its projects move to the editor's visible
- * folder, once per session.
- */
-function moveAppDataProjects(rootId: string): Promise<void> {
-  appDataMoved ??= (async () => {
-    for (const item of await listAppData()) {
-      if (item.name.endsWith(PROJECT_EXTENSION)) {
-        const text = await readFile(item.id)
-        await writeFile(fileNameOf(projectFromFile(text).name), text, { parentId: rootId })
-      }
-      await deleteFile(item.id)
-    }
-  })()
-  appDataMoved.catch(() => (appDataMoved = null))
-  return appDataMoved
-}
-
-/** The editor's folder in Google Drive, the root of everything it saves there. */
-export async function driveRoot(): Promise<FolderRef> {
-  const id = await editorFolder()
-  await moveAppDataProjects(id)
-  return { kind: 'drive', id }
-}
 
 export async function listEntries(folder: FolderRef): Promise<ExplorerEntry[]> {
   const entries: ExplorerEntry[] = []

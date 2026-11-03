@@ -32,8 +32,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
         env:
-          # Google Drive sync is only offered when the repository has this variable.
+          # Google Drive is only offered when the repository has both variables.
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

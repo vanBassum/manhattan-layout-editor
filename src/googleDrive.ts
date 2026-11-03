@@ -1,21 +1,21 @@
-// Google sign-in and Google Drive, over plain fetch. Projects live in a folder the editor makes in the
-// user's Drive, "Manhattan Layout Editor", with whatever subfolders the user makes there. The editor
-// only sees what it made itself (scope drive.file), never the rest of the user's Drive. Nothing is
-// loaded from Google until someone chooses Google Drive: the sign-in script is only added then.
+// Google sign-in and Google Drive, over plain fetch. Projects live in folders the user picks in their
+// Drive (googlePicker.ts). The editor only sees what it made itself and what the user picked (scope
+// drive.file), never the rest of the user's Drive. Nothing is loaded from Google until someone
+// chooses Google Drive: the sign-in script is only added then.
 
 const CLIENT_ID: string | undefined = import.meta.env.VITE_GOOGLE_CLIENT_ID
-/** Google Drive is only offered by builds that have a Google OAuth client id. */
-export const driveConfigured = Boolean(CLIENT_ID)
+export const PICKER_API_KEY: string = import.meta.env.VITE_GOOGLE_API_KEY ?? ''
+// The picker wants the Cloud project number, which starts the client id.
+export const PICKER_APP_ID = CLIENT_ID?.split('-')[0] ?? ''
+/** Google Drive is only offered by builds that have a Google OAuth client id and an API key for the picker. */
+export const driveConfigured = Boolean(CLIENT_ID && PICKER_API_KEY)
 
-// drive.file: only files and folders the editor made. drive.appdata: the hidden folder earlier
-// versions saved to, so its projects can be moved into the visible folder.
-const SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive.appdata']
+const SCOPES = ['https://www.googleapis.com/auth/drive.file']
 const SIGN_IN_SCRIPT = 'https://accounts.google.com/gsi/client'
 const API = 'https://www.googleapis.com'
 const TOKEN_KEY = 'manhattan-layout-editor/drive-token'
 const SIGN_IN_CHECK_MS = 30_000
 const FOLDER_TYPE = 'application/vnd.google-apps.folder'
-export const ROOT_FOLDER_NAME = 'Manhattan Layout Editor'
 
 interface TokenResponse {
   access_token?: string
@@ -65,6 +65,7 @@ function accessToken(): string | null {
 }
 
 export const isSignedIn = () => accessToken() !== null
+export const currentAccessToken = accessToken
 
 const signInListeners = new Set<() => void>()
 const notifySignIn = () => signInListeners.forEach((listener) => listener())
@@ -87,7 +88,6 @@ function forgetToken() {
   try {
     localStorage.removeItem(TOKEN_KEY)
   } catch {}
-  rootFolder = null
   notifySignIn()
 }
 
@@ -177,11 +177,11 @@ const ITEM_FIELDS = 'id,name,mimeType,version,modifiedTime,size'
 // Drive queries put names between single quotes.
 const quoted = (text: string) => `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 
-async function search(q: string, spaces = 'drive'): Promise<DriveItem[]> {
+async function search(q: string): Promise<DriveItem[]> {
   const items: DriveItem[] = []
   let pageToken = ''
   do {
-    const query = new URLSearchParams({ q, spaces, fields: `nextPageToken,files(${ITEM_FIELDS})`, pageSize: '1000', orderBy: 'folder,name' })
+    const query = new URLSearchParams({ q, fields: `nextPageToken,files(${ITEM_FIELDS})`, pageSize: '1000', orderBy: 'folder,name' })
     if (pageToken) query.set('pageToken', pageToken)
     const page = await json<{ files: DriveItem[]; nextPageToken?: string }>(call(`/drive/v3/files?${query}`))
     items.push(...page.files)
@@ -201,18 +201,6 @@ export async function createFolder(parentId: string, name: string): Promise<Driv
       body: JSON.stringify({ name, mimeType: FOLDER_TYPE, parents: [parentId] }),
     }),
   )
-}
-
-let rootFolder: Promise<string> | null = null
-
-/** The editor's folder in the user's Drive, made on first use. */
-export function editorFolder(): Promise<string> {
-  rootFolder ??= (async () => {
-    const found = await search(`name = ${quoted(ROOT_FOLDER_NAME)} and mimeType = ${quoted(FOLDER_TYPE)} and 'root' in parents and trashed = false`)
-    return found[0]?.id ?? (await createFolder('root', ROOT_FOLDER_NAME)).id
-  })()
-  rootFolder.catch(() => (rootFolder = null))
-  return rootFolder
 }
 
 export async function readFile(id: string): Promise<string> {
@@ -259,12 +247,4 @@ export async function trashItem(id: string) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ trashed: true }),
   })
-}
-
-// --- The hidden app data folder of earlier versions -----------------------------------------------
-
-export const listAppData = () => search('trashed = false', 'appDataFolder')
-
-export async function deleteFile(id: string) {
-  await call(`/drive/v3/files/${id}`, { method: 'DELETE' })
 }

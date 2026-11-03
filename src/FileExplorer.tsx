@@ -2,20 +2,21 @@ import { useEffect, useRef, useState } from 'react'
 import { errorText } from './errorText'
 import {
   canUseFolders,
-  driveRoot,
   entryNamed,
   listEntries,
   makeFolder,
   mayUseFolder,
   pickWorkFolder,
+  projectName,
   removeEntry,
   renameEntry,
   type ExplorerEntry,
   type FolderRef,
 } from './explorerStorage'
 import { driveConfigured, isSignedIn, SignInNeeded } from './googleDrive'
+import { pickDriveFile, pickDriveFolder } from './googlePicker'
 import { Icon } from './panels'
-import { addWorkFolder, removeWorkFolder, savedWorkFolders, type ProjectLocation, type RecentDocument } from './projectStore'
+import { addWorkFolder, removeWorkFolder, savedWorkFolders, type ProjectLocation, type RecentDocument, type WorkFolder } from './projectStore'
 
 interface Crumb {
   name: string
@@ -133,33 +134,69 @@ export function FileExplorer(props: FileExplorerProps) {
     if (place.kind === 'folder' && place.path.length > 1) go({ kind: 'folder', path: place.path.slice(0, -1) })
   }
 
-  const openDrive = async () => {
-    if (!isSignedIn() && !(await props.onSignIn())) return
+  /** Google's picker opens outside this dialog, which as a modal would block it: the dialog steps aside meanwhile. */
+  const steppingAside = useRef(false)
+  const withDialogAside = async <T,>(show: () => Promise<T>): Promise<T> => {
+    steppingAside.current = true
+    dialogRef.current?.close()
     try {
-      go({ kind: 'folder', path: [{ name: 'Google Drive', folder: await driveRoot() }] })
-    } catch (e) {
-      setProblem(`Could not open Google Drive: ${errorText(e)}`)
+      return await show()
+    } finally {
+      dialogRef.current?.showModal()
+      steppingAside.current = false
     }
   }
+  const onDialogClose = () => {
+    // The close event comes later than close(): by then the dialog may be back.
+    if (!steppingAside.current && !dialogRef.current?.open) props.onClose()
+  }
 
-  const openWorkFolder = (handle: FileSystemDirectoryHandle) => go({ kind: 'folder', path: [{ name: handle.name, folder: { kind: 'local', handle } }] })
+  const signedInToDrive = async () => isSignedIn() || (await props.onSignIn())
 
-  const addFolder = async () => {
+  const openWorkFolder = async (workFolder: WorkFolder) => {
+    if (workFolder.folder.kind === 'drive' && !(await signedInToDrive())) return
+    go({ kind: 'folder', path: [workFolder] })
+  }
+
+  const addWorkFolderOf = async (pickFolder: () => Promise<WorkFolder | null>) => {
     try {
-      const handle = await pickWorkFolder()
-      if (!handle) return
-      await addWorkFolder(handle)
+      const picked = await pickFolder()
+      if (!picked) return
+      const added = await addWorkFolder(picked)
       setWorkFolders(savedWorkFolders())
-      openWorkFolder(handle)
+      go({ kind: 'folder', path: [added] })
     } catch (e) {
       setProblem(`Could not add the folder: ${errorText(e)}`)
     }
   }
 
-  const forgetFolder = (handle: FileSystemDirectoryHandle) => {
-    removeWorkFolder(handle)
+  const addLocalFolder = () =>
+    addWorkFolderOf(async () => {
+      const handle = await pickWorkFolder()
+      return handle && { name: handle.name, folder: { kind: 'local', handle } }
+    })
+
+  const addDriveFolder = () =>
+    addWorkFolderOf(async () => {
+      if (!(await signedInToDrive())) return null
+      const picked = await withDialogAside(pickDriveFolder)
+      return picked && { name: picked.name, folder: { kind: 'drive', id: picked.id } }
+    })
+
+  const openDriveFile = async () => {
+    try {
+      if (!(await signedInToDrive())) return
+      const picked = await withDialogAside(pickDriveFile)
+      if (picked) props.onOpen({ kind: 'drive', fileId: picked.id, version: '' }, projectName(picked.name))
+    } catch (e) {
+      setProblem(`Could not open from Google Drive: ${errorText(e)}`)
+    }
+  }
+
+  const forgetFolder = (workFolder: WorkFolder) => {
+    removeWorkFolder(workFolder)
     setWorkFolders(savedWorkFolders())
-    if (place.kind === 'folder' && place.path[0].folder.kind === 'local' && place.path[0].folder.handle === handle) setPlace({ kind: 'recent' })
+    if (place.kind === 'folder' && place.path[0] === workFolder) setPlace({ kind: 'recent' })
   }
 
   const allowAccess = async () => {
@@ -251,17 +288,11 @@ export function FileExplorer(props: FileExplorerProps) {
     e.preventDefault()
   }
 
-  const isActiveRoot = (root: FolderRef | 'recent') => {
-    if (root === 'recent') return place.kind === 'recent'
-    if (place.kind !== 'folder') return false
-    const shownRoot = place.path[0].folder
-    return root.kind === 'drive' ? shownRoot.kind === 'drive' : shownRoot.kind === 'local' && shownRoot.handle === root.handle
-  }
-
+  const shownRoot = place.kind === 'folder' ? place.path[0] : null
   const pathText = place.kind === 'folder' ? place.path.map((crumb) => crumb.name).join(' › ') : 'Recent'
 
   return (
-    <dialog ref={dialogRef} className="ai-dialog explorer" onClose={props.onClose}>
+    <dialog ref={dialogRef} className="ai-dialog explorer" onClose={onDialogClose}>
       <header>
         <h2>
           <Icon name={mode === 'open' ? 'open' : 'save'} />
@@ -272,38 +303,50 @@ export function FileExplorer(props: FileExplorerProps) {
 
       <div className="explorer-body">
         <nav className="explorer-tree" aria-label="Places">
-          <button className={isActiveRoot('recent') ? 'active' : ''} onClick={() => go({ kind: 'recent' })}>
+          <button className={place.kind === 'recent' ? 'active' : ''} onClick={() => go({ kind: 'recent' })}>
             <Icon name="clock" />Recent
           </button>
-          {driveConfigured && (
-            <>
-              <span className="explorer-heading">Storage</span>
-              <button className={place.kind === 'folder' && place.path[0].folder.kind === 'drive' ? 'active' : ''} onClick={openDrive}>
-                <Icon name="cloud" />Google Drive
-              </button>
-            </>
-          )}
-          <span className="explorer-heading">This computer</span>
-          {workFolders.map((handle, k) => (
+          <span className="explorer-heading">Work folders</span>
+          {workFolders.map((workFolder, k) => (
             <div key={k} className="explorer-tree-row">
-              <button className={isActiveRoot({ kind: 'local', handle }) ? 'active' : ''} onClick={() => openWorkFolder(handle)} title={handle.name}>
-                <Icon name="folder" />
-                <span className="explorer-name">{handle.name}</span>
+              <button
+                className={shownRoot === workFolder ? 'active' : ''}
+                onClick={() => openWorkFolder(workFolder)}
+                title={`${workFolder.name} (${workFolder.folder.kind === 'drive' ? 'Google Drive' : 'this computer'})`}
+              >
+                <Icon name={workFolder.folder.kind === 'drive' ? 'cloud' : 'folder'} />
+                <span className="explorer-name">{workFolder.name}</span>
               </button>
-              <button className="explorer-tree-remove" onClick={() => forgetFolder(handle)} title="Take this folder off the list; it stays on disk" aria-label={`Forget ${handle.name}`}>
+              <button
+                className="explorer-tree-remove"
+                onClick={() => forgetFolder(workFolder)}
+                title="Take this folder off the list; the folder itself stays as it is"
+                aria-label={`Forget ${workFolder.name}`}
+              >
                 ✕
               </button>
             </div>
           ))}
           {canUseFolders && (
-            <button onClick={addFolder} title="Pick a folder on this computer to keep projects in">
-              <Icon name="folderPlus" />Add work folder…
+            <button onClick={addLocalFolder} title="Pick a folder on this computer to keep projects in">
+              <Icon name="folderPlus" />Add folder on this computer…
             </button>
           )}
+          {driveConfigured && (
+            <button onClick={addDriveFolder} title="Pick a folder in your Google Drive to keep projects in">
+              <Icon name="folderPlus" />Add folder in Google Drive…
+            </button>
+          )}
+          <span className="explorer-heading">Elsewhere</span>
           <button onClick={props.onOtherFile} title={mode === 'open' ? 'Open a file from anywhere on this computer' : 'Save to a file anywhere on this computer'}>
             <Icon name="file" />
-            {mode === 'open' ? 'Other file…' : canUseFolders ? 'Other location…' : 'Download'}
+            {mode === 'open' ? 'File on this computer…' : canUseFolders ? 'Location on this computer…' : 'Download'}
           </button>
+          {driveConfigured && mode === 'open' && (
+            <button onClick={openDriveFile} title="Pick a project anywhere in your Google Drive">
+              <Icon name="cloud" />File in Google Drive…
+            </button>
+          )}
         </nav>
 
         <section className="explorer-main">
@@ -393,6 +436,12 @@ export function FileExplorer(props: FileExplorerProps) {
                 )}
                 {shown.length === 0 && !makingFolder && (
                   <p className="explorer-empty">{filter ? 'Nothing matches the search.' : 'This folder is empty.'}</p>
+                )}
+                {folder?.kind === 'drive' && (
+                  <p className="explorer-empty">
+                    Google Drive shows the editor only the projects and folders it made here, and the files opened through
+                    "File in Google Drive…".
+                  </p>
                 )}
                 {shown.map((entry) => (
                   <div

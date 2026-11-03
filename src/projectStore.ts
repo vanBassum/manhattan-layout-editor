@@ -39,7 +39,16 @@ export interface ProjectFile {
   checked: boolean
 }
 
-/** A document opened or saved lately, for the Open dialog. */
+/** A folder on this computer, or in Google Drive. */
+export type FolderRef = { kind: 'local'; handle: FileSystemDirectoryHandle } | { kind: 'drive'; id: string }
+
+/** A folder the user added to keep projects in, shown at the top of the file explorer. */
+export interface WorkFolder {
+  name: string
+  folder: FolderRef
+}
+
+/** A document opened or saved lately, for the file explorer. */
 export interface RecentDocument {
   name: string
   location: ProjectLocation
@@ -82,8 +91,7 @@ export const restoreErrors: string[] = []
 const openProjects = new Map<string, OpenProject>()
 let openTabs: ProjectTab[] = []
 let recent: RecentDocument[] = []
-/** Folders on this computer the user picked to keep projects in. */
-let workFolders: FileSystemDirectoryHandle[] = []
+let workFolders: WorkFolder[] = []
 let db: IDBDatabase | null = null
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(DB_NAME)
 const fileListeners = new Set<() => void>()
@@ -263,7 +271,11 @@ export async function openProjectStore() {
       openTabs.push(tab)
     }
     recent = ((await request(db.transaction(META_STORE).objectStore(META_STORE).get(RECENT_RECORD))) as RecentDocument[] | undefined) ?? []
-    workFolders = ((await request(db.transaction(META_STORE).objectStore(META_STORE).get(WORK_FOLDERS_RECORD))) as FileSystemDirectoryHandle[] | undefined) ?? []
+    const storedFolders = (await request(db.transaction(META_STORE).objectStore(META_STORE).get(WORK_FOLDERS_RECORD))) as
+      | (WorkFolder | FileSystemDirectoryHandle)[]
+      | undefined
+    // Before Drive folders, the list held directory handles.
+    workFolders = (storedFolders ?? []).map((stored) => ('folder' in stored ? stored : { name: stored.name, folder: { kind: 'local', handle: stored } }))
   } catch {
     // No IndexedDB (private window, disabled): work from memory for this session.
   }
@@ -399,15 +411,23 @@ export const recentDocuments = () => recent
 
 export const savedWorkFolders = () => workFolders
 
-export async function addWorkFolder(handle: FileSystemDirectoryHandle) {
-  for (const folder of workFolders) if (await folder.isSameEntry(handle)) return
-  workFolders = [...workFolders, handle]
-  put(META_STORE, WORK_FOLDERS_RECORD, workFolders)
+async function isSameFolder(a: FolderRef, b: FolderRef): Promise<boolean> {
+  if (a.kind === 'drive') return b.kind === 'drive' && a.id === b.id
+  if (b.kind === 'drive') return false
+  return a.handle.isSameEntry(b.handle)
 }
 
-/** Takes the folder off the list; the folder itself stays on disk as it is. */
-export function removeWorkFolder(handle: FileSystemDirectoryHandle) {
-  workFolders = workFolders.filter((folder) => folder !== handle)
+/** Adds a work folder; one already on the list stays where it is. Returns the one on the list. */
+export async function addWorkFolder(added: WorkFolder): Promise<WorkFolder> {
+  for (const workFolder of workFolders) if (await isSameFolder(workFolder.folder, added.folder)) return workFolder
+  workFolders = [...workFolders, added]
+  put(META_STORE, WORK_FOLDERS_RECORD, workFolders)
+  return added
+}
+
+/** Takes the folder off the list; the folder itself stays as it is. */
+export function removeWorkFolder(removed: WorkFolder) {
+  workFolders = workFolders.filter((workFolder) => workFolder !== removed)
   put(META_STORE, WORK_FOLDERS_RECORD, workFolders)
 }
 
