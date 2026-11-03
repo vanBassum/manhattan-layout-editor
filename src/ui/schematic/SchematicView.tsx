@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { boundsOf, inflate, rectBetween, snapToGrid } from './geometry'
+import { boundsOf, inflate, rectBetween, snapToGrid } from '../../geometry'
 import {
   alongDragAxis,
   CELL_HEIGHT,
@@ -22,7 +22,7 @@ import {
   withTidyWires,
   type FullSchematic,
   type SchematicNets,
-} from './schematic'
+} from '../../schematic'
 import {
   addToSelection,
   isSchematicItemSelected,
@@ -34,11 +34,11 @@ import {
   selectionOf,
   toggleSchematicItem,
   type SchematicItem,
-} from './selection'
-import type { BuiltComponent, BuiltNetlist, Point, Rect, SchematicPlacement, Selection } from './types'
-import { layerClasses, layerOpacities, type SchematicLayers } from './ui/layers'
-import { LabelMark, SchematicPart, textOffsetOf } from './ui/schematic/SchematicDrawing'
-import { gridPitch, gridPitches, useViewport, ViewportGrid, type View } from './ui/viewport'
+} from '../../selection'
+import type { BuiltComponent, BuiltNetlist, Point, Rect, SchematicPlacement, Selection } from '../../types'
+import { layerClasses, layerOpacities, type SchematicLayers } from '../layers'
+import { gridPitch, gridPitches, useViewport, ViewportGrid, type View } from '../viewport'
+import { LabelMark, SchematicPart, textOffsetOf } from './SchematicDrawing'
 
 /**
  * Select: drag parts; drag from a pin end to draw a wire; drag a wire end to move it, or a wire

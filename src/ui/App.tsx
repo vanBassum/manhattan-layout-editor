@@ -33,7 +33,7 @@ import {
   withSchematicNets,
   type FullSchematic,
 } from '../schematic'
-import { SchematicView, type SchematicTool } from '../SchematicView'
+import { SchematicView, type SchematicTool } from './schematic/SchematicView'
 import type { Layout, NetLabel, Placement, Project, Selection, Settings } from '../types'
 import { ProjectTabs } from './ProjectTabs'
 import { AppMenu } from './AppMenu'
