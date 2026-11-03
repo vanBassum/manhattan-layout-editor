@@ -19,8 +19,8 @@ import {
   type ProjectTab,
   type RemoteChange,
 } from '../documents/projectStore'
-import type { Project } from '../types'
-import { NO_HISTORY, snapshotOf, stepHistory, withEdit, type History, type Snapshot } from '../undoHistory'
+import type { Project } from '../model/types'
+import { NO_HISTORY, snapshotOf, stepHistory, withEdit, type History, type Snapshot } from '../model/undoHistory'
 
 const RECOVERY_COPY_DELAY_MS = 300
 

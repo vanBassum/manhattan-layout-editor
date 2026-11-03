@@ -1,10 +1,10 @@
 // A saved project file: what a file on this computer, a Google Drive document, a share link and a
 // recovery copy hold, and the file name a project is saved under.
 
-import { checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from '../definitions'
-import { withoutCutLines } from '../migrateCutLayout'
+import { checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from '../model/definitions'
+import { withoutCutLines } from '../model/migrations/migrateCutLayout'
+import type { Project, Settings } from '../model/types'
 import { findStrategy, STRATEGIES } from '../optimize'
-import type { Project, Settings } from '../types'
 
 export const DEFAULT_SETTINGS: Settings = { snap: 0.5, isolation: 0.4, strategy: STRATEGIES[0].id, clearance: 3, maxLead: 10 }
 

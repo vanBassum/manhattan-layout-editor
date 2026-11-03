@@ -3,11 +3,11 @@
 // such a layout becomes the islands its cuts gave, which every editing mode can work on.
 // Everything that only such layouts need lives here, so dropping the migration is one file.
 
-import { buildNetlist } from './definitions'
-import { defaultLeadEnds, toWorld } from './layout'
-import { isRealNet } from './netlist'
-import { cellsToRects, columns, indexOf, oriented, rows, uniqueSorted, type Axis, type Grid } from './raster'
-import type { Island, Layout, Point, Project, Rect } from './types'
+import { buildNetlist } from '../definitions'
+import { defaultLeadEnds, toWorld } from '../layout'
+import { isRealNet } from '../netlist'
+import { cellsToRects, columns, indexOf, oriented, rows, uniqueSorted, type Axis, type Grid } from '../raster'
+import type { Island, Layout, Point, Project, Rect } from '../types'
 
 const CUT_LINES_STRATEGY = 'knife-cuts'
 const EPS = 1e-6

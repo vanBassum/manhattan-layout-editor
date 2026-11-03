@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { withoutCutLines } from './migrateCutLayout'
-import type { Layout, Project, Settings } from './types'
+import type { Layout, Project, Settings } from '../types'
 
 const SETTINGS: Settings = { snap: 0.5, isolation: 0.4, strategy: 'knife', clearance: 1, maxLead: 10 }
 

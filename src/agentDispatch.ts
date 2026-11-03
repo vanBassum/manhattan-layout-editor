@@ -16,9 +16,9 @@ import {
   setLeadEnd,
   stringArg,
 } from './agentCommands'
-import { buildNetlist, builtProject, checkedDefinition, withAssignedDefinition } from './definitions'
-import { chooseResistors, keepFootprintChoices } from './layout'
-import { withValues } from './netlist'
+import { buildNetlist, builtProject, checkedDefinition, withAssignedDefinition } from './model/definitions'
+import { chooseResistors, keepFootprintChoices } from './model/layout'
+import { withValues } from './model/netlist'
 import { findStrategy } from './optimize'
 import {
   agentPlacements,
@@ -31,9 +31,9 @@ import {
   withPlacementChanges,
   withSchematicNets,
   type FullSchematic,
-} from './schematic'
-import type { BuiltProject, Layout, Netlist, Project, Rect } from './types'
-import { snapshotOf, type Snapshot } from './undoHistory'
+} from './model/schematic'
+import type { BuiltProject, Layout, Netlist, Project, Rect } from './model/types'
+import { snapshotOf, type Snapshot } from './model/undoHistory'
 
 type Args = Record<string, unknown>
 

@@ -1,4 +1,4 @@
-import type { BuiltNetlist, Layout, Settings, StrategyId } from '../types'
+import type { BuiltNetlist, Layout, Settings, StrategyId } from '../model/types'
 
 /**
  * A layout strategy builds a complete, editable layout from the netlist. It only decides geometry:

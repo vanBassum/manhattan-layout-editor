@@ -1,7 +1,7 @@
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { rotatePoint } from '../../geometry'
-import { labelSymbol } from '../../schematic'
-import type { BuiltComponent, NetLabel, PinEnd, Point, SchematicPlacement, SymbolGraphic } from '../../types'
+import { rotatePoint } from '../../model/geometry'
+import { labelSymbol } from '../../model/schematic'
+import type { BuiltComponent, NetLabel, PinEnd, Point, SchematicPlacement, SymbolGraphic } from '../../model/types'
 
 /** Text placed `distance` mm from `at` along `axis`, reading upright whichever way the axis points. */
 function textAlong(at: Point, axis: Point, distance: number) {

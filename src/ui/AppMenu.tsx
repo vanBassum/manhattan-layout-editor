@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { EXAMPLES } from '../documents/examples'
 import { driveConfigured, signOut } from '../documents/googleDrive'
-import type { Project } from '../types'
+import type { Project } from '../model/types'
 import { Icon, type IconName } from './icons'
 import type { Theme } from './preferences'
 import { useDropdown } from './useDropdown'

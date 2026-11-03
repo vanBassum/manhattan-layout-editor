@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import example from './examples/Astable multivibrator.manhattan.json?raw'
+import example from '../examples/Astable multivibrator.manhattan.json?raw'
 import {
   buildNetlist,
   checkedDefinition,
@@ -7,8 +7,8 @@ import {
   withDefinitions,
   withoutUnfitDefinitions,
 } from './definitions'
-import { EXAMPLES } from './documents/examples'
-import { projectFromFile } from './documents/projectFormat'
+import { EXAMPLES } from '../documents/examples'
+import { projectFromFile } from '../documents/projectFormat'
 import type { ComponentDefinition, FootprintDefinition, NetComponent, Project, SymbolDefinition } from './types'
 
 const SYMBOL: SymbolDefinition = {

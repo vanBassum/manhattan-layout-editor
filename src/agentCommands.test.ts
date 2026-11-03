@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import example from './examples/Astable multivibrator.manhattan.json?raw'
 import { addComponent } from './agentCommands'
-import { buildNetlist } from './definitions'
 import { projectFromFile } from './documents/projectFormat'
-import { completeSchematic, deriveNets, pinsWithOtherNet, placedParts } from './schematic'
-import type { Project } from './types'
+import { buildNetlist } from './model/definitions'
+import { completeSchematic, deriveNets, pinsWithOtherNet, placedParts } from './model/schematic'
+import type { Project } from './model/types'
 
 const exampleProject = () => projectFromFile(example)
 

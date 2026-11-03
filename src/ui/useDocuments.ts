@@ -23,7 +23,7 @@ import {
 import { errorText } from '../errorText'
 import { downloadText } from './download'
 import type { SaveChoice } from './FileDialog'
-import type { Project } from '../types'
+import type { Project } from '../model/types'
 import type { TabSession } from './useTabs'
 
 const DRIVE_AUTOSAVE_MS = 2000

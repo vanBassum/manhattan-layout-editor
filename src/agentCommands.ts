@@ -1,14 +1,14 @@
 // Layout inspection and edits as used by the AI agent bridge. Pure functions: they read a project
 // and return a description or a new layout (or netlist); App applies it (with undo).
 
-import { buildNetlist, withAssignedDefinition } from './definitions'
 import { errorText } from './errorText'
-import { footprintPinCount } from './footprints'
-import { boundsOf } from './geometry'
-import { analyzeLeads, bodyBounds, changeFootprints, createLayout, findSpacingViolations, findSplitNets, replaceIslandRects, toLocal, toWorld } from './layout'
-import { isRealNet, naturalCompare, pinsByNet } from './netlist'
-import { agentPlacements, completeSchematic, placedParts } from './schematic'
-import type { BuiltComponent, BuiltProject, Island, Layout, NetLabel, Netlist, Pin, Placement, Point, Project, Rect, Schematic } from './types'
+import { buildNetlist, withAssignedDefinition } from './model/definitions'
+import { footprintPinCount } from './model/footprints'
+import { boundsOf } from './model/geometry'
+import { analyzeLeads, bodyBounds, changeFootprints, createLayout, findSpacingViolations, findSplitNets, replaceIslandRects, toLocal, toWorld } from './model/layout'
+import { isRealNet, naturalCompare, pinsByNet } from './model/netlist'
+import { agentPlacements, completeSchematic, placedParts } from './model/schematic'
+import type { BuiltComponent, BuiltProject, Island, Layout, NetLabel, Netlist, Pin, Placement, Point, Project, Rect, Schematic } from './model/types'
 
 const round = (v: number) => Math.round(v * 100) / 100
 const roundPoint = (p: Point) => ({ x: round(p.x), y: round(p.y) })

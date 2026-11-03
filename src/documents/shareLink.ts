@@ -1,4 +1,4 @@
-import type { Project } from '../types'
+import type { Project } from '../model/types'
 import { projectFromFile, projectToFile } from './projectFormat'
 
 // A share link carries the whole project in the URL fragment, deflated and base64url-encoded. The

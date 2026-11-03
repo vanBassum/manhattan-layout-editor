@@ -1,5 +1,5 @@
-import { boundsOf, formatMm, inflate, outlinePath } from './geometry'
-import type { Island } from './types'
+import { boundsOf, formatMm, inflate, outlinePath } from '../model/geometry'
+import type { Island } from '../model/types'
 
 const escapeXml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')

@@ -2,8 +2,8 @@
 // From v4 on, islands touch and the cut is burned centered on their shared edge. Migrating grows
 // every island by isolation/2 into the gap and puts its edges on the snap grid.
 
-import { inflate, rectsOverlap, snapToGrid } from './geometry'
-import type { Island, Project, Rect } from './types'
+import { inflate, rectsOverlap, snapToGrid } from '../geometry'
+import type { Island, Project, Rect } from '../types'
 
 /** Grid for projects with snapping off. */
 const FALLBACK_GRID = 0.1

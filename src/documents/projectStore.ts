@@ -10,8 +10,8 @@
 // projects without overwriting each other.
 
 import { errorText } from '../errorText'
-import { migrateGappedIslands } from '../migrateIslands'
-import type { Project } from '../types'
+import { migrateGappedIslands } from '../model/migrations/migrateIslands'
+import type { Project } from '../model/types'
 import { firstVisitExample } from './examples'
 import { checkedProject, projectNameOf, projectToFile, readSavedProject } from './projectFormat'
 
@@ -159,7 +159,7 @@ function notifyFiles() {
 
 // --- Before IndexedDB: localStorage --------------------------------------------------------------
 
-// v5: islands touch; the isolation cut runs along their shared edges (see migrateIslands.ts).
+// v5: islands touch; the isolation cut runs along their shared edges (see model/migrations/migrateIslands.ts).
 const LEGACY_PROJECT_PREFIX = 'manhattan-layout-editor/project-v5'
 // v3: islands with isolation gaps between them.
 const V3_PROJECT_PREFIX = 'manhattan-layout-editor/project-v3'

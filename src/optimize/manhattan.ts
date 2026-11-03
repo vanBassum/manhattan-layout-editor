@@ -1,7 +1,7 @@
-import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid, withoutFloatNoise } from '../geometry'
-import { onCopper, solderPoint, toLocal, toWorld } from '../layout'
-import { isGroundNet, isRealNet, naturalCompare, pinsByNet } from '../netlist'
-import type { BuiltNetlist, Island, Point, Rect, Settings } from '../types'
+import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid, withoutFloatNoise } from '../model/geometry'
+import { onCopper, solderPoint, toLocal, toWorld } from '../model/layout'
+import { isGroundNet, isRealNet, naturalCompare, pinsByNet } from '../model/netlist'
+import type { BuiltNetlist, Island, Point, Rect, Settings } from '../model/types'
 import type { Strategy } from './strategy'
 import { leadCost, leadLimit, placeComponents, spiralOffsets, type PlacedPart } from './common'
 

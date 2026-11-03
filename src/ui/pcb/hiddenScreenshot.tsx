@@ -1,8 +1,8 @@
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR } from './Canvas'
-import { findProblemNets } from '../../layout'
-import type { BuiltNetlist, Layout, Rect } from '../../types'
+import { findProblemNets } from '../../model/layout'
+import type { BuiltNetlist, Layout, Rect } from '../../model/types'
 import { ALL_LAYERS } from '../layers'
 import { canvasToPng } from './screenshot'
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { exportSvg } from './exportSvg'
-import type { Island } from './types'
+import type { Island } from '../model/types'
 
 const BOARD: Island[] = [
   { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 5 }] },

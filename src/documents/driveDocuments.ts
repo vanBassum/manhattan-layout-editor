@@ -1,7 +1,7 @@
 // Projects saved in Google Drive: the counterpart of projectFiles.ts, for files in Drive instead of
 // on this computer. A project is called by its file's name.
 
-import type { Project } from '../types'
+import type { Project } from '../model/types'
 import { fileInfo, fileVersion, findFile, readFile, writeFile } from './googleDrive'
 import { compareSaved, type FileComparison } from './projectFiles'
 import { projectFileName, projectFromFile, projectNameOf, projectToFile, readSavedProject } from './projectFormat'

@@ -1,6 +1,6 @@
-import { snapToGrid, withoutFloatNoise } from '../geometry'
-import { naturalCompare, pinsByNet } from '../netlist'
-import type { BuiltNetlist, Island, Netlist, Settings } from '../types'
+import { snapToGrid, withoutFloatNoise } from '../model/geometry'
+import { naturalCompare, pinsByNet } from '../model/netlist'
+import type { BuiltNetlist, Island, Netlist, Settings } from '../model/types'
 import type { Strategy } from './strategy'
 import { componentNets, placeOnIslands } from './common'
 

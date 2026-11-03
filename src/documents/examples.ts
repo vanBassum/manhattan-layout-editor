@@ -1,6 +1,6 @@
 // Every project file in src/examples is offered under File > Examples, called by its file name.
 
-import type { Project } from '../types'
+import type { Project } from '../model/types'
 import { projectFromFile, projectNameOf } from './projectFormat'
 
 const EXAMPLE_FILES = import.meta.glob<string>('../examples/*.manhattan.json', { query: '?raw', import: 'default', eager: true })

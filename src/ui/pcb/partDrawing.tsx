@@ -1,4 +1,4 @@
-import type { Geometry } from '../../types'
+import type { Geometry } from '../../model/types'
 
 export const COPPER_COLOR = '#d9945a'
 export const LEAD_COLOR = '#777777'
@@ -51,7 +51,7 @@ export function BodyShape({ geometry, stroke, strokeWidth }: { geometry: Geometr
       )
     case 'to92': {
       // Seen from above: a circle centred on the legs, cut off by the flat face 0.4 of the depth
-      // in front of them (see the to92 geometry in layout.ts).
+      // in front of them (see the to92 geometry in model/footprintTemplates.ts).
       const cx = x + w / 2
       const r = Math.min(w / 2, 0.6 * h)
       const halfChord = Math.sqrt(Math.max(0, r * r - (0.4 * h) ** 2))

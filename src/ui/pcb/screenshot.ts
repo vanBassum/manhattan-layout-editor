@@ -1,4 +1,4 @@
-import type { Rect } from '../../types'
+import type { Rect } from '../../model/types'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const MAX_PIXELS = 1600

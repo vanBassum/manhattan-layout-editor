@@ -1,4 +1,4 @@
-import { errorText } from './errorText'
+import { errorText } from '../errorText'
 import { generatedGeometry } from './footprintTemplates'
 import { withFootprintChoices } from './layout'
 import { isJsonObject } from './netlist'

@@ -1,7 +1,7 @@
 // Project files on this computer through the File System Access API (Chromium browsers). Elsewhere
 // the editor falls back to downloading and uploading.
 
-import type { Project } from '../types'
+import type { Project } from '../model/types'
 import { projectFileName, projectToFile, readSavedProject } from './projectFormat'
 import type { ProjectFile } from './projectStore'
 

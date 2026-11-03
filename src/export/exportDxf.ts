@@ -1,5 +1,5 @@
-import { formatMm, insetOutline } from './geometry'
-import type { Island, Point } from './types'
+import { formatMm, insetOutline } from '../model/geometry'
+import type { Island, Point } from '../model/types'
 
 const LAYER = 'ISOLATION'
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { boundsOf, rectBetween, snapToGrid } from '../../geometry'
+import { boundsOf, rectBetween, snapToGrid } from '../../model/geometry'
 import {
   alongDragAxis,
   CELL_HEIGHT,
@@ -22,7 +22,7 @@ import {
   withTidyWires,
   type FullSchematic,
   type SchematicNets,
-} from '../../schematic'
+} from '../../model/schematic'
 import {
   addToSelection,
   isSchematicItemSelected,
@@ -34,8 +34,8 @@ import {
   selectionOf,
   toggleSchematicItem,
   type SchematicItem,
-} from '../../selection'
-import type { BuiltComponent, BuiltNetlist, Point, Rect, SchematicPlacement, Selection } from '../../types'
+} from '../../model/selection'
+import type { BuiltComponent, BuiltNetlist, Point, Rect, SchematicPlacement, Selection } from '../../model/types'
 import { layerClasses, layerOpacities, type SchematicLayers } from '../layers'
 import {
   CLICK_TOLERANCE_PX,
