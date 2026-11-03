@@ -28,7 +28,7 @@ function checkedSettings(stored: StoredSettings | undefined): Settings {
 }
 
 /** The stored simulation set-up, checked; missing when the project has none. */
-function checkedSimulation(data: unknown): Simulation | undefined {
+export function checkedSimulation(data: unknown): Simulation | undefined {
   if (data === undefined) return undefined
   if (!isJsonObject(data)) throw new Error('"simulation" must be an object')
   const { sources, models } = data

@@ -25,6 +25,9 @@ Safari is not supported for this connection.
   set_labels, update_pcb (give the PCB the schematic's nets).
 - Parts: add_component (a new part, optionally with the nets its pins join), set_values,
   get_definitions, set_definition, assign_definition (symbol and footprints of a part).
+- Simulation of the schematic with ngspice: get_simulation (sources, SPICE models, trimmer
+  positions, and what is still missing), set_simulation, run_simulation (DC operating point, or a
+  transient with measurements and optional waveform samples per net).
 - History: undo, redo.
 
 The editor has project tabs. Every tool takes an optional "project" (tab name or id from

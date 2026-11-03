@@ -17,6 +17,7 @@ import {
   stringArg,
   type Args,
 } from './agentCommands'
+import { changedSimulation, describeSimulation, runSimulation } from './agentSimulation'
 import { buildNetlist, builtProject, checkedDefinition, withAssignedDefinition } from '../model/definitions'
 import { chooseResistors } from '../model/layout'
 import { withValues } from '../model/netlist'
@@ -162,6 +163,10 @@ const COMMANDS: Record<string, (tab: AgentTab, args: Args) => unknown> = {
     tab.change({ netlist })
     return { components: netlist.components.map((c) => ({ ref: c.ref, value: c.value })) }
   },
+  get_simulation: (tab) => describeSimulation(tab.project),
+  set_simulation: (tab, args) => describeSimulation(tab.change({ simulation: changedSimulation(tab.project, args) })),
+  run_simulation: (tab, args) => runSimulation(tab.project, args),
+
   add_component: (tab, args) => {
     const updated = tab.change(addComponent(tab.project, args))
     const part = describeSchematic(updated).parts.find((p) => p.ref === args.ref)

@@ -394,6 +394,55 @@ forward(
   },
 )
 
+const source = z.discriminatedUnion('shape', [
+  z.object({ net: z.string(), shape: z.literal('dc'), volts: z.number() }),
+  z.object({ net: z.string(), shape: z.literal('sine'), volts: z.number().describe('peak'), hertz: z.number().positive() }),
+  z.object({
+    net: z.string(),
+    shape: z.literal('square'),
+    volts: z.number().describe('peak: the wave swings from -volts to +volts'),
+    hertz: z.number().positive(),
+    edgeSeconds: z.number().positive().describe('rise and fall time, under half the period'),
+  }),
+])
+
+forward(
+  'get_simulation',
+  'The simulation set-up of the schematic (the schematic\'s nets are what gets simulated, with ngspice): its ' +
+    'sources (each a voltage from a net to ground: DC, or a square or sine wave, which is 0 V for the operating ' +
+    'point), SPICE models by part value and trimmer wiper positions (0 at pin 1, 1 at the far end). "needs" lists ' +
+    'the models and trimmer positions the schematic requires and whether they are there; "problems" says why it ' +
+    'cannot run yet (empty when it can).',
+)
+
+forward(
+  'set_simulation',
+  'Changes the simulation set-up, as one undo step: "sources" replaces the whole list; "models" and "trimmers" ' +
+    'are merged by key, where null removes one. A model is SPICE text starting with ".model <value> NPN|PNP|D(...)" ' +
+    'for the part value it serves, e.g. {"BC546": ".model BC546 NPN(IS=... BF=...)"}; ngspice does not know ' +
+    'LTspice extras such as Vceo, Icrating or mfg, so leave those out. Returns what get_simulation does.',
+  {
+    sources: z.array(source).optional().describe('replaces all sources'),
+    models: z.record(z.string(), z.string().nullable()).optional().describe('part value -> SPICE model text, or null to remove'),
+    trimmers: z.record(z.string(), z.number().min(0).max(1).nullable()).optional().describe('trimmer ref -> wiper position 0..1, or null to remove'),
+  },
+)
+
+forward(
+  'run_simulation',
+  'Runs ngspice on the schematic as set up (see get_simulation) and answers with numbers. "operating_point": the ' +
+    'DC voltage of every net, what each DC source delivers (amps), and every transistor\'s Vbe, Vce, Ic and Ib ' +
+    '(currents into the terminal, so negative for a PNP). "transient": five periods of the slowest wave source; ' +
+    'for each net its max, min, peakToPeak and time-weighted average, plus, when "samples" is given, the waveform at ' +
+    'that many evenly spaced times (sampleTimes). Also returns ngspice\'s warnings. Runs in the editor, which ' +
+    'loads ngspice on first use (a second or two).',
+  {
+    analysis: z.enum(['operating_point', 'transient']),
+    nets: z.array(z.string()).optional().describe('transient only: the nets to report; default all'),
+    samples: z.number().int().min(0).max(1000).optional().describe('transient only: waveform samples per net; default none'),
+  },
+)
+
 forward('undo', 'Undoes the last layout change (the same history as Ctrl+Z in the editor).')
 forward('redo', 'Redoes the last undone layout change.')
 
