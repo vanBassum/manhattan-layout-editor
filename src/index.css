@@ -938,7 +938,29 @@ input:focus-visible {
 .explorer-heading {
   margin: 10px 0 2px 8px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.explorer-tree hr {
+  width: 100%;
+  margin: 8px 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.explorer-kind {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.explorer-tree-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 16px;
 }
 
 .explorer-tree-row {

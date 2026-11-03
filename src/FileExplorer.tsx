@@ -82,6 +82,7 @@ export function FileExplorer(props: FileExplorerProps) {
   const [selected, setSelected] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [makingFolder, setMakingFolder] = useState(false)
+  const [choosingWorkspace, setChoosingWorkspace] = useState(false)
   const [name, setName] = useState(props.name ?? '')
 
   const folder = place.kind === 'folder' ? place.path[place.path.length - 1].folder : null
@@ -303,48 +304,52 @@ export function FileExplorer(props: FileExplorerProps) {
 
       <div className="explorer-body">
         <nav className="explorer-tree" aria-label="Places">
+          <span className="explorer-heading">Quick access</span>
           <button className={place.kind === 'recent' ? 'active' : ''} onClick={() => go({ kind: 'recent' })}>
             <Icon name="clock" />Recent
           </button>
-          <span className="explorer-heading">Work folders</span>
+          <span className="explorer-heading">Workspaces</span>
           {workFolders.map((workFolder, k) => (
             <div key={k} className="explorer-tree-row">
-              <button
-                className={shownRoot === workFolder ? 'active' : ''}
-                onClick={() => openWorkFolder(workFolder)}
-                title={`${workFolder.name} (${workFolder.folder.kind === 'drive' ? 'Google Drive' : 'this computer'})`}
-              >
+              <button className={shownRoot === workFolder ? 'active' : ''} onClick={() => openWorkFolder(workFolder)} title={workFolder.name}>
                 <Icon name={workFolder.folder.kind === 'drive' ? 'cloud' : 'folder'} />
                 <span className="explorer-name">{workFolder.name}</span>
+                <span className="explorer-kind">{workFolder.folder.kind === 'drive' ? 'Drive' : 'Local'}</span>
               </button>
               <button
                 className="explorer-tree-remove"
                 onClick={() => forgetFolder(workFolder)}
-                title="Take this folder off the list; the folder itself stays as it is"
-                aria-label={`Forget ${workFolder.name}`}
+                title="Take this workspace off the list; the folder itself stays as it is"
+                aria-label={`Remove workspace ${workFolder.name}`}
               >
                 ✕
               </button>
             </div>
           ))}
-          {canUseFolders && (
-            <button onClick={addLocalFolder} title="Pick a folder on this computer to keep projects in">
-              <Icon name="folderPlus" />Add folder on this computer…
+          {(canUseFolders || driveConfigured) && (
+            <button onClick={() => (canUseFolders && driveConfigured ? setChoosingWorkspace(!choosingWorkspace) : canUseFolders ? addLocalFolder() : addDriveFolder())}>
+              <Icon name="folderPlus" />Add workspace…
             </button>
           )}
-          {driveConfigured && (
-            <button onClick={addDriveFolder} title="Pick a folder in your Google Drive to keep projects in">
-              <Icon name="folderPlus" />Add folder in Google Drive…
-            </button>
+          {choosingWorkspace && (
+            <div className="explorer-tree-choices">
+              <button onClick={() => (setChoosingWorkspace(false), addLocalFolder())}>
+                <Icon name="folder" />On this computer…
+              </button>
+              <button onClick={() => (setChoosingWorkspace(false), addDriveFolder())}>
+                <Icon name="cloud" />In Google Drive…
+              </button>
+            </div>
           )}
-          <span className="explorer-heading">Elsewhere</span>
+          <hr />
+          <span className="explorer-heading">Other locations</span>
           <button onClick={props.onOtherFile} title={mode === 'open' ? 'Open a file from anywhere on this computer' : 'Save to a file anywhere on this computer'}>
             <Icon name="file" />
-            {mode === 'open' ? 'File on this computer…' : canUseFolders ? 'Location on this computer…' : 'Download'}
+            {mode === 'open' ? 'Open local file…' : canUseFolders ? 'Save as local file…' : 'Download'}
           </button>
           {driveConfigured && mode === 'open' && (
             <button onClick={openDriveFile} title="Pick a project anywhere in your Google Drive">
-              <Icon name="cloud" />File in Google Drive…
+              <Icon name="cloud" />Browse Google Drive…
             </button>
           )}
         </nav>
