@@ -10,7 +10,6 @@
 // projects without overwriting each other.
 
 import { errorText } from '../errorText'
-import { migrateGappedIslands } from '../model/migrations/migrateIslands'
 import type { Project } from '../model/types'
 import { firstVisitExample } from './examples'
 import { checkedProject, projectNameOf, projectToFile, readSavedProject } from './projectFormat'
@@ -64,8 +63,6 @@ interface StoredProject {
   savedContent: string
   location?: ProjectLocation
   driveRevision?: DriveRevision
-  /** Before locations: the linked file. */
-  handle?: FileSystemFileHandle
 }
 
 /**
@@ -180,63 +177,6 @@ function notifyFiles() {
   fileListeners.forEach((listener) => listener())
 }
 
-// --- Before IndexedDB: localStorage --------------------------------------------------------------
-
-// v5: islands touch; the isolation cut runs along their shared edges (see model/migrations/migrateIslands.ts).
-const LEGACY_PROJECT_PREFIX = 'manhattan-layout-editor/project-v5'
-// v3: islands with isolation gaps between them.
-const V3_PROJECT_PREFIX = 'manhattan-layout-editor/project-v3'
-const LEGACY_TABS_KEY = 'manhattan-layout-editor/tabs-v1'
-
-function readLegacyJson(key: string): unknown {
-  try {
-    const stored = localStorage.getItem(key)
-    return stored === null ? null : JSON.parse(stored)
-  } catch {
-    return null
-  }
-}
-
-/** Tab `id`'s project as stored before IndexedDB, in the v5 or else the v3 layout; null when neither is stored. */
-function readLegacyProject(id: string): Project | null {
-  const v5 = readLegacyJson(`${LEGACY_PROJECT_PREFIX}/${id}`)
-  if (v5 !== null) return checkedProject(v5)
-  const v3 = readLegacyJson(`${V3_PROJECT_PREFIX}/${id}`)
-  return v3 === null ? null : migrateGappedIslands(checkedProject(v3))
-}
-
-/**
- * The tabs and projects from before IndexedDB, or from before tabs (a single v3 project under the
- * bare prefix). localStorage is left as it is, as a way back.
- */
-function readLegacyTabs(): { tabs: ProjectTab[]; projects: Map<string, Project> } {
-  const listed = readLegacyJson(LEGACY_TABS_KEY)
-  const tabs = Array.isArray(listed) ? (listed as ProjectTab[]).filter((t) => typeof t?.id === 'string') : []
-  const projects = new Map<string, Project>()
-  for (const tab of tabs) {
-    try {
-      const project = readLegacyProject(tab.id)
-      if (project) projects.set(tab.id, project)
-      else restoreErrors.push(`Could not open "${tab.name}" again: its project is missing.`)
-    } catch (e) {
-      restoreErrors.push(`Could not open "${tab.name}" again: ${errorText(e)}.`)
-    }
-  }
-  if (tabs.length === 0) {
-    const single = readLegacyJson(V3_PROJECT_PREFIX)
-    if (single !== null) {
-      try {
-        const id = newTabId()
-        projects.set(id, migrateGappedIslands(checkedProject(single)))
-        tabs.push({ id, name: UNTITLED })
-      } catch (e) {
-        restoreErrors.push(`Could not open the project from an older version again: ${errorText(e)}.`)
-      }
-    }
-  }
-  return { tabs: tabs.filter((t) => projects.has(t.id)), projects }
-}
-
 // --- Public API ----------------------------------------------------------------------------------
 
 /** Opens tab `tab` from its IndexedDB record again. */
@@ -244,10 +184,9 @@ function restoreTab(tab: ProjectTab, record: StoredRecord | undefined) {
   if (!record) throw new Error('its recovery copy is missing')
   const stored = convertedRecord(record, tab)
   const project = checkedProject(stored.project)
-  const location: ProjectLocation | undefined = stored.location ?? (stored.handle && { kind: 'local', handle: stored.handle })
-  remember(tab.id, { project, savedContent: readSavedProject(stored.savedContent).content, location, driveRevision: stored.driveRevision }, false)
+  remember(tab.id, { ...stored, project, savedContent: readSavedProject(stored.savedContent).content }, false)
   // Until November 2026 every tab kept a name; a saved project's tab is called by its document.
-  openTabs.push(location ? { id: tab.id } : tab)
+  openTabs.push(stored.location ? { id: tab.id } : tab)
 }
 
 /** How a restore error names tab `tab`: a saved project's tab no longer has a name of its own. */
@@ -280,13 +219,6 @@ export async function openProjectStore() {
       restoreErrors.push(`Could not reopen the tabs of the last session: ${errorText(e)}.`)
     }
   }
-  if (openTabs.length === 0) {
-    const legacy = readLegacyTabs()
-    for (const tab of legacy.tabs) setSavedProject(tab.id, legacy.projects.get(tab.id)!)
-    openTabs = legacy.tabs
-    writeTabs(openTabs)
-  }
-
   channel?.addEventListener('message', (e: MessageEvent<Message>) => {
     const message = e.data
     if (message.kind === 'tabs') {

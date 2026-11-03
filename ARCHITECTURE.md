@@ -30,7 +30,7 @@ Rules that follow from the table:
 | File | Domain |
 | --- | --- |
 | `types`, `geometry`, `netlist`, `netlistImport`, `footprints`, `footprintTemplates`, `buildStyles`, `layout`, `definitions`, `schematicSymbols`, `schematic`, `boundary`, `islandEdges`, `layoutDrag`, `selection`, `undoHistory` | model (in place) |
-| `migrateIslands`, `migrateCutLayout` | model (in place in `model/migrations/`) |
+| `migrateCutLayout` | model (in place in `model/migrations/`) |
 | `exportSvg`, `exportDxf` | export (in place; `downloadText` lives in `ui/download`: it touches the DOM) |
 | `projectStore`, `projectFiles`, `driveDocuments`, `googleDrive`, `googlePicker`, `shareLink` | documents (in place, with the file format split off into `projectFormat` and the examples into `examples`) |
 | `agentBridge`, `agentCommands`, `agentDispatch` | agent (in place) |

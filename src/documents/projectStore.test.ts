@@ -90,8 +90,10 @@ describe('file status', () => {
 describe('reopening a tab', () => {
   it('compares its saved content as this version writes it, and names a local file tab after its file', async () => {
     const handle = { name: 'amp.manhattan.json' }
-    // Before locations, a record kept its linked file as `handle`; `example` was written by an older version.
-    await seedSession([{ id: 'amp', name: 'Old name' }], { amp: { project: projectFromFile(example), savedContent: example, handle } })
+    // Until November 2026 every tab kept a name of its own; `example` was written by an older version.
+    await seedSession([{ id: 'amp', name: 'Old name' }], {
+      amp: { project: projectFromFile(example), savedContent: example, location: { kind: 'local', handle } },
+    })
     vi.resetModules()
     const store = await import('./projectStore')
     await store.openProjectStore()
