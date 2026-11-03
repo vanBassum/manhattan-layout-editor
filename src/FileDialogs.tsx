@@ -67,18 +67,17 @@ export interface SaveChoice {
 
 interface SaveAsDialogProps {
   name: string
-  /** The place picked first: where the project is now, or this computer. */
+  /** Where Enter saves: where the project is now, or this computer. */
   place: ProjectLocation['kind']
   onDone: (choice: SaveChoice | null) => void
 }
 
-/** Save as: a name, and whether it goes to this computer or Google Drive; their own pickers choose the folder. */
-export function SaveAsDialog({ name: initialName, place: initialPlace, onDone }: SaveAsDialogProps) {
+/** Save as: a name, then a tile for this computer or Google Drive, whose own picker chooses the folder. */
+export function SaveAsDialog({ name: initialName, place: enterPlace, onDone }: SaveAsDialogProps) {
   const dialogRef = useModal()
   const [name, setName] = useState(initialName)
-  const [place, setPlace] = useState(initialPlace)
   const trimmed = name.trim()
-  const save = () => trimmed && onDone({ name: trimmed, place })
+  const save = (place: ProjectLocation['kind']) => trimmed && onDone({ name: trimmed, place })
 
   return (
     <dialog ref={dialogRef} className="ai-dialog file-dialog" onCancel={() => onDone(null)}>
@@ -91,34 +90,21 @@ export function SaveAsDialog({ name: initialName, place: initialPlace, onDone }:
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && save()}
+          onKeyDown={(e) => e.key === 'Enter' && save(enterPlace)}
           onFocus={(e) => e.target.select()}
           autoFocus
         />
       </label>
-      <div className="file-places" role="radiogroup" aria-label="Save to">
-        {placesShown().map((option) => (
-          <button
-            key={option}
-            role="radio"
-            aria-checked={place === option}
-            className={place === option ? 'file-place selected' : 'file-place'}
-            onClick={() => setPlace(option)}
-            onDoubleClick={() => trimmed && onDone({ name: trimmed, place: option })}
-          >
-            <Icon name={PLACES[option].icon} />
+      <div className="file-places">
+        {placesShown().map((place) => (
+          <button key={place} className="file-place" onClick={() => save(place)} disabled={!trimmed}>
+            <Icon name={PLACES[place].icon} />
             <span>
-              <strong>{PLACES[option].label}…</strong>
-              <small>{PLACES[option].save}</small>
+              <strong>{PLACES[place].label}…</strong>
+              <small>{PLACES[place].save}</small>
             </span>
           </button>
         ))}
-      </div>
-      <div className="dialog-actions">
-        <button onClick={() => onDone(null)}>Cancel</button>
-        <button className="primary" onClick={save} disabled={!trimmed}>
-          <Icon name="save" />Save
-        </button>
       </div>
     </dialog>
   )

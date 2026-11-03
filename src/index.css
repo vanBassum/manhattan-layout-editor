@@ -975,6 +975,2957 @@ input:focus-visible {
   color: var(--text-muted);
 }
 
+root {
+  --bg: #eef0f3;
+  --panel: #ffffff;
+  --panel-muted: #f6f7f9;
+  --border: #dde1e6;
+  --border-strong: #c7cdd4;
+  --text: #1f2328;
+  --text-muted: #6a737d;
+  --accent: #3b5bdb;
+  --accent-soft: #e7ecfd;
+  --ok: #2b8a3e;
+  --ok-soft: #e6f4ea;
+  --warn: #b07800;
+  --warn-soft: #fff4dc;
+  --error: #d01010;
+  --error-soft: #fde8e8;
+  --radius: 8px;
+  --accent-hover: #3049b8;
+  --code-bg: #f1f3f5;
+  --canvas-bg: #ffffff;
+  --canvas-text: #333333;
+  --grid-minor: #d0d4d9;
+  --grid-major: #c4c9cf;
+  --axis: #8b96a3;
+  --ruler-bg: var(--panel);
+  --ruler-text: #6b7580;
+  --idle-dot: #b0b6bd;
+  --shadow: var(--shadow);
+  --backdrop: rgba(20, 24, 31, 0.35);
+  --sch-resistor: #8a9ee6;
+  --sch-power: #e03131;
+  --sch-box: #fbfbf4;
+  --sch-wire: #000000;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #131518;
+  --panel: #1c1f24;
+  --panel-muted: #252930;
+  --border: #30353d;
+  --border-strong: #434a54;
+  --text: #e3e6ea;
+  --text-muted: #9aa3ad;
+  --accent: #5b7cfa;
+  --accent-soft: #232f52;
+  --ok: #51cf66;
+  --ok-soft: #1d3324;
+  --warn: #f0b429;
+  --warn-soft: #3a2f12;
+  --error: #ff6b6b;
+  --error-soft: #3d1f1f;
+  --accent-hover: #4766ee;
+  --code-bg: #252930;
+  --canvas-bg: #16181c;
+  --canvas-text: #d5d9de;
+  --grid-minor: #262b31;
+  --grid-major: #333941;
+  --axis: #5d6773;
+  --ruler-bg: var(--panel);
+  --ruler-text: #8a939d;
+  --idle-dot: #5d6773;
+  --shadow: rgba(0, 0, 0, 0.5);
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --sch-resistor: #4f63b8;
+  --sch-power: #c92a2a;
+  --sch-box: #20242a;
+  --sch-wire: #e6e6e6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+select,
+input[type='number'],
+input[type='search'] {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 4px 8px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--panel-muted);
+}
+
+button:disabled,
+select:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.icon {
+  flex: none;
+}
+
+/* Shell */
+
+.app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+}
+
+/*
+ * Columns and padding match .workspace, so the menu buttons span the left panel, the project tabs
+ * line up with the canvas and the view switch spans the right panel. A view without a panel on
+ * one side gives that side only the room its buttons need.
+ */
+.header {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 260px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.header.view-schematic {
+  grid-template-columns: 260px minmax(0, 1fr) auto;
+}
+
+.header.view-layout {
+  grid-template-columns: auto minmax(0, 1fr) 260px;
+}
+
+.header-start {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  min-width: 0;
+}
+
+/* Out of the flow but still measurable, so ProjectTabs knows its width once there is room again. */
+.project-tab.overflowed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+}
+
+.menu-tab {
+  display: flex;
+  align-items: center;
+}
+
+.menu-tab button:first-child {
+  flex: 1;
+  min-width: 0;
+  max-width: 280px;
+}
+
+.menu-tab .tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unsaved-dot {
+  flex: none;
+  font-size: 10px;
+  color: var(--accent);
+}
+
+.project-tab {
+  display: flex;
+  align-items: center;
+  flex: none;
+  max-width: 240px;
+  border: 1px solid var(--border);
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: var(--panel-muted);
+  color: var(--text-muted);
+}
+
+.project-tab.active {
+  border-bottom-color: var(--accent);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.project-tab button {
+  border: none;
+  background: none;
+}
+
+.tab-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 4px 4px 10px;
+}
+
+.tab-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.header-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 260px;
+  gap: 8px;
+  padding: 8px;
+  min-height: 0;
+}
+
+/* Sidebars */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.section-title {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-title::before {
+  content: '▸';
+  display: inline-block;
+  width: 1em;
+  color: var(--text-muted);
+}
+
+.section.open > .section-title {
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.section.open > .section-title::before {
+  content: '▾';
+}
+
+.section-body {
+  padding: 8px 10px;
+}
+
+/* A filling section takes the remaining sidebar height; only its list scrolls. */
+.section.fill.open {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 220px;
+}
+
+.section.fill > .section-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.section.fill .component-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.check-row input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding-left: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  padding-left: 0;
+  color: var(--text);
+}
+
+.search input:focus-visible {
+  outline: none;
+}
+
+.component-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.component-list button {
+  display: grid;
+  grid-template-columns: 3.5em 1fr;
+  column-gap: 6px;
+  width: 100%;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+  padding: 3px 6px;
+}
+
+.component-list button.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.component-list .ref {
+  font-weight: 600;
+}
+
+.component-list .value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.component-list .footprint {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.properties {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.properties dt {
+  color: var(--text-muted);
+}
+
+.properties dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.counts dd {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.unit-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.settings input[type='number'] {
+  width: 5.5em;
+}
+
+.badges {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.badge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.badge.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.badge.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.badge.error {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+/* Canvas area */
+
+.canvas-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.canvas-banners {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.canvas-banners > * {
+  max-width: 100%;
+  box-shadow: 0 4px 14px var(--backdrop);
+  pointer-events: auto;
+}
+
+/* Tool bar: icon above a one-word label, like a navigation rail. */
+.tool-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.rail-group {
+  display: flex;
+  gap: 2px;
+}
+
+.rail-group + .rail-group {
+  border-left: 1px solid var(--border);
+  padding-left: 4px;
+}
+
+.rail-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 56px;
+  padding: 6px 6px 5px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.rail-button .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.rail-button:hover:not(:disabled) {
+  background: var(--panel-muted);
+}
+
+.rail-button.active,
+.rail-button.active:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.canvas-frame {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background-color: var(--canvas-bg);
+  background-image: radial-gradient(var(--grid-minor) 1px, transparent 1px);
+  background-size: 16px 16px;
+  touch-action: none;
+  user-select: none;
+  cursor: default;
+}
+
+.canvas.tool-pan {
+  cursor: grab;
+}
+
+.cut {
+  stroke: transparent;
+}
+
+.cut-x {
+  cursor: ew-resize;
+}
+
+.cut-y {
+  cursor: ns-resize;
+}
+
+.cut:hover {
+  stroke: var(--accent);
+  stroke-opacity: 0.45;
+}
+
+/* Outline edges of the selected island: a visible band to grab. */
+.island-edge line {
+  stroke: var(--accent);
+  stroke-opacity: 0.35;
+}
+
+.island-edge.hovered line {
+  stroke-opacity: 0.7;
+}
+
+/* The + on a hovered edge that grows the island on that side. */
+.grow-button {
+  cursor: copy;
+}
+
+.grow-button circle {
+  fill: var(--accent);
+  stroke: #fff;
+}
+
+.grow-button path {
+  stroke: #fff;
+  stroke-linecap: round;
+}
+
+.marquee {
+  fill: var(--accent);
+  fill-opacity: 0.08;
+  stroke: var(--accent);
+}
+
+/* Layer toggles hide through classes on the svg, so the agent screenshot can reset them on its copy. */
+.canvas.hide-grid {
+  background-image: none;
+}
+
+.schematic.hide-grid .grid,
+.schematic.hide-references .sch-ref,
+.schematic.hide-values .sch-value,
+.schematic.hide-pinNumbers .sch-pin-number,
+.schematic.hide-netNames .net-name:not(.conflict),
+.canvas.hide-grid .grid,
+.canvas.hide-islands .island,
+.canvas.hide-parts .part,
+.canvas.hide-netLabels .net-label,
+.canvas.hide-references .part-ref,
+.canvas.hide-values .part-value,
+.canvas.hide-leads .lead,
+.canvas.hide-leads .ratsnest {
+  display: none;
+}
+
+/* Each pixel is on or off: anti-aliased half-tones make thin lines look grey and blurred. Text stays smooth. */
+.canvas,
+.schematic {
+  shape-rendering: crispEdges;
+}
+
+/* Per-layer opacity comes from --opacity-<layer> on the svg (set by the Layers panel). */
+/* The grid is drawn in the SVG (.grid), so it pans and zooms with the board. */
+.canvas {
+  background-image: none;
+}
+
+.canvas .grid { opacity: var(--opacity-grid, 1); }
+.schematic .grid { opacity: var(--opacity-grid, 1); }
+.schematic .sch-ref { opacity: var(--opacity-references, 1); }
+.schematic .sch-value { opacity: var(--opacity-values, 1); }
+.schematic .sch-pin-number { opacity: var(--opacity-pinNumbers, 1); }
+.schematic .net-name { opacity: var(--opacity-netNames, 1); }
+/* SVG presentation attributes cannot use var(), so the theme-dependent grid colours are set here. */
+.grid-minor { stroke: var(--grid-minor); }
+.grid-major { stroke: var(--grid-major); }
+.axis { stroke: var(--axis); }
+.canvas .island { opacity: var(--opacity-islands, 1); }
+.canvas .net-label { opacity: var(--opacity-netLabels, 1); }
+.canvas .lead { opacity: var(--opacity-leads, 1); }
+.canvas .part-ref { opacity: var(--opacity-references, 1); }
+.canvas .part-value { opacity: var(--opacity-values, 1); }
+/* Parts and ratsnest lines also fade on hover through their opacity attribute, so Canvas multiplies the layer opacity in there. */
+
+/* A strongly faded layer stays visible for reference but lets clicks through to the layers you are editing. */
+.canvas.dim-grid .grid,
+.canvas.dim-islands .island,
+.canvas.dim-parts .part,
+.canvas.dim-netLabels .net-label,
+.canvas.dim-leads .lead,
+.canvas.dim-leads .ratsnest {
+  pointer-events: none;
+}
+
+.island-rect,
+.part {
+  cursor: move;
+}
+
+.part {
+  transition: opacity 0.1s;
+}
+
+.lead-end {
+  cursor: crosshair;
+}
+
+.net-label {
+  font-size: 1.3px;
+  font-weight: 600;
+  fill: #4a2300;
+  pointer-events: none;
+}
+
+.part-ref {
+  font-size: 1.2px;
+  font-weight: 600;
+  fill: #fff;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* The cathode ring printed on a diode body. */
+.cathode-band {
+  fill: #e8e8e8;
+  pointer-events: none;
+}
+
+.part-value {
+  font-size: 1px;
+  fill: var(--canvas-text);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* Values sit on copper as well as on the dark background; a dark halo keeps light text readable on both. */
+:root[data-theme='dark'] .part-value {
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.8);
+  stroke-width: 0.3px;
+}
+
+/* Agent connection state, drawn as a dot on the Menu button and its AI item. */
+.agent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--idle-dot);
+}
+
+.agent-dot.connected {
+  background: var(--ok);
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+/* The schematic's nets differ from the PCB's until the user updates the PCB. */
+.sync-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.notice-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--ok);
+  border-radius: var(--radius);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.board-size {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.shortcuts {
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.shortcuts th,
+.shortcuts td {
+  padding: 4px 16px 4px 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.shortcuts th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Layer rows: name plus a three-way visible / faded / hidden switch. */
+.layer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+/* Popups: AI help and change footprint. */
+.ai-dialog,
+.footprint-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100vh - 32px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+.ai-dialog::backdrop,
+.footprint-dialog::backdrop {
+  background: var(--backdrop);
+}
+
+.ai-dialog header,
+.footprint-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-dialog h2,
+.footprint-dialog h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 17px;
+}
+
+/* Open and Save as: recent projects, a name, and a choice between this computer and Google Drive. */
+.file-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.file-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.file-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.file-recent h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.file-recent button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 24px;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+}
+
+.file-recent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-recent-place {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Two square tiles side by side: this computer and Google Drive. */
+.file-places {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.file-place {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  aspect-ratio: 1;
+  padding: 16px;
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.file-place .icon {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+}
+
+.file-place > span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.file-place small {
+  color: var(--text-muted);
+}
+
+.file-place.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.file-name {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.file-name input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-weight: normal;
+}
+
+root {
+  --bg: #eef0f3;
+  --panel: #ffffff;
+  --panel-muted: #f6f7f9;
+  --border: #dde1e6;
+  --border-strong: #c7cdd4;
+  --text: #1f2328;
+  --text-muted: #6a737d;
+  --accent: #3b5bdb;
+  --accent-soft: #e7ecfd;
+  --ok: #2b8a3e;
+  --ok-soft: #e6f4ea;
+  --warn: #b07800;
+  --warn-soft: #fff4dc;
+  --error: #d01010;
+  --error-soft: #fde8e8;
+  --radius: 8px;
+  --accent-hover: #3049b8;
+  --code-bg: #f1f3f5;
+  --canvas-bg: #ffffff;
+  --canvas-text: #333333;
+  --grid-minor: #d0d4d9;
+  --grid-major: #c4c9cf;
+  --axis: #8b96a3;
+  --ruler-bg: var(--panel);
+  --ruler-text: #6b7580;
+  --idle-dot: #b0b6bd;
+  --shadow: var(--shadow);
+  --backdrop: rgba(20, 24, 31, 0.35);
+  --sch-resistor: #8a9ee6;
+  --sch-power: #e03131;
+  --sch-box: #fbfbf4;
+  --sch-wire: #000000;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #131518;
+  --panel: #1c1f24;
+  --panel-muted: #252930;
+  --border: #30353d;
+  --border-strong: #434a54;
+  --text: #e3e6ea;
+  --text-muted: #9aa3ad;
+  --accent: #5b7cfa;
+  --accent-soft: #232f52;
+  --ok: #51cf66;
+  --ok-soft: #1d3324;
+  --warn: #f0b429;
+  --warn-soft: #3a2f12;
+  --error: #ff6b6b;
+  --error-soft: #3d1f1f;
+  --accent-hover: #4766ee;
+  --code-bg: #252930;
+  --canvas-bg: #16181c;
+  --canvas-text: #d5d9de;
+  --grid-minor: #262b31;
+  --grid-major: #333941;
+  --axis: #5d6773;
+  --ruler-bg: var(--panel);
+  --ruler-text: #8a939d;
+  --idle-dot: #5d6773;
+  --shadow: rgba(0, 0, 0, 0.5);
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --sch-resistor: #4f63b8;
+  --sch-power: #c92a2a;
+  --sch-box: #20242a;
+  --sch-wire: #e6e6e6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+select,
+input[type='number'],
+input[type='search'] {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 4px 8px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--panel-muted);
+}
+
+button:disabled,
+select:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.icon {
+  flex: none;
+}
+
+/* Shell */
+
+.app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+}
+
+/*
+ * Columns and padding match .workspace, so the menu buttons span the left panel, the project tabs
+ * line up with the canvas and the view switch spans the right panel. A view without a panel on
+ * one side gives that side only the room its buttons need.
+ */
+.header {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 260px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.header.view-schematic {
+  grid-template-columns: 260px minmax(0, 1fr) auto;
+}
+
+.header.view-layout {
+  grid-template-columns: auto minmax(0, 1fr) 260px;
+}
+
+.header-start {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  min-width: 0;
+}
+
+/* Out of the flow but still measurable, so ProjectTabs knows its width once there is room again. */
+.project-tab.overflowed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+}
+
+.menu-tab {
+  display: flex;
+  align-items: center;
+}
+
+.menu-tab button:first-child {
+  flex: 1;
+  min-width: 0;
+  max-width: 280px;
+}
+
+.menu-tab .tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unsaved-dot {
+  flex: none;
+  font-size: 10px;
+  color: var(--accent);
+}
+
+.project-tab {
+  display: flex;
+  align-items: center;
+  flex: none;
+  max-width: 240px;
+  border: 1px solid var(--border);
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: var(--panel-muted);
+  color: var(--text-muted);
+}
+
+.project-tab.active {
+  border-bottom-color: var(--accent);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.project-tab button {
+  border: none;
+  background: none;
+}
+
+.tab-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 4px 4px 10px;
+}
+
+.tab-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.header-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 260px;
+  gap: 8px;
+  padding: 8px;
+  min-height: 0;
+}
+
+/* Sidebars */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.section-title {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-title::before {
+  content: '▸';
+  display: inline-block;
+  width: 1em;
+  color: var(--text-muted);
+}
+
+.section.open > .section-title {
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.section.open > .section-title::before {
+  content: '▾';
+}
+
+.section-body {
+  padding: 8px 10px;
+}
+
+/* A filling section takes the remaining sidebar height; only its list scrolls. */
+.section.fill.open {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 220px;
+}
+
+.section.fill > .section-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.section.fill .component-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.check-row input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding-left: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  padding-left: 0;
+  color: var(--text);
+}
+
+.search input:focus-visible {
+  outline: none;
+}
+
+.component-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.component-list button {
+  display: grid;
+  grid-template-columns: 3.5em 1fr;
+  column-gap: 6px;
+  width: 100%;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+  padding: 3px 6px;
+}
+
+.component-list button.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.component-list .ref {
+  font-weight: 600;
+}
+
+.component-list .value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.component-list .footprint {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.properties {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.properties dt {
+  color: var(--text-muted);
+}
+
+.properties dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.counts dd {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.unit-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.settings input[type='number'] {
+  width: 5.5em;
+}
+
+.badges {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.badge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.badge.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.badge.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.badge.error {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+/* Canvas area */
+
+.canvas-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.canvas-banners {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.canvas-banners > * {
+  max-width: 100%;
+  box-shadow: 0 4px 14px var(--backdrop);
+  pointer-events: auto;
+}
+
+/* Tool bar: icon above a one-word label, like a navigation rail. */
+.tool-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.rail-group {
+  display: flex;
+  gap: 2px;
+}
+
+.rail-group + .rail-group {
+  border-left: 1px solid var(--border);
+  padding-left: 4px;
+}
+
+.rail-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 56px;
+  padding: 6px 6px 5px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.rail-button .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.rail-button:hover:not(:disabled) {
+  background: var(--panel-muted);
+}
+
+.rail-button.active,
+.rail-button.active:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.canvas-frame {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background-color: var(--canvas-bg);
+  background-image: radial-gradient(var(--grid-minor) 1px, transparent 1px);
+  background-size: 16px 16px;
+  touch-action: none;
+  user-select: none;
+  cursor: default;
+}
+
+.canvas.tool-pan {
+  cursor: grab;
+}
+
+.cut {
+  stroke: transparent;
+}
+
+.cut-x {
+  cursor: ew-resize;
+}
+
+.cut-y {
+  cursor: ns-resize;
+}
+
+.cut:hover {
+  stroke: var(--accent);
+  stroke-opacity: 0.45;
+}
+
+/* Outline edges of the selected island: a visible band to grab. */
+.island-edge line {
+  stroke: var(--accent);
+  stroke-opacity: 0.35;
+}
+
+.island-edge.hovered line {
+  stroke-opacity: 0.7;
+}
+
+/* The + on a hovered edge that grows the island on that side. */
+.grow-button {
+  cursor: copy;
+}
+
+.grow-button circle {
+  fill: var(--accent);
+  stroke: #fff;
+}
+
+.grow-button path {
+  stroke: #fff;
+  stroke-linecap: round;
+}
+
+.marquee {
+  fill: var(--accent);
+  fill-opacity: 0.08;
+  stroke: var(--accent);
+}
+
+/* Layer toggles hide through classes on the svg, so the agent screenshot can reset them on its copy. */
+.canvas.hide-grid {
+  background-image: none;
+}
+
+.schematic.hide-grid .grid,
+.schematic.hide-references .sch-ref,
+.schematic.hide-values .sch-value,
+.schematic.hide-pinNumbers .sch-pin-number,
+.schematic.hide-netNames .net-name:not(.conflict),
+.canvas.hide-grid .grid,
+.canvas.hide-islands .island,
+.canvas.hide-parts .part,
+.canvas.hide-netLabels .net-label,
+.canvas.hide-references .part-ref,
+.canvas.hide-values .part-value,
+.canvas.hide-leads .lead,
+.canvas.hide-leads .ratsnest {
+  display: none;
+}
+
+/* Each pixel is on or off: anti-aliased half-tones make thin lines look grey and blurred. Text stays smooth. */
+.canvas,
+.schematic {
+  shape-rendering: crispEdges;
+}
+
+/* Per-layer opacity comes from --opacity-<layer> on the svg (set by the Layers panel). */
+/* The grid is drawn in the SVG (.grid), so it pans and zooms with the board. */
+.canvas {
+  background-image: none;
+}
+
+.canvas .grid { opacity: var(--opacity-grid, 1); }
+.schematic .grid { opacity: var(--opacity-grid, 1); }
+.schematic .sch-ref { opacity: var(--opacity-references, 1); }
+.schematic .sch-value { opacity: var(--opacity-values, 1); }
+.schematic .sch-pin-number { opacity: var(--opacity-pinNumbers, 1); }
+.schematic .net-name { opacity: var(--opacity-netNames, 1); }
+/* SVG presentation attributes cannot use var(), so the theme-dependent grid colours are set here. */
+.grid-minor { stroke: var(--grid-minor); }
+.grid-major { stroke: var(--grid-major); }
+.axis { stroke: var(--axis); }
+.canvas .island { opacity: var(--opacity-islands, 1); }
+.canvas .net-label { opacity: var(--opacity-netLabels, 1); }
+.canvas .lead { opacity: var(--opacity-leads, 1); }
+.canvas .part-ref { opacity: var(--opacity-references, 1); }
+.canvas .part-value { opacity: var(--opacity-values, 1); }
+/* Parts and ratsnest lines also fade on hover through their opacity attribute, so Canvas multiplies the layer opacity in there. */
+
+/* A strongly faded layer stays visible for reference but lets clicks through to the layers you are editing. */
+.canvas.dim-grid .grid,
+.canvas.dim-islands .island,
+.canvas.dim-parts .part,
+.canvas.dim-netLabels .net-label,
+.canvas.dim-leads .lead,
+.canvas.dim-leads .ratsnest {
+  pointer-events: none;
+}
+
+.island-rect,
+.part {
+  cursor: move;
+}
+
+.part {
+  transition: opacity 0.1s;
+}
+
+.lead-end {
+  cursor: crosshair;
+}
+
+.net-label {
+  font-size: 1.3px;
+  font-weight: 600;
+  fill: #4a2300;
+  pointer-events: none;
+}
+
+.part-ref {
+  font-size: 1.2px;
+  font-weight: 600;
+  fill: #fff;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* The cathode ring printed on a diode body. */
+.cathode-band {
+  fill: #e8e8e8;
+  pointer-events: none;
+}
+
+.part-value {
+  font-size: 1px;
+  fill: var(--canvas-text);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* Values sit on copper as well as on the dark background; a dark halo keeps light text readable on both. */
+:root[data-theme='dark'] .part-value {
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.8);
+  stroke-width: 0.3px;
+}
+
+/* Agent connection state, drawn as a dot on the Menu button and its AI item. */
+.agent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--idle-dot);
+}
+
+.agent-dot.connected {
+  background: var(--ok);
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+/* The schematic's nets differ from the PCB's until the user updates the PCB. */
+.sync-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.notice-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--ok);
+  border-radius: var(--radius);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.board-size {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.shortcuts {
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.shortcuts th,
+.shortcuts td {
+  padding: 4px 16px 4px 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.shortcuts th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Layer rows: name plus a three-way visible / faded / hidden switch. */
+.layer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+/* Popups: AI help and change footprint. */
+.ai-dialog,
+.footprint-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100vh - 32px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+.ai-dialog::backdrop,
+.footprint-dialog::backdrop {
+  background: var(--backdrop);
+}
+
+.ai-dialog header,
+.footprint-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-dialog h2,
+.footprint-dialog h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 17px;
+}
+
+/* Open and Save as: recent projects, a name, and a choice between this computer and Google Drive. */
+.file-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.file-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.file-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.file-recent h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.file-recent button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 24px;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+}
+
+.file-recent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-recent-place {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Two square tiles side by side: this computer and Google Drive. */
+.file-places {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.file-place {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  aspect-ratio: 1;
+  padding: 16px;
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.file-place .icon {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+}
+
+.file-place > span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.file-place small {
+  color: var(--text-muted);
+}
+
+root {
+  --bg: #eef0f3;
+  --panel: #ffffff;
+  --panel-muted: #f6f7f9;
+  --border: #dde1e6;
+  --border-strong: #c7cdd4;
+  --text: #1f2328;
+  --text-muted: #6a737d;
+  --accent: #3b5bdb;
+  --accent-soft: #e7ecfd;
+  --ok: #2b8a3e;
+  --ok-soft: #e6f4ea;
+  --warn: #b07800;
+  --warn-soft: #fff4dc;
+  --error: #d01010;
+  --error-soft: #fde8e8;
+  --radius: 8px;
+  --accent-hover: #3049b8;
+  --code-bg: #f1f3f5;
+  --canvas-bg: #ffffff;
+  --canvas-text: #333333;
+  --grid-minor: #d0d4d9;
+  --grid-major: #c4c9cf;
+  --axis: #8b96a3;
+  --ruler-bg: var(--panel);
+  --ruler-text: #6b7580;
+  --idle-dot: #b0b6bd;
+  --shadow: var(--shadow);
+  --backdrop: rgba(20, 24, 31, 0.35);
+  --sch-resistor: #8a9ee6;
+  --sch-power: #e03131;
+  --sch-box: #fbfbf4;
+  --sch-wire: #000000;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #131518;
+  --panel: #1c1f24;
+  --panel-muted: #252930;
+  --border: #30353d;
+  --border-strong: #434a54;
+  --text: #e3e6ea;
+  --text-muted: #9aa3ad;
+  --accent: #5b7cfa;
+  --accent-soft: #232f52;
+  --ok: #51cf66;
+  --ok-soft: #1d3324;
+  --warn: #f0b429;
+  --warn-soft: #3a2f12;
+  --error: #ff6b6b;
+  --error-soft: #3d1f1f;
+  --accent-hover: #4766ee;
+  --code-bg: #252930;
+  --canvas-bg: #16181c;
+  --canvas-text: #d5d9de;
+  --grid-minor: #262b31;
+  --grid-major: #333941;
+  --axis: #5d6773;
+  --ruler-bg: var(--panel);
+  --ruler-text: #8a939d;
+  --idle-dot: #5d6773;
+  --shadow: rgba(0, 0, 0, 0.5);
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --sch-resistor: #4f63b8;
+  --sch-power: #c92a2a;
+  --sch-box: #20242a;
+  --sch-wire: #e6e6e6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+select,
+input[type='number'],
+input[type='search'] {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 4px 8px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--panel-muted);
+}
+
+button:disabled,
+select:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.icon {
+  flex: none;
+}
+
+/* Shell */
+
+.app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+}
+
+/*
+ * Columns and padding match .workspace, so the menu buttons span the left panel, the project tabs
+ * line up with the canvas and the view switch spans the right panel. A view without a panel on
+ * one side gives that side only the room its buttons need.
+ */
+.header {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 260px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.header.view-schematic {
+  grid-template-columns: 260px minmax(0, 1fr) auto;
+}
+
+.header.view-layout {
+  grid-template-columns: auto minmax(0, 1fr) 260px;
+}
+
+.header-start {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  min-width: 0;
+}
+
+/* Out of the flow but still measurable, so ProjectTabs knows its width once there is room again. */
+.project-tab.overflowed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+}
+
+.menu-tab {
+  display: flex;
+  align-items: center;
+}
+
+.menu-tab button:first-child {
+  flex: 1;
+  min-width: 0;
+  max-width: 280px;
+}
+
+.menu-tab .tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unsaved-dot {
+  flex: none;
+  font-size: 10px;
+  color: var(--accent);
+}
+
+.project-tab {
+  display: flex;
+  align-items: center;
+  flex: none;
+  max-width: 240px;
+  border: 1px solid var(--border);
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: var(--panel-muted);
+  color: var(--text-muted);
+}
+
+.project-tab.active {
+  border-bottom-color: var(--accent);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.project-tab button {
+  border: none;
+  background: none;
+}
+
+.tab-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 4px 4px 10px;
+}
+
+.tab-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.header-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 260px;
+  gap: 8px;
+  padding: 8px;
+  min-height: 0;
+}
+
+/* Sidebars */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.section-title {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-title::before {
+  content: '▸';
+  display: inline-block;
+  width: 1em;
+  color: var(--text-muted);
+}
+
+.section.open > .section-title {
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.section.open > .section-title::before {
+  content: '▾';
+}
+
+.section-body {
+  padding: 8px 10px;
+}
+
+/* A filling section takes the remaining sidebar height; only its list scrolls. */
+.section.fill.open {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 220px;
+}
+
+.section.fill > .section-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.section.fill .component-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.check-row input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding-left: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  padding-left: 0;
+  color: var(--text);
+}
+
+.search input:focus-visible {
+  outline: none;
+}
+
+.component-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.component-list button {
+  display: grid;
+  grid-template-columns: 3.5em 1fr;
+  column-gap: 6px;
+  width: 100%;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+  padding: 3px 6px;
+}
+
+.component-list button.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.component-list .ref {
+  font-weight: 600;
+}
+
+.component-list .value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.component-list .footprint {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.properties {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.properties dt {
+  color: var(--text-muted);
+}
+
+.properties dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.counts dd {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.unit-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.settings input[type='number'] {
+  width: 5.5em;
+}
+
+.badges {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.badge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.badge.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.badge.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.badge.error {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+/* Canvas area */
+
+.canvas-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.canvas-banners {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.canvas-banners > * {
+  max-width: 100%;
+  box-shadow: 0 4px 14px var(--backdrop);
+  pointer-events: auto;
+}
+
+/* Tool bar: icon above a one-word label, like a navigation rail. */
+.tool-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.rail-group {
+  display: flex;
+  gap: 2px;
+}
+
+.rail-group + .rail-group {
+  border-left: 1px solid var(--border);
+  padding-left: 4px;
+}
+
+.rail-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 56px;
+  padding: 6px 6px 5px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.rail-button .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.rail-button:hover:not(:disabled) {
+  background: var(--panel-muted);
+}
+
+.rail-button.active,
+.rail-button.active:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.canvas-frame {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background-color: var(--canvas-bg);
+  background-image: radial-gradient(var(--grid-minor) 1px, transparent 1px);
+  background-size: 16px 16px;
+  touch-action: none;
+  user-select: none;
+  cursor: default;
+}
+
+.canvas.tool-pan {
+  cursor: grab;
+}
+
+.cut {
+  stroke: transparent;
+}
+
+.cut-x {
+  cursor: ew-resize;
+}
+
+.cut-y {
+  cursor: ns-resize;
+}
+
+.cut:hover {
+  stroke: var(--accent);
+  stroke-opacity: 0.45;
+}
+
+/* Outline edges of the selected island: a visible band to grab. */
+.island-edge line {
+  stroke: var(--accent);
+  stroke-opacity: 0.35;
+}
+
+.island-edge.hovered line {
+  stroke-opacity: 0.7;
+}
+
+/* The + on a hovered edge that grows the island on that side. */
+.grow-button {
+  cursor: copy;
+}
+
+.grow-button circle {
+  fill: var(--accent);
+  stroke: #fff;
+}
+
+.grow-button path {
+  stroke: #fff;
+  stroke-linecap: round;
+}
+
+.marquee {
+  fill: var(--accent);
+  fill-opacity: 0.08;
+  stroke: var(--accent);
+}
+
+/* Layer toggles hide through classes on the svg, so the agent screenshot can reset them on its copy. */
+.canvas.hide-grid {
+  background-image: none;
+}
+
+.schematic.hide-grid .grid,
+.schematic.hide-references .sch-ref,
+.schematic.hide-values .sch-value,
+.schematic.hide-pinNumbers .sch-pin-number,
+.schematic.hide-netNames .net-name:not(.conflict),
+.canvas.hide-grid .grid,
+.canvas.hide-islands .island,
+.canvas.hide-parts .part,
+.canvas.hide-netLabels .net-label,
+.canvas.hide-references .part-ref,
+.canvas.hide-values .part-value,
+.canvas.hide-leads .lead,
+.canvas.hide-leads .ratsnest {
+  display: none;
+}
+
+/* Each pixel is on or off: anti-aliased half-tones make thin lines look grey and blurred. Text stays smooth. */
+.canvas,
+.schematic {
+  shape-rendering: crispEdges;
+}
+
+/* Per-layer opacity comes from --opacity-<layer> on the svg (set by the Layers panel). */
+/* The grid is drawn in the SVG (.grid), so it pans and zooms with the board. */
+.canvas {
+  background-image: none;
+}
+
+.canvas .grid { opacity: var(--opacity-grid, 1); }
+.schematic .grid { opacity: var(--opacity-grid, 1); }
+.schematic .sch-ref { opacity: var(--opacity-references, 1); }
+.schematic .sch-value { opacity: var(--opacity-values, 1); }
+.schematic .sch-pin-number { opacity: var(--opacity-pinNumbers, 1); }
+.schematic .net-name { opacity: var(--opacity-netNames, 1); }
+/* SVG presentation attributes cannot use var(), so the theme-dependent grid colours are set here. */
+.grid-minor { stroke: var(--grid-minor); }
+.grid-major { stroke: var(--grid-major); }
+.axis { stroke: var(--axis); }
+.canvas .island { opacity: var(--opacity-islands, 1); }
+.canvas .net-label { opacity: var(--opacity-netLabels, 1); }
+.canvas .lead { opacity: var(--opacity-leads, 1); }
+.canvas .part-ref { opacity: var(--opacity-references, 1); }
+.canvas .part-value { opacity: var(--opacity-values, 1); }
+/* Parts and ratsnest lines also fade on hover through their opacity attribute, so Canvas multiplies the layer opacity in there. */
+
+/* A strongly faded layer stays visible for reference but lets clicks through to the layers you are editing. */
+.canvas.dim-grid .grid,
+.canvas.dim-islands .island,
+.canvas.dim-parts .part,
+.canvas.dim-netLabels .net-label,
+.canvas.dim-leads .lead,
+.canvas.dim-leads .ratsnest {
+  pointer-events: none;
+}
+
+.island-rect,
+.part {
+  cursor: move;
+}
+
+.part {
+  transition: opacity 0.1s;
+}
+
+.lead-end {
+  cursor: crosshair;
+}
+
+.net-label {
+  font-size: 1.3px;
+  font-weight: 600;
+  fill: #4a2300;
+  pointer-events: none;
+}
+
+.part-ref {
+  font-size: 1.2px;
+  font-weight: 600;
+  fill: #fff;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* The cathode ring printed on a diode body. */
+.cathode-band {
+  fill: #e8e8e8;
+  pointer-events: none;
+}
+
+.part-value {
+  font-size: 1px;
+  fill: var(--canvas-text);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* Values sit on copper as well as on the dark background; a dark halo keeps light text readable on both. */
+:root[data-theme='dark'] .part-value {
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.8);
+  stroke-width: 0.3px;
+}
+
+/* Agent connection state, drawn as a dot on the Menu button and its AI item. */
+.agent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--idle-dot);
+}
+
+.agent-dot.connected {
+  background: var(--ok);
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+/* The schematic's nets differ from the PCB's until the user updates the PCB. */
+.sync-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.notice-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--ok);
+  border-radius: var(--radius);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.board-size {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.shortcuts {
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.shortcuts th,
+.shortcuts td {
+  padding: 4px 16px 4px 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.shortcuts th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Layer rows: name plus a three-way visible / faded / hidden switch. */
+.layer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+/* Popups: AI help and change footprint. */
+.ai-dialog,
+.footprint-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100vh - 32px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+.ai-dialog::backdrop,
+.footprint-dialog::backdrop {
+  background: var(--backdrop);
+}
+
+.ai-dialog header,
+.footprint-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-dialog h2,
+.footprint-dialog h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 17px;
+}
+
+/* Open and Save as: recent projects, a name, and a choice between this computer and Google Drive. */
+.file-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.file-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.file-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.file-recent h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.file-recent button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 24px;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+}
+
+.file-recent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-recent-place {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Two square tiles side by side: this computer and Google Drive. */
+.file-places {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.file-place {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  aspect-ratio: 1;
+  padding: 16px;
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.file-place .icon {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+}
+
+.file-place > span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.file-place small {
+  color: var(--text-muted);
+}
+
 .file-place.selected {
   border-color: var(--accent);
   background: var(--accent-soft);
