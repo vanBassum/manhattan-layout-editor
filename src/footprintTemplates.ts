@@ -1,5 +1,7 @@
 // Built-in footprint templates: a part's geometry read from its footprint name, and from its
-// reference and pin count when the name says too little.
+// reference and pin count when the name says too little. What else a footprint name or reference
+// says about a part (LED, electrolytic, its kind of package) is read here too, so the PCB and the
+// schematic symbols agree.
 
 import type { Geometry, NetComponent, Rect, Shape } from './types'
 
@@ -30,22 +32,33 @@ const CHIP_SIZES: Record<string, [number, number]> = {
   '2512': [6.3, 3.2],
 }
 
-const isLed = (component: NetComponent) =>
+const CHIP_CODES = Object.keys(CHIP_SIZES).join('|')
+
+/** The letters a reference starts with, in capitals: "R" for "R12", "LED" for "led3". */
+export const refPrefix = (ref: string) => ref.match(/^[A-Za-z]+/)?.[0].toUpperCase() ?? ''
+
+export const isLed = (component: NetComponent) =>
   /LED/i.test(component.footprint) || /^LED/i.test(component.ref) || /^LED\b/i.test(component.value)
 
-function shapeOf(component: NetComponent): Shape {
+/**
+ * Electrolytics come in a round can: EasyEDA gives a body diameter ("CAP-TH_BD8.0-..."), KiCad
+ * names them "CP_..." or "...Elec...". Box footprints with length and width are film or ceramic.
+ */
+export const isElectrolytic = (footprint: string) => /(^|[-_])BD\d|CP_|ELEC|POL/i.test(footprint)
+
+export function shapeOf(component: NetComponent): Shape {
   const footprint = component.footprint.toUpperCase()
   if (/TO-?126|TO-?220/.test(footprint)) return 'to126'
   if (/TO-?92/.test(footprint)) return 'to92'
   if (/RES-ADJ|TRIM|POT/.test(footprint)) return 'trimmer'
   if (/DIP/.test(footprint)) return 'dip'
   if (/AXIAL|DO-?35|DO-?41|RES-TH/.test(footprint)) return 'axial'
-  if (/SMD|SOT|SOD|SOIC|SOP|QFN|^[A-Z]*(0201|0402|0603|0805|1206|1210|2512)/.test(footprint)) return 'smd'
+  if (/SMD|SOT|SOD|SOIC|SOP|QFN/.test(footprint) || new RegExp(`^[A-Z]*(${CHIP_CODES})`).test(footprint)) return 'smd'
   if (/RADIAL|CAP-TH|CP_|ELEC/.test(footprint)) return 'radial'
 
   // No recognizable footprint: guess from reference prefix and pin count.
   const pinCount = component.pins.length
-  const prefix = component.ref.match(/^[A-Za-z]+/)?.[0].toUpperCase() ?? ''
+  const prefix = refPrefix(component.ref)
   if (pinCount === 2) return prefix === 'C' ? 'radial' : 'axial'
   if (pinCount === 3 && prefix === 'Q') return 'to92'
   if (pinCount >= 4 && pinCount % 2 === 0) return 'dip'
@@ -59,7 +72,7 @@ function footprintDimension(footprint: string, key: string): number | undefined 
 }
 
 function chipSize(footprint: string): [number, number] | undefined {
-  const code = footprint.match(/(0201|0402|0603|0805|1206|1210|2512)/)?.[1]
+  const code = footprint.match(new RegExp(CHIP_CODES))?.[0]
   return code ? CHIP_SIZES[code] : undefined
 }
 
@@ -98,7 +111,7 @@ function leadsFor(shape: Shape, component: NetComponent) {
       // cans a body diameter ("BD" in EasyEDA, "D" in KiCad). A small EasyEDA "D" is the lead diameter.
       if (pinCount !== 2) break
       const d = footprintDimension(footprint, 'D')
-      const canDiameter = footprintDimension(footprint, 'BD') ?? (d !== undefined && d >= 2 ? d : /CP_|ELEC|POL/i.test(footprint) ? 5 : undefined)
+      const canDiameter = footprintDimension(footprint, 'BD') ?? (d !== undefined && d >= 2 ? d : isElectrolytic(footprint) ? 5 : undefined)
       // Nothing in the name says it is a can: a small block, like a ceramic or film capacitor.
       const [bodyLength, bodyWidth] = length && width ? [length, width] : canDiameter ? [canDiameter, canDiameter] : [5, 2.5]
       const leadSpacing = footprintDimension(footprint, 'P') ?? bodyLength / 2

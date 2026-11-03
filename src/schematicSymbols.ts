@@ -1,4 +1,4 @@
-import { generatedGeometry } from './footprintTemplates'
+import { isElectrolytic, isLed, refPrefix, shapeOf } from './footprintTemplates'
 import type { NetComponent, PinDefinition, Point, SymbolDefinition, SymbolGraphic } from './types'
 
 // Built-in schematic symbols: templates a project copies into its own component definitions.
@@ -136,12 +136,6 @@ function box(numbers: Numbers): SymbolDefinition {
   }
 }
 
-/**
- * Electrolytics come in a round can: EasyEDA gives a body diameter ("CAP-TH_BD8.0-..."), KiCad
- * names them "CP_..." or "...Elec...". Box footprints with length and width are film or ceramic.
- */
-const isElectrolytic = (footprint: string) => /(^|[-_])BD\d|^CP_|ELEC|POL/i.test(footprint)
-
 const isPnp = (value: string) => /BC55[6-9]|BC32[78]|BC640|BD1(3[02468]|40)|2N3906|2N2907|TIP(30|32|42)|2SA/i.test(value)
 
 /**
@@ -149,7 +143,7 @@ const isPnp = (value: string) => /BC55[6-9]|BC32[78]|BC640|BD1(3[02468]|40)|2N39
  * anything else as 2N390x (E B C). Only a starting point: the project's definition can say otherwise.
  */
 function transistorRoles(component: NetComponent): TransistorPin[] {
-  const shape = generatedGeometry(component).shape
+  const shape = shapeOf(component)
   if (shape === 'to92') return ['C', 'B', 'E']
   if (shape === 'to126') return ['E', 'C', 'B']
   return ['E', 'B', 'C']
@@ -165,10 +159,9 @@ export interface SymbolTemplate {
 
 /** The built-in symbol that fits a part best, guessed from its reference, pin count, value and footprint. */
 export function symbolTemplate(component: NetComponent): SymbolTemplate {
-  const prefix = component.ref.match(/^[A-Za-z]+/)?.[0].toUpperCase() ?? ''
+  const prefix = refPrefix(component.ref)
   const numbers = component.pins.map((p) => p.number)
-  const geometry = generatedGeometry(component)
-  if (numbers.length === 3 && (geometry.shape === 'trimmer' || /^(RV|VR|P|POT)$/.test(prefix))) {
+  if (numbers.length === 3 && (shapeOf(component) === 'trimmer' || /^(RV|VR|P|POT)$/.test(prefix))) {
     return { kind: 'trimmer', name: 'Trimmer', pinNames: ['', 'W', ''], symbol: trimmer(numbers) }
   }
   if (numbers.length === 3 && prefix === 'Q') {
@@ -189,7 +182,7 @@ export function symbolTemplate(component: NetComponent): SymbolTemplate {
       return { kind: 'electrolytic', name: 'Electrolytic capacitor', pinNames: ['+', '-'], symbol: capacitor(numbers, true) }
     }
     if (prefix === 'C') return { kind: 'capacitor', name: 'Capacitor', symbol: capacitor(numbers, false) }
-    if (geometry.led || prefix === 'LED') return { kind: 'led', name: 'LED', pinNames: ['K', 'A'], symbol: diode(numbers, true) }
+    if (isLed(component)) return { kind: 'led', name: 'LED', pinNames: ['K', 'A'], symbol: diode(numbers, true) }
     if (prefix === 'D') return { kind: 'diode', name: 'Diode', pinNames: ['K', 'A'], symbol: diode(numbers, false) }
   }
   return { kind: `box-${numbers.length}`, name: `Generic ${numbers.length}-pin part`, symbol: box(numbers) }

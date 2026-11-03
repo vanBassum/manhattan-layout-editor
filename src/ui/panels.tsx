@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { refPrefix } from '../footprintTemplates'
 import { labelSymbol } from '../schematic'
 import { isToggleClick, selectedRefs, selectedWiring, toggleSelected } from '../selection'
 import type { BuiltComponent, BuiltNetlist, LabelSymbol, Layout, NetLabel, Placement, Selection, Shape } from '../types'
@@ -149,10 +150,8 @@ function packageLabel(component: BuiltComponent): string {
   return PACKAGE_LABELS[shape]
 }
 
-const refPrefix = (ref: string) => ref.match(/^[A-Za-z]+/)?.[0].toUpperCase() ?? '?'
-
 function KindBadge({ partRef, large = false }: { partRef: string; large?: boolean }) {
-  const prefix = refPrefix(partRef)
+  const prefix = refPrefix(partRef) || '?'
   return (
     <span className={`kind-badge${large ? ' large' : ''} kind-${prefix.charAt(0)}`} aria-hidden="true">
       {prefix}
