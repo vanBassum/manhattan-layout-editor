@@ -2,14 +2,15 @@
 // on this computer. A project is called by its file's name.
 
 import type { Project } from '../model/types'
-import { fileInfo, fileVersion, findFile, readFile, writeFile } from './googleDrive'
+import { fileInfo, findFile, readFile, writeFile } from './googleDrive'
 import { compareSaved, type FileComparison } from './projectFiles'
 import { projectFileName, projectFromFile, projectNameOf, projectToFile, readSavedProject } from './projectFormat'
 import type { DriveRevision, ProjectFile, ProjectLocation } from './projectStore'
 
 export type DriveLocation = Extract<ProjectLocation, { kind: 'drive' }>
 
-const revisionOf = (written: { version: string }): DriveRevision => ({ version: written.version })
+/** The revision of a Drive file as Drive describes it. */
+const revisionOf = (file: { name: string; version: string }): DriveRevision => ({ version: file.version, name: projectNameOf(file.name) })
 
 /** The revision tab `file` last saved or opened; a Drive document without one cannot be compared. */
 function savedRevision(file: ProjectFile): DriveRevision {
@@ -17,12 +18,10 @@ function savedRevision(file: ProjectFile): DriveRevision {
   return file.driveRevision
 }
 
-export async function openDriveDocument(
-  fileId: string,
-): Promise<{ project: Project; name: string; location: DriveLocation; revision: DriveRevision }> {
+export async function openDriveDocument(fileId: string): Promise<{ project: Project; location: DriveLocation; revision: DriveRevision }> {
   const info = await fileInfo(fileId)
   const project = projectFromFile(await readFile(fileId))
-  return { project, name: projectNameOf(info.name), location: { kind: 'drive', fileId }, revision: revisionOf(info) }
+  return { project, location: { kind: 'drive', fileId }, revision: revisionOf(info) }
 }
 
 /**
@@ -36,10 +35,10 @@ export type DriveSave =
 
 /** Writes `project` to its document, unless that changed elsewhere since tab `file` last saved or opened it. */
 export async function saveDriveDocument(project: Project, location: DriveLocation, file: ProjectFile): Promise<DriveSave> {
-  const version = await fileVersion(location.fileId)
-  if (version !== savedRevision(file).version) {
+  const now = revisionOf(await fileInfo(location.fileId))
+  if (now.version !== savedRevision(file).version) {
     const inDrive = readSavedProject(await readFile(location.fileId))
-    if (inDrive.content !== file.savedContent) return { kind: 'changedElsewhere', inDrive, revision: { version } }
+    if (inDrive.content !== file.savedContent) return { kind: 'changedElsewhere', inDrive, revision: now }
   }
   return { kind: 'saved', revision: await overwriteDriveDocument(project, location) }
 }
@@ -66,10 +65,13 @@ export async function saveInDriveFolder(
   return { location: { kind: 'drive', fileId: written.id }, revision: revisionOf(written) }
 }
 
-/** How the document stands against the tab, and its current revision. Throws when it cannot be read or is no project anymore. */
+/**
+ * How the document stands against the tab, and its current revision, which has its current name.
+ * Throws when it cannot be read or is no project anymore.
+ */
 export async function compareWithDrive(location: DriveLocation, file: ProjectFile): Promise<{ comparison: FileComparison; revision: DriveRevision }> {
   const saved = savedRevision(file)
-  const version = await fileVersion(location.fileId)
-  if (version === saved.version) return { comparison: { kind: 'unchanged', content: file.savedContent }, revision: saved }
-  return { comparison: compareSaved(await readFile(location.fileId), file), revision: { version } }
+  const now = revisionOf(await fileInfo(location.fileId))
+  if (now.version === saved.version) return { comparison: { kind: 'unchanged', content: file.savedContent }, revision: now }
+  return { comparison: compareSaved(await readFile(location.fileId), file), revision: now }
 }

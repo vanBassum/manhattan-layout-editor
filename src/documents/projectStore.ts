@@ -16,32 +16,35 @@ import { firstVisitExample } from './examples'
 import { checkedProject, projectNameOf, projectToFile, readSavedProject } from './projectFormat'
 
 /**
- * A tab as the tab bar shows it. The tabs own its name: the name of its document when it was
- * opened or saved, or the one it started with. Where its project is saved is its ProjectFile.
+ * An open tab. A tab whose project is saved somewhere is called by that document (see nameOfTab);
+ * only a project saved nowhere (new, an example, a share link, downloaded) has a `name` of its own.
+ * Where its project is saved is its ProjectFile.
  */
 export interface ProjectTab {
   id: string
-  name: string
+  name?: string
 }
 
 /** Where a project is saved: a file on this computer, or a document in Google Drive. */
 export type ProjectLocation = { kind: 'local'; handle: FileSystemFileHandle } | { kind: 'drive'; fileId: string }
 
-/** What Google Drive said of a document when it was last saved or opened here. */
+/** What Google Drive said of a document when it was last saved, opened or checked here. */
 export interface DriveRevision {
   version: string
+  /** The project's name: the file's name without its extension. */
+  name: string
 }
 
 /**
  * Where a tab's project is saved and how it stands against that document. The store owns it, per
- * tab id (projectFile); the tab's shown name is in its ProjectTab.
+ * tab id (projectFile); the document also names the tab (nameOfTab).
  */
 export interface ProjectFile {
   /** None for a project that was never saved (or saved by download). */
   location?: ProjectLocation
   /** Document content as last saved or opened. */
   savedContent: string
-  /** The Drive document's revision as last saved or opened; only for a location in Drive. */
+  /** The Drive document's revision as last saved, opened or checked; only for a location in Drive. */
   driveRevision?: DriveRevision
   /** The project differs from `savedContent`. */
   dirty: boolean
@@ -65,14 +68,21 @@ interface StoredProject {
   handle?: FileSystemFileHandle
 }
 
-/** Until November 2026 a stored Drive location also held Drive's version as last saved or opened. */
+/**
+ * Until November 2026 a stored Drive location also held Drive's version as last saved or opened,
+ * and the document's name was its tab's.
+ */
 type StoredRecord = Omit<StoredProject, 'location'> & { location?: ProjectLocation & { version?: string } }
 
-/** Record `stored` as this version keeps it: a Drive location's version moves to the record's revision. */
-function convertedRecord(stored: StoredRecord): StoredProject {
+/**
+ * Tab `tab`'s record as this version keeps it: an old Drive location's version, with the name its
+ * tab had, becomes the record's revision.
+ */
+function convertedRecord(stored: StoredRecord, tab: ProjectTab): StoredProject {
   const { location, ...rest } = stored
   if (location?.kind !== 'drive' || location.version === undefined) return { ...rest, location }
-  return { ...rest, location: { kind: 'drive', fileId: location.fileId }, driveRevision: { version: location.version } }
+  if (tab.name === undefined) throw new Error('its Google Drive document has no name')
+  return { ...rest, location: { kind: 'drive', fileId: location.fileId }, driveRevision: { version: location.version, name: tab.name } }
 }
 
 type Message = { kind: 'tabs'; tabs: ProjectTab[] } | { kind: 'project'; id: string; stored: StoredProject } | { kind: 'removed'; id: string }
@@ -232,13 +242,16 @@ function readLegacyTabs(): { tabs: ProjectTab[]; projects: Map<string, Project> 
 /** Opens tab `tab` from its IndexedDB record again. */
 function restoreTab(tab: ProjectTab, record: StoredRecord | undefined) {
   if (!record) throw new Error('its recovery copy is missing')
-  const stored = convertedRecord(record)
+  const stored = convertedRecord(record, tab)
   const project = checkedProject(stored.project)
   const location: ProjectLocation | undefined = stored.location ?? (stored.handle && { kind: 'local', handle: stored.handle })
   remember(tab.id, { project, savedContent: readSavedProject(stored.savedContent).content, location, driveRevision: stored.driveRevision }, false)
-  // Tabs from when projects held a name of their own may still show it instead of their file's.
-  openTabs.push(location?.kind === 'local' ? { ...tab, name: projectNameOf(location.handle.name) } : tab)
+  // Until November 2026 every tab kept a name; a saved project's tab is called by its document.
+  openTabs.push(location ? { id: tab.id } : tab)
 }
+
+/** How a restore error names tab `tab`: a saved project's tab no longer has a name of its own. */
+const restoredTabLabel = (tab: ProjectTab) => (tab.name === undefined ? 'a saved project' : `"${tab.name}"`)
 
 async function restoreSession(db: IDBDatabase) {
   const tabs = (await request(db.transaction(META_STORE).objectStore(META_STORE).get(TABS_RECORD))) as ProjectTab[] | undefined
@@ -247,7 +260,7 @@ async function restoreSession(db: IDBDatabase) {
       restoreTab(tab, (await request(db.transaction(PROJECTS_STORE).objectStore(PROJECTS_STORE).get(tab.id))) as StoredRecord | undefined)
     } catch (e) {
       // A record that is there stays in IndexedDB as it is, but is not opened: the editor cannot draw it.
-      restoreErrors.push(`Could not open "${tab.name}" again: ${errorText(e)}.`)
+      restoreErrors.push(`Could not open ${restoredTabLabel(tab)} again: ${errorText(e)}.`)
     }
   }
   remove(META_STORE, OLD_RECENT_RECORD)
@@ -319,6 +332,21 @@ function openProject(id: string): OpenProject {
 export const readProject = (id: string): Project => openProject(id).project
 
 export const projectFile = (id: string): ProjectFile => openProject(id)
+
+/**
+ * The name tab `tab` shows: its document's name (a file's on this computer, or a Drive document's as
+ * last saved, opened or checked), or for a project saved nowhere the tab's own.
+ */
+export function nameOfTab(tab: ProjectTab): string {
+  const { location, driveRevision } = openProject(tab.id)
+  if (location?.kind === 'local') return projectNameOf(location.handle.name)
+  if (location?.kind === 'drive') {
+    if (!driveRevision) throw new Error(`tab "${tab.id}" has no name for its Google Drive document`)
+    return driveRevision.name
+  }
+  if (tab.name === undefined) throw new Error(`tab "${tab.id}" has neither a document nor a name`)
+  return tab.name
+}
 
 /**
  * Tab `id` now holds `project` as saved at `location`, or as a new project never saved: just opened,

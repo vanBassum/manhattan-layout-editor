@@ -95,13 +95,16 @@ describe('reopening a tab', () => {
     vi.resetModules()
     const store = await import('./projectStore')
     await store.openProjectStore()
-    expect(store.loadTabs().tabs).toEqual([{ id: 'amp', name: 'amp' }])
+    // The tab's old name of its own is dropped: the file names it.
+    const [tab] = store.loadTabs().tabs
+    expect(tab).toEqual({ id: 'amp' })
+    expect(store.nameOfTab(tab)).toBe('amp')
     expect(store.projectFile('amp')).toMatchObject({ location: { kind: 'local', handle }, dirty: false, checked: false })
   })
 })
 
 describe('a Drive tab from before November 2026', () => {
-  it('has its location reduced to the document, and the version moved to the saved revision', async () => {
+  it('has its location reduced to the document; the version and the tab name become the saved revision', async () => {
     await seedSession([{ id: 'doc', name: 'Amp' }], {
       doc: { project: projectFromFile(example), savedContent: example, location: { kind: 'drive', fileId: 'f1', version: '7' } },
     })
@@ -110,8 +113,36 @@ describe('a Drive tab from before November 2026', () => {
     await store.openProjectStore()
     const file = store.projectFile('doc')
     expect(file.location).toEqual({ kind: 'drive', fileId: 'f1' })
-    expect(file.driveRevision).toEqual({ version: '7' })
+    expect(file.driveRevision).toEqual({ version: '7', name: 'Amp' })
     expect(file).toMatchObject({ dirty: false, checked: false })
+    const [tab] = store.loadTabs().tabs
+    expect(tab).toEqual({ id: 'doc' })
+    expect(store.nameOfTab(tab)).toBe('Amp')
+  })
+})
+
+describe('nameOfTab', () => {
+  it('is the tab name of a project saved nowhere, the file name on this computer, and the Drive name as last saved', async () => {
+    const store = await import('./projectStore')
+    await store.openProjectStore()
+    const project = emptyProject()
+    store.setSavedProject('new', project)
+    store.setSavedProject('local', project, { kind: 'local', handle: { name: 'Amp.manhattan.json' } as FileSystemFileHandle })
+    store.setSavedProject('drive', project, { kind: 'drive', fileId: 'f1' }, { version: '3', name: 'Mixer' })
+    expect(store.nameOfTab({ id: 'new', name: 'Untitled' })).toBe('Untitled')
+    expect(store.nameOfTab({ id: 'local' })).toBe('Amp')
+    expect(store.nameOfTab({ id: 'drive' })).toBe('Mixer')
+
+    // A check that finds the document renamed in Drive renames the tab.
+    store.acceptSavedContent('drive', store.projectFile('drive').savedContent, { version: '4', name: 'Mixer v2' })
+    expect(store.nameOfTab({ id: 'drive' })).toBe('Mixer v2')
+  })
+
+  it('refuses a tab saved nowhere that has no name, rather than making one up', async () => {
+    const store = await import('./projectStore')
+    await store.openProjectStore()
+    store.setSavedProject('new', emptyProject())
+    expect(() => store.nameOfTab({ id: 'new' })).toThrow('tab "new" has neither a document nor a name')
   })
 })
 

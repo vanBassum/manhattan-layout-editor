@@ -237,12 +237,7 @@ export async function readFile(id: string): Promise<string> {
   return (await call(`/drive/v3/files/${id}?alt=media`)).text()
 }
 
-/** Drive's current version of file `id`, to tell whether it changed since it was opened or saved here. */
-export async function fileVersion(id: string): Promise<string> {
-  return (await json<{ version: string }>(call(`/drive/v3/files/${id}?fields=version`))).version
-}
-
-/** The file's name and current version. */
+/** The file's name and current version; the version tells whether it changed since it was opened or saved here. */
 export async function fileInfo(id: string): Promise<{ name: string; version: string }> {
   return json<{ name: string; version: string }>(call(`/drive/v3/files/${id}?fields=name,version`))
 }

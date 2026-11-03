@@ -112,7 +112,7 @@ export function App() {
     activeIdRef,
     tabName,
     shownProject,
-    renameTab,
+    setTabName,
     switchTab,
     openInNewTab,
     newProject,
@@ -188,7 +188,11 @@ export function App() {
 
   const handleAgentCommand = useRef<(command: string, args: Record<string, unknown>) => unknown>(() => undefined)
   handleAgentCommand.current = (command, args) =>
-    runAgentCommand(command, args, { tabs: tabsRef.current, shownId: activeIdRef.current, tab: agentTab })
+    runAgentCommand(command, args, {
+      tabs: tabsRef.current.map((t) => ({ id: t.id, name: tabName(t.id) })),
+      shownId: activeIdRef.current,
+      tab: agentTab,
+    })
 
   useEffect(
     () => connectAgentBridge((command, args) => handleAgentCommand.current(command, args), setAgentConnected),
@@ -255,11 +259,10 @@ export function App() {
   } = useDocuments(tabSession, setError, confirm)
 
   const closeTab = async (id: string) => {
-    const tab = tabs.find((t) => t.id === id)
-    if (!tab) return
+    if (!tabs.some((t) => t.id === id)) return
     if (projectFile(id).dirty) {
       const choice = await ask({
-        title: `Save changes to "${tab.name}"?`,
+        title: `Save changes to "${tabName(id)}"?`,
         text: 'Closing without saving throws the changes away.',
         choices: [{ answer: 'discard', label: "Don't save" }, { answer: 'cancel', label: 'Cancel' }, { answer: 'save', label: 'Save' }],
         cancel: 'cancel',
@@ -293,7 +296,7 @@ export function App() {
       // The tab's project with a new netlist; it stays the same project, so it keeps its guid.
       updateProject((p) => (keepLayout ? reimportedProject(text, p) : importedProject(text, p.guid, DEFAULT_SETTINGS)))
       // A project not saved yet takes the netlist's name; a saved one keeps its file's.
-      if (!projectFile(activeIdRef.current).location) renameTab(activeIdRef.current, name)
+      if (!projectFile(activeIdRef.current).location) setTabName(activeIdRef.current, name)
       // Old layouts belong to the old netlist.
       clearHistory()
       setSelection(null)
@@ -467,7 +470,7 @@ export function App() {
         <ProjectTabs
           tabs={tabs.map((tab) => ({
             id: tab.id,
-            label: tab.name,
+            label: tabName(tab.id),
             unsaved: projectFile(tab.id).dirty,
             location: projectFile(tab.id).location?.kind ?? 'none',
           }))}

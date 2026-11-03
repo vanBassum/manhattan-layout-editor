@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import example from '../examples/Astable multivibrator.json?raw'
-import { compareWithDrive, overwriteDriveDocument, saveDriveDocument, type DriveLocation } from './driveDocuments'
-import { fileVersion, readFile, writeFile } from './googleDrive'
+import { compareWithDrive, openDriveDocument, overwriteDriveDocument, saveDriveDocument, type DriveLocation } from './driveDocuments'
+import { fileInfo, readFile, writeFile } from './googleDrive'
 import { projectFromFile, projectToFile } from './projectFormat'
 import type { ProjectFile } from './projectStore'
 
 vi.mock('./googleDrive', () => ({
-  fileVersion: vi.fn(),
   readFile: vi.fn(),
   writeFile: vi.fn(),
   fileInfo: vi.fn(),
@@ -17,12 +16,12 @@ const project = projectFromFile(example)
 const saved = projectToFile(project)
 const changed = { ...project, settings: { ...project.settings, snap: 1 } }
 const location: DriveLocation = { kind: 'drive', fileId: 'doc' }
-/** The tab saved or opened the document at version 3. */
-const file = (dirty: boolean): ProjectFile => ({ location, savedContent: saved, driveRevision: { version: '3' }, dirty, checked: false })
+/** The tab saved or opened the document "amp" at version 3. */
+const file = (dirty: boolean): ProjectFile => ({ location, savedContent: saved, driveRevision: { version: '3', name: 'amp' }, dirty, checked: false })
 
-/** The document in Drive is at `version` and holds `text`. */
-function driveHolds(version: string, text: string) {
-  vi.mocked(fileVersion).mockResolvedValue(version)
+/** The document in Drive is file `name` at `version`, and holds `text`. */
+function driveHolds(version: string, text: string, name = 'amp.manhattan.json') {
+  vi.mocked(fileInfo).mockResolvedValue({ name, version })
   vi.mocked(readFile).mockResolvedValue(text)
 }
 
@@ -31,10 +30,17 @@ beforeEach(() => {
   vi.mocked(writeFile).mockResolvedValue({ id: 'doc', version: '4', name: 'amp.json', mimeType: 'application/json', modifiedTime: '' })
 })
 
+describe('openDriveDocument', () => {
+  it('names the document after its file, and keeps its version', async () => {
+    driveHolds('3', saved, 'Amplifier.manhattan.json')
+    expect(await openDriveDocument('doc')).toMatchObject({ location, revision: { version: '3', name: 'Amplifier' } })
+  })
+})
+
 describe('saveDriveDocument', () => {
   it('writes without reading when the document is still at the version saved here', async () => {
     driveHolds('3', saved)
-    expect(await saveDriveDocument(changed, location, file(true))).toEqual({ kind: 'saved', revision: { version: '4' } })
+    expect(await saveDriveDocument(changed, location, file(true))).toEqual({ kind: 'saved', revision: { version: '4', name: 'amp' } })
     expect(writeFile).toHaveBeenCalledWith(projectToFile(changed), { id: 'doc' })
     expect(readFile).not.toHaveBeenCalled()
   })
@@ -51,7 +57,7 @@ describe('saveDriveDocument', () => {
     expect(result).toMatchObject({ kind: 'changedElsewhere', inDrive: { content: projectToFile(changed) }, revision: { version: '5' } })
     expect(result.kind === 'changedElsewhere' && result.inDrive.project?.settings.snap).toBe(1)
     expect(writeFile).not.toHaveBeenCalled()
-    expect(fileVersion).toHaveBeenCalledTimes(1)
+    expect(fileInfo).toHaveBeenCalledTimes(1)
     expect(readFile).toHaveBeenCalledTimes(1)
   })
 
@@ -70,16 +76,16 @@ describe('saveDriveDocument', () => {
 
 describe('overwriteDriveDocument', () => {
   it('writes without looking at what the document holds', async () => {
-    expect(await overwriteDriveDocument(project, location)).toEqual({ version: '4' })
+    expect(await overwriteDriveDocument(project, location)).toEqual({ version: '4', name: 'amp' })
     expect(writeFile).toHaveBeenCalledWith(saved, { id: 'doc' })
-    expect(fileVersion).not.toHaveBeenCalled()
+    expect(fileInfo).not.toHaveBeenCalled()
   })
 })
 
 describe('compareWithDrive', () => {
   it('does not read a document still at the version saved here', async () => {
     driveHolds('3', 'unread')
-    expect(await compareWithDrive(location, file(false))).toEqual({ comparison: { kind: 'unchanged', content: saved }, revision: { version: '3' } })
+    expect(await compareWithDrive(location, file(false))).toEqual({ comparison: { kind: 'unchanged', content: saved }, revision: { version: '3', name: 'amp' } })
     expect(readFile).not.toHaveBeenCalled()
   })
 
@@ -87,8 +93,13 @@ describe('compareWithDrive', () => {
     driveHolds('5', projectToFile(changed))
     const newer = await compareWithDrive(location, file(false))
     expect(newer.comparison).toMatchObject({ kind: 'newer', content: projectToFile(changed) })
-    expect(newer.revision).toEqual({ version: '5' })
+    expect(newer.revision).toEqual({ version: '5', name: 'amp' })
     expect((await compareWithDrive(location, file(true))).comparison).toMatchObject({ kind: 'conflict' })
+  })
+
+  it('returns the name the document has in Drive now, after it was renamed there', async () => {
+    driveHolds('6', saved, 'Amplifier v2.json')
+    expect(await compareWithDrive(location, file(false))).toEqual({ comparison: { kind: 'unchanged', content: saved }, revision: { version: '6', name: 'Amplifier v2' } })
   })
 
   it('refuses a document that is no project anymore', async () => {

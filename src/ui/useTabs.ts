@@ -6,6 +6,7 @@ import { emptyProject } from '../documents/projectFormat'
 import {
   UNTITLED,
   loadTabs,
+  nameOfTab,
   newTabId,
   onRemoteChange,
   readProject,
@@ -115,13 +116,22 @@ export function useTabs(onEnterTab: () => void) {
 
   // ---------- Tabs ----------
 
-  /** The name of tab `id`'s project: its file's name, or before saving the name it started with. */
-  const tabName = (id: string) => tabsRef.current.find((t) => t.id === id)?.name ?? UNTITLED
+  /** The name of tab `id`'s project: its document's name, or before saving the tab's own (see nameOfTab). */
+  const tabName = (id: string) => {
+    const tab = tabsRef.current.find((t) => t.id === id)
+    if (!tab) throw new Error(`no open tab has id "${id}"`)
+    return nameOfTab(tab)
+  }
 
   /** The project of tab `id`, including changes still waiting to be written to the recovery copy. */
   const shownProject = (id: string) => (id === activeIdRef.current ? projectRef.current : readProject(id))
 
-  const renameTab = (id: string, name: string) => replaceTabs(tabsRef.current.map((t) => (t.id === id ? { ...t, name } : t)))
+  /**
+   * Gives tab `id` a name of its own, for a project saved nowhere; undefined when its project now has
+   * a document, which names it.
+   */
+  const setTabName = (id: string, name: string | undefined) =>
+    replaceTabs(tabsRef.current.map((t) => (t.id === id ? (name === undefined ? { id } : { id, name }) : t)))
 
   /** Shows `id` with its own undo history; the shown tab is left as it is in storage. */
   const enterTab = (id: string, next: Project) => {
@@ -146,12 +156,19 @@ export function useTabs(onEnterTab: () => void) {
     if (id !== activeIdRef.current) showTab(id, readProject(id))
   }
 
-  const openInNewTab = (opened: Project, name: string, location?: ProjectLocation, driveRevision?: DriveRevision) => {
-    const id = newTabId()
-    setSavedProject(id, opened, location, driveRevision)
-    replaceTabs([...tabsRef.current, { id, name }])
-    showTab(id, opened)
+  /** Shows `opened` in a new tab `tab`, as saved at `location` (with its `driveRevision` for Drive), or saved nowhere. */
+  const addTab = (opened: Project, tab: ProjectTab, location?: ProjectLocation, driveRevision?: DriveRevision) => {
+    setSavedProject(tab.id, opened, location, driveRevision)
+    replaceTabs([...tabsRef.current, tab])
+    showTab(tab.id, opened)
   }
+
+  /** A project saved nowhere, in a new tab called `name`. */
+  const openInNewTab = (opened: Project, name: string) => addTab(opened, { id: newTabId(), name })
+
+  /** A document's project in a new tab, called by its document. */
+  const openDocumentInNewTab = (opened: Project, location: ProjectLocation, driveRevision?: DriveRevision) =>
+    addTab(opened, { id: newTabId() }, location, driveRevision)
 
   const newProject = () => openInNewTab(emptyProject(projectRef.current.settings), UNTITLED)
 
@@ -216,9 +233,10 @@ export function useTabs(onEnterTab: () => void) {
     activeIdRef: activeIdRef as { readonly current: string },
     tabName,
     shownProject,
-    renameTab,
+    setTabName,
     switchTab,
     openInNewTab,
+    openDocumentInNewTab,
     newProject,
     closeSavedTab,
     updateProject,

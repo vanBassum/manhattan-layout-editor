@@ -42,16 +42,13 @@ export type FileDialogState = { mode: 'open' } | { mode: 'save'; name: string; r
 /** Where a project was just saved, with Drive's revision of it for a document in Drive. */
 type Saved = { location: ProjectLocation; driveRevision?: DriveRevision }
 
-/** A saved project's new place, and the name it is saved under. */
-type SavedAs = Saved & { name: string }
-
 /** `confirm` asks a yes/no question; true when the user picks `confirmLabel` rather than Cancel. */
 export function useDocuments(
   tabs: TabSession,
   setError: (error: string) => void,
   confirm: (title: string, text: string, confirmLabel: string) => Promise<boolean>,
 ) {
-  const { activeIdRef, activeId, shownProject, tabName, renameTab, switchTab, openInNewTab, commitEdit } = tabs
+  const { activeIdRef, activeId, shownProject, tabName, setTabName, switchTab, openInNewTab, openDocumentInNewTab, commitEdit } = tabs
 
   // projectFile is read while rendering; this re-renders when a tab gets or loses unsaved changes,
   // or its saved document is checked.
@@ -106,44 +103,43 @@ export function useDocuments(
   }
 
   /** Saves `project` as `name` in Google Drive folder `folderId`. */
-  const saveToNewDriveDocument = async (project: Project, name: string, folderId: string): Promise<SavedAs | null> => {
+  const saveToNewDriveDocument = async (project: Project, name: string, folderId: string): Promise<Saved | null> => {
     const saved = await saveInDriveFolder(project, name, folderId, confirmOverwrite)
-    return saved && { name, location: saved.location, driveRevision: saved.revision }
+    return saved && { location: saved.location, driveRevision: saved.revision }
   }
 
   /** Saves `project` to a file picked in the computer's own save dialog, offered as `name`. */
-  const saveToNewLocalFile = async (project: Project, name: string): Promise<SavedAs | null> => {
+  const saveToNewLocalFile = async (project: Project, name: string): Promise<Saved | null> => {
     const handle = await saveToNewFile(project, name)
-    return handle && { name: projectNameOf(handle.name), location: { kind: 'local', handle } }
+    return handle && { location: { kind: 'local', handle } }
   }
 
   /**
    * Saves tab `id` where it is saved. A project without a location, or with `saveAs`, asks for a name
    * and a place; the computer's own save dialog or Google's picker then chooses the folder. The tab
-   * continues there, under the file's name, and the original stays as it was. False when nothing was saved.
+   * continues there, called by its document, and the original stays as it was. False when nothing was saved.
    */
   const saveTab = async (id: string, saveAs = false): Promise<boolean> => {
     const file = projectFile(id)
     const current = shownProject(id)
     try {
-      let saved: SavedAs | null
+      let saved: Saved | null
       if (file.location && !saveAs) {
-        const savedThere = await saveToLocation(current, tabName(id), file, file.location)
-        saved = savedThere && { ...savedThere, name: tabName(id) }
+        saved = await saveToLocation(current, tabName(id), file, file.location)
       } else {
         const choice = await askSaveAs(tabName(id))
         if (!choice) return false
         if (choice.place === 'local' && !canUseFiles) {
           downloadText(projectFileName(choice.name), projectToFile(current), 'application/json')
           setSavedProject(id, current)
-          renameTab(id, choice.name)
+          setTabName(id, choice.name)
           return true
         }
         saved = choice.place === 'drive' ? await saveToNewDriveDocument(current, choice.name, choice.folderId) : await saveToNewLocalFile(current, choice.name)
       }
       if (!saved) return false
       setSavedProject(id, current, saved.location, saved.driveRevision)
-      renameTab(id, saved.name)
+      setTabName(id, undefined)
       return true
     } catch (e) {
       setError(`Could not save: ${errorText(e)}`)
@@ -157,11 +153,11 @@ export function useDocuments(
     if (shown) return switchTab(shown)
     if (location.kind === 'local') {
       if (!(await mayUse(location.handle, true))) throw new Error(`no permission to open "${location.handle.name}"`)
-      return openInNewTab(projectFromFile(await readFile(location.handle)), projectNameOf(location.handle.name), location)
+      return openDocumentInNewTab(projectFromFile(await readFile(location.handle)), location)
     }
     if (!isSignedIn() && !(await signInToGoogle())) return
     const opened = await openDriveDocument(location.fileId)
-    openInNewTab(opened.project, opened.name, opened.location, opened.revision)
+    openDocumentInNewTab(opened.project, opened.location, opened.revision)
   }
 
   // Without the File System Access API a project file is uploaded through this hidden input.
@@ -225,7 +221,10 @@ export function useDocuments(
     } catch (e) {
       if (e instanceof SignInNeeded) return
       // Moved, deleted or damaged: keep working on the recovery copy; Save asks for a new location.
-      setError(`Could not read "${tabName(id)}" (${errorText(e)}). Showing the recovery copy.`)
+      const name = tabName(id)
+      setError(`Could not read "${name}" (${errorText(e)}). Showing the recovery copy.`)
+      // Without its document the tab keeps the name it had; named first, so it never shows without one.
+      setTabName(id, name)
       unlinkLocation(id)
     }
   }
