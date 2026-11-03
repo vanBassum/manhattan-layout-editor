@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy – Manhattan Layout Editor</title>
+    <style>
+      body {
+        max-width: 680px;
+        margin: 0 auto;
+        padding: 32px 16px;
+        font: 16px/1.6 system-ui, sans-serif;
+        color: #1f2328;
+        background: #fff;
+      }
+      h1 { font-size: 26px; }
+      h2 { font-size: 19px; margin-top: 32px; }
+      code { font-size: 14px; }
+      @media (prefers-color-scheme: dark) {
+        body { color: #e6e6e6; background: #16181c; }
+        a { color: #7ab7ff; }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Privacy</h1>
+    <p>
+      The <a href="./">Manhattan Layout Editor</a> runs entirely in your browser. It has no server of its own and no
+      accounts, and it collects no analytics.
+    </p>
+
+    <h2>Your projects</h2>
+    <p>
+      Open projects are kept in your browser's own storage on your computer. Project files are only read or written
+      when you choose to open or save one. A share link holds the project in the part of the link after <code>#</code>,
+      which browsers never send to a server.
+    </p>
+
+    <h2>Google Drive sync (optional)</h2>
+    <p>
+      If you turn on "Sync tabs with Google Drive", you sign in with Google and the editor asks for one permission:
+      <code>drive.appdata</code>. With it, the editor can only use its own hidden folder in your Google Drive. It cannot
+      see, read or change any of your other files.
+    </p>
+    <p>
+      In that folder the editor keeps your open tabs and their projects, so another computer you sign in on gets them
+      back. This data goes straight from your browser to Google; it never passes through any other server. The sign-in
+      token stays in your browser and runs out after an hour.
+    </p>
+    <p>
+      Without turning on sync, the editor loads nothing from Google.
+    </p>
+    <p>
+      The editor's use and transfer of information received from Google APIs adheres to the
+      <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+      including the Limited Use requirements. The data is used only to sync your workspace, and is not shared with
+      anyone, sold, or used for advertising.
+    </p>
+
+    <h2>Removing your data</h2>
+    <p>
+      Choose "Stop syncing with Google Drive" in the editor's menu to stop syncing and sign out. To delete the synced
+      data as well, open Google Drive, go to Settings → Manage apps, and choose "Delete hidden app data" for this app.
+      You can also revoke its access at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+    </p>
+
+    <h2>Contact</h2>
+    <p>Questions: <a href="mailto:bas.visscher24@gmail.com">bas.visscher24@gmail.com</a></p>
+  </body>
+</html>
