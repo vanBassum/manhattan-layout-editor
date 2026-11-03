@@ -603,7 +603,8 @@ export function App() {
         const location = await saveToLocation(current, file, file.location)
         saved = location && { project: current, location }
       } else {
-        const choice = await askSaveAs(current.name, file.location?.kind ?? 'local')
+        // The name the tab shows: a file's own name may differ from the project name inside it.
+        const choice = await askSaveAs(tabLabel({ id, name: current.name }), file.location?.kind ?? 'local')
         if (!choice) return false
         const named = { ...current, name: choice.name }
         if (choice.place === 'local' && !canUseFiles) {
