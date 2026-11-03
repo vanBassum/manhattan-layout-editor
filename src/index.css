@@ -165,6 +165,71 @@ input:focus-visible {
   gap: 8px;
 }
 
+.header-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 260px;
+  gap: 8px;
+  padding: 8px;
+  min-height: 0;
+}
+
+/* Side panels follow the view: schematic panel left, PCB panel right, both in split view. */
+.workspace.view-schematic {
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.workspace.view-layout {
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+
+.workspace.view-split {
+  grid-template-columns: 260px minmax(0, 1fr) 260px;
+}
+
+/* Segmented Layout / Schematic toggle in the header. */
+.view-switch {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.view-switch button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.view-switch button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Project tabs */
+
 .project-tabs {
   display: flex;
   align-items: center;
@@ -179,23 +244,6 @@ input:focus-visible {
   top: 0;
   left: 0;
   visibility: hidden;
-}
-
-.menu-tab {
-  display: flex;
-  align-items: center;
-}
-
-.menu-tab button:first-child {
-  flex: 1;
-  min-width: 0;
-  max-width: 280px;
-}
-
-.menu-tab .tab-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .unsaved-dot {
@@ -247,28 +295,128 @@ input:focus-visible {
   color: var(--text-muted);
 }
 
-.header-button {
+/* Tabs that do not fit, listed in the menu at the end of the tab strip. */
+.menu-tab {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 12px;
 }
 
-.icon-button {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
+.menu-tab button:first-child {
+  flex: 1;
+  min-width: 0;
+  max-width: 280px;
 }
 
-.workspace {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 260px;
+.menu-tab .tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Menus */
+
+.menu {
+  position: relative;
+}
+
+.menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 6px 20px var(--backdrop);
+}
+
+.submenu {
+  position: relative;
+}
+
+.submenu > button {
+  width: 100%;
+}
+
+.submenu > button .icon:last-child {
+  margin-left: auto;
+}
+
+.menu-list.submenu-list {
+  display: none;
+  top: -5px;
+  left: 100%;
+}
+
+.submenu:hover > .submenu-list,
+.submenu:focus-within > .submenu-list {
+  display: flex;
+}
+
+/* A rail's view menu opens from the far end of the rail, towards the pane's middle. */
+.menu-list.view-menu {
+  left: auto;
+  right: 0;
+  min-width: 280px;
+  padding: 8px 10px;
+}
+
+.menu-list button {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 8px;
-  min-height: 0;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+}
+
+.menu-list button:hover {
+  background: var(--panel-muted);
+}
+
+.menu-list kbd {
+  margin-left: auto;
+  padding-left: 16px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.menu-heading {
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.menu-list .agent-dot {
+  margin-left: auto;
+}
+
+.menu-list hr {
+  width: 100%;
+  margin: 2px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+/* Agent connection state, drawn as a dot on the Menu button and its AI item. */
+.agent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--idle-dot);
+}
+
+.agent-dot.connected {
+  background: var(--ok);
 }
 
 /* Sidebars */
@@ -474,6 +622,207 @@ input:focus-visible {
   font-weight: 600;
 }
 
+.board-size {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.reset-grid,
+.optimize-button,
+.update-pcb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
+
+.check-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.check-list .ok {
+  color: var(--ok);
+}
+
+/* Layer rows: visibility toggle, colour swatch, name and opacity slider. */
+.layer-row {
+  display: grid;
+  grid-template-columns: auto 12px 1fr 72px;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.layer-row.hidden .layer-name,
+.layer-row.hidden .swatch {
+  opacity: 0.4;
+}
+
+.layer-row .eye {
+  padding: 2px;
+  color: var(--accent);
+}
+
+.layer-row.hidden .eye {
+  color: var(--text-muted);
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.layer-row input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* Component list: compact one-line rows. */
+.component-list .component-row {
+  display: grid;
+  grid-template-columns: 22px 3em minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 6px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.component-list .component-row.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.component-list .component-row.issue .ref {
+  color: var(--error);
+}
+
+.component-list .package {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.kind-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 2px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: #868e96;
+}
+
+.kind-badge.kind-R { background: #a0662f; }
+.kind-badge.kind-C { background: #3b5bdb; }
+.kind-badge.kind-Q { background: #343a40; }
+.kind-badge.kind-D { background: #e8590c; }
+.kind-badge.kind-U { background: #2b8a3e; }
+:root[data-theme='dark'] .kind-badge.kind-Q { background: #5c636b; }
+
+/* Selection panel: a header card, then editable fields. */
+.selection-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.selection-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.kind-badge.large {
+  min-width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.selection-thumb.island {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: #d9904f;
+}
+
+.field-list {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.field-label {
+  color: var(--text-muted);
+}
+
+.field-list input[type='number'],
+.field-list input[type='text'] {
+  width: 100%;
+  min-width: 0;
+}
+
+.field-list .unit-input {
+  min-width: 0;
+}
+
+.field-pair {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+
+.field-pair .axis {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.footprint-field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-left: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.footprint-field span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.footprint-field .icon-button,
+.search .icon-button {
+  width: 28px;
+  height: 26px;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
+}
+
 /* Canvas area */
 
 .canvas-area {
@@ -502,6 +851,23 @@ input:focus-visible {
   max-width: 100%;
   box-shadow: 0 4px 14px var(--backdrop);
   pointer-events: auto;
+}
+
+/* Schematic and PCB panes: one fills the area, or both side by side in split view. */
+.canvas-panes {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-height: 0;
+}
+
+.canvas-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* Tool bar: icon above a one-word label, like a navigation rail. */
@@ -554,6 +920,11 @@ input:focus-visible {
 .rail-button.active:hover:not(:disabled) {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+/* The view menu's group sits at the far end of the rail. */
+.rail-group.view {
+  margin-left: auto;
 }
 
 .canvas-frame {
@@ -726,16 +1097,25 @@ input:focus-visible {
   stroke-width: 0.3px;
 }
 
-/* Agent connection state, drawn as a dot on the Menu button and its AI item. */
-.agent-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--idle-dot);
+/* Screen-space mm rulers along the top and left canvas edge. */
+.ruler rect {
+  fill: var(--ruler-bg);
 }
 
-.agent-dot.connected {
-  background: var(--ok);
+.ruler line {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+
+.ruler text {
+  fill: var(--ruler-text);
+  font-size: 9px;
+  font-family: inherit;
+}
+
+.ruler .ruler-unit {
+  font-size: 8px;
+  font-weight: 600;
 }
 
 .banner {
@@ -767,29 +1147,212 @@ input:focus-visible {
   color: var(--ok);
 }
 
-.board-size {
+/* Schematic */
+
+.schematic-view {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.schematic {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background-color: var(--canvas-bg);
+  touch-action: none;
+  user-select: none;
+}
+
+.schematic-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
   margin: 0;
   color: var(--text-muted);
+  pointer-events: none;
 }
 
-.shortcuts {
-  border-collapse: collapse;
-  margin-top: 12px;
+/* Schematic symbols, styled after classic hand-drawn hobby schematics. */
+.sch-line,
+.sch-outline,
+.sch-plate-open,
+.sch-box,
+.sch-resistor {
+  stroke: var(--canvas-text);
+  stroke-width: 0.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 
-.shortcuts th,
-.shortcuts td {
-  padding: 4px 16px 4px 0;
-  text-align: left;
-  vertical-align: top;
+.sch-line,
+.sch-outline {
+  fill: none;
 }
 
-.shortcuts th {
+.sch-fill {
+  fill: var(--canvas-text);
+}
+
+.sch-plate-open {
+  fill: var(--canvas-bg);
+}
+
+.sch-box {
+  fill: var(--sch-box);
+}
+
+.sch-resistor {
+  fill: var(--sch-resistor);
+}
+
+/* High-power parts, e.g. emitter and load resistors, as in classic hobby schematics. */
+.sch-resistor.power {
+  fill: var(--sch-power);
+}
+
+.sch-ref,
+.sch-value {
+  fill: var(--canvas-text);
+  font-size: 1.4px;
+}
+
+.sch-ref {
   font-weight: 600;
-  white-space: nowrap;
 }
 
-/* Dialogs: what every dialog shares. */
+.sch-pin-number {
+  fill: var(--text-muted);
+  font-size: 1.1px;
+}
+
+/* A mark that matters, such as an electrolytic's +: as dark as the lines and clearly sized. */
+.sch-pin-mark {
+  fill: var(--canvas-text);
+  font-size: 2px;
+  font-weight: 700;
+}
+
+.sch-net {
+  fill: var(--accent);
+  font-size: 1.2px;
+}
+
+.sch-part {
+  cursor: grab;
+}
+
+/* Catches the pointer between the thin lines of a symbol, e.g. inside a transistor's circle. */
+.sch-hit {
+  fill: transparent;
+}
+
+/* A symbol's own shapes, filled and widened by about 0.5 mm on each side, catch the pointer. */
+.sch-hit-shape {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 1;
+}
+
+polyline.sch-hit-shape {
+  fill: none;
+}
+
+.sch-part.selected .sch-line,
+.sch-part.selected .sch-outline,
+.sch-part.selected .sch-box,
+.sch-part.selected .sch-resistor,
+.sch-part.selected .sch-plate-open {
+  stroke: var(--accent);
+}
+
+.sch-part.selected .sch-fill {
+  fill: var(--accent);
+}
+
+.schematic.tool-wire,
+.schematic.tool-label,
+.schematic.over-point,
+.schematic.over-point .sch-part {
+  cursor: crosshair;
+}
+
+/* A wire can be shifted sideways by dragging it. */
+.schematic.tool-select .sch-wire-item,
+.schematic.tool-select .sch-label,
+.schematic.tool-select .sch-part-text {
+  cursor: move;
+}
+
+.sch-wire {
+  stroke: var(--sch-wire);
+  stroke-width: 0.25;
+  stroke-linecap: round;
+}
+
+.sch-wire.preview {
+  stroke-dasharray: 0.8 0.6;
+  pointer-events: none;
+}
+
+.sch-wire-hit {
+  stroke: transparent;
+}
+
+.sch-wire-item.selected .sch-wire,
+.sch-label.selected .sch-line {
+  stroke: var(--accent);
+  stroke-width: 0.5;
+}
+
+.sch-label.selected .sch-plate-open {
+  stroke: var(--accent);
+}
+
+.sch-label.selected .sch-net,
+.sch-label.selected .sch-fill {
+  fill: var(--accent);
+  font-weight: 700;
+}
+
+.sch-label.conflict .sch-net,
+.sch-label.conflict .sch-fill {
+  fill: var(--error);
+}
+
+.sch-junction {
+  fill: var(--sch-wire);
+}
+
+/* A selected wire corner or junction: a hollow handle around the point. */
+.sch-point.selected {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.25;
+}
+
+.sch-open-pin {
+  fill: var(--canvas-bg);
+  stroke: var(--warn);
+  stroke-width: 0.2;
+}
+
+.schematic-conflicts {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  background: var(--error-soft);
+  color: var(--error);
+  font-size: 12px;
+}
+
+/* Dialogs */
+
+/* What every dialog shares. */
 .dialog {
   width: min(760px, calc(100vw - 32px));
   max-width: none;
@@ -816,6 +1379,66 @@ input:focus-visible {
   gap: 8px;
   margin: 0;
   font-size: 17px;
+}
+
+.footprint-dialog footer,
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialog .primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.dialog .primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* Help dialogs: keyboard shortcuts and AI agent setup. */
+.shortcuts {
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.shortcuts th,
+.shortcuts td {
+  padding: 4px 16px 4px 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.shortcuts th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dialog ol {
+  display: grid;
+  gap: 10px;
+  padding-left: 20px;
+}
+
+.copy-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.copy-line code {
+  flex: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 /* Open and Save: places on the left, what is in them on the right. */
@@ -1062,156 +1685,7 @@ input:focus-visible {
   }
 }
 
-.dialog ol {
-  display: grid;
-  gap: 10px;
-  padding-left: 20px;
-}
-
-.copy-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 4px 0;
-}
-
-.copy-line code {
-  flex: 1;
-  padding: 4px 6px;
-  border-radius: 4px;
-  background: var(--code-bg);
-  font-size: 12px;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-/* Layer rows: visibility toggle, colour swatch, name and opacity slider. */
-.layer-row {
-  display: grid;
-  grid-template-columns: auto 12px 1fr 72px;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 0;
-}
-
-.layer-row.hidden .layer-name,
-.layer-row.hidden .swatch {
-  opacity: 0.4;
-}
-
-.layer-row .eye {
-  padding: 2px;
-  color: var(--accent);
-}
-
-.layer-row.hidden .eye {
-  color: var(--text-muted);
-}
-
-.swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-}
-
-.layer-row input[type='range'] {
-  width: 100%;
-  accent-color: var(--accent);
-}
-
-/* Component list: filter tabs and compact one-line rows. */
-.list-tabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 6px;
-}
-
-.list-tabs button {
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-}
-
-.list-tabs button.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.component-list .component-row {
-  display: grid;
-  grid-template-columns: 22px 3em minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 6px;
-  width: 100%;
-  padding: 3px 6px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-
-.component-list .component-row.selected {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-
-.component-list .component-row.issue .ref {
-  color: var(--error);
-}
-
-.component-list .package {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.kind-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 2px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  color: #fff;
-  background: #868e96;
-}
-
-.kind-badge.kind-R { background: #a0662f; }
-.kind-badge.kind-C { background: #3b5bdb; }
-.kind-badge.kind-Q { background: #343a40; }
-.kind-badge.kind-D { background: #e8590c; }
-.kind-badge.kind-U { background: #2b8a3e; }
-:root[data-theme='dark'] .kind-badge.kind-Q { background: #5c636b; }
-
-/* Screen-space mm rulers along the top and left canvas edge. */
-.ruler rect {
-  fill: var(--ruler-bg);
-}
-
-.ruler line {
-  stroke: var(--axis);
-  stroke-width: 1;
-}
-
-.ruler text {
-  fill: var(--ruler-text);
-  font-size: 9px;
-  font-family: inherit;
-}
-
-.ruler .ruler-unit {
-  font-size: 8px;
-  font-weight: 600;
-}
-
-/* Change footprint popup: components, footprint choice and preview side by side. */
+/* Change footprints: components, footprint choice and preview side by side. */
 .footprint-dialog {
   width: min(1100px, calc(100vw - 32px));
 }
@@ -1438,485 +1912,22 @@ input:focus-visible {
   padding-left: 18px;
 }
 
-.footprint-dialog footer,
-.dialog-actions {
+/* Filter tabs above the footprint cards. */
+.list-tabs {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
 }
 
-.dialog .primary {
+.list-tabs button {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.list-tabs button.active {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
-  font-weight: 600;
-}
-
-.dialog .primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
-/* Selection panel: a header card, then editable fields. */
-.selection-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.selection-title {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.kind-badge.large {
-  min-width: 36px;
-  height: 36px;
-  border-radius: 6px;
-  font-size: 13px;
-}
-
-.selection-thumb.island {
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
-  background: #d9904f;
-}
-
-.field-list {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 6px 10px;
-}
-
-.field-label {
-  color: var(--text-muted);
-}
-
-.field-list input[type='number'],
-.field-list input[type='text'] {
-  width: 100%;
-  min-width: 0;
-}
-
-.field-list .unit-input {
-  min-width: 0;
-}
-
-.field-pair {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 4px;
-}
-
-.field-pair .axis {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.footprint-field {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  padding-left: 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.footprint-field span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-}
-
-.footprint-field .icon-button,
-.search .icon-button {
-  width: 28px;
-  height: 26px;
-  border: none;
-  border-left: 1px solid var(--border);
-  border-radius: 0 6px 6px 0;
-}
-
-/* Segmented Layout / Schematic toggle in the header. */
-.view-switch {
-  display: flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.view-switch button {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-}
-
-.view-switch button.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.schematic-view {
-  position: relative;
-  display: flex;
-  flex: 1;
-  min-width: 0;
-}
-
-.schematic {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  background-color: var(--canvas-bg);
-  touch-action: none;
-  user-select: none;
-}
-
-.schematic-empty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  margin: 0;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-/* Schematic symbols, styled after classic hand-drawn hobby schematics. */
-.sch-line,
-.sch-outline,
-.sch-plate-open,
-.sch-box,
-.sch-resistor {
-  stroke: var(--canvas-text);
-  stroke-width: 0.25;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-
-.sch-line,
-.sch-outline {
-  fill: none;
-}
-
-.sch-fill {
-  fill: var(--canvas-text);
-}
-
-.sch-plate-open {
-  fill: var(--canvas-bg);
-}
-
-.sch-box {
-  fill: var(--sch-box);
-}
-
-.sch-resistor {
-  fill: var(--sch-resistor);
-}
-
-/* High-power parts, e.g. emitter and load resistors, as in classic hobby schematics. */
-.sch-resistor.power {
-  fill: var(--sch-power);
-}
-
-.sch-ref,
-.sch-value {
-  fill: var(--canvas-text);
-  font-size: 1.4px;
-}
-
-.sch-ref {
-  font-weight: 600;
-}
-
-.sch-pin-number {
-  fill: var(--text-muted);
-  font-size: 1.1px;
-}
-
-/* A mark that matters, such as an electrolytic's +: as dark as the lines and clearly sized. */
-.sch-pin-mark {
-  fill: var(--canvas-text);
-  font-size: 2px;
-  font-weight: 700;
-}
-
-.sch-net {
-  fill: var(--accent);
-  font-size: 1.2px;
-}
-
-.sch-part {
-  cursor: grab;
-}
-
-/* Catches the pointer between the thin lines of a symbol, e.g. inside a transistor's circle. */
-.sch-hit {
-  fill: transparent;
-}
-
-/* A symbol's own shapes, filled and widened by about 0.5 mm on each side, catch the pointer. */
-.sch-hit-shape {
-  fill: transparent;
-  stroke: transparent;
-  stroke-width: 1;
-}
-
-polyline.sch-hit-shape {
-  fill: none;
-}
-
-.sch-part.selected .sch-line,
-.sch-part.selected .sch-outline,
-.sch-part.selected .sch-box,
-.sch-part.selected .sch-resistor,
-.sch-part.selected .sch-plate-open {
-  stroke: var(--accent);
-}
-
-.sch-part.selected .sch-fill {
-  fill: var(--accent);
-}
-
-/* Schematic and PCB panes: one fills the area, or both side by side in split view. */
-.canvas-panes {
-  display: flex;
-  flex: 1;
-  gap: 8px;
-  min-height: 0;
-}
-
-.canvas-pane {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  min-height: 0;
-}
-
-.schematic.tool-wire,
-.schematic.tool-label,
-.schematic.over-point,
-.schematic.over-point .sch-part {
-  cursor: crosshair;
-}
-
-/* A wire can be shifted sideways by dragging it. */
-.schematic.tool-select .sch-wire-item,
-.schematic.tool-select .sch-label,
-.schematic.tool-select .sch-part-text {
-  cursor: move;
-}
-
-.sch-wire {
-  stroke: var(--sch-wire);
-  stroke-width: 0.25;
-  stroke-linecap: round;
-}
-
-.sch-wire.preview {
-  stroke-dasharray: 0.8 0.6;
-  pointer-events: none;
-}
-
-.sch-wire-hit {
-  stroke: transparent;
-}
-
-.sch-wire-item.selected .sch-wire,
-.sch-label.selected .sch-line {
-  stroke: var(--accent);
-  stroke-width: 0.5;
-}
-
-.sch-label.selected .sch-plate-open {
-  stroke: var(--accent);
-}
-
-.sch-label.selected .sch-net,
-.sch-label.selected .sch-fill {
-  fill: var(--accent);
-  font-weight: 700;
-}
-
-.sch-label.conflict .sch-net,
-.sch-label.conflict .sch-fill {
-  fill: var(--error);
-}
-
-.sch-junction {
-  fill: var(--sch-wire);
-}
-
-/* A selected wire corner or junction: a hollow handle around the point. */
-.sch-point.selected {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 0.25;
-}
-
-.sch-open-pin {
-  fill: var(--canvas-bg);
-  stroke: var(--warn);
-  stroke-width: 0.2;
-}
-
-.schematic-conflicts {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  padding: 4px 10px;
-  border-radius: var(--radius);
-  background: var(--error-soft);
-  color: var(--error);
-  font-size: 12px;
-}
-
-/* Side panels follow the view: schematic panel left, PCB panel right, both in split view. */
-.workspace.view-schematic {
-  grid-template-columns: 260px minmax(0, 1fr);
-}
-
-.workspace.view-layout {
-  grid-template-columns: minmax(0, 1fr) 260px;
-}
-
-.workspace.view-split {
-  grid-template-columns: 260px minmax(0, 1fr) 260px;
-}
-
-/* File menu in the header. */
-.menu {
-  position: relative;
-}
-
-.menu-list {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 200px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--panel);
-  box-shadow: 0 6px 20px var(--backdrop);
-}
-
-.submenu {
-  position: relative;
-}
-
-.submenu > button {
-  width: 100%;
-}
-
-.submenu > button .icon:last-child {
-  margin-left: auto;
-}
-
-.menu-list.submenu-list {
-  display: none;
-  top: -5px;
-  left: 100%;
-}
-
-.submenu:hover > .submenu-list,
-.submenu:focus-within > .submenu-list {
-  display: flex;
-}
-
-/* At the far end of a pane's rail, opening towards the pane's middle. */
-.rail-group.view {
-  margin-left: auto;
-}
-
-.menu-list.view-menu {
-  left: auto;
-  right: 0;
-  min-width: 280px;
-  padding: 8px 10px;
-}
-
-.menu-list button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-color: transparent;
-  background: none;
-  text-align: left;
-}
-
-.menu-list button:hover {
-  background: var(--panel-muted);
-}
-
-.menu-list kbd {
-  margin-left: auto;
-  padding-left: 16px;
-  font-family: inherit;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.menu-heading {
-  padding: 6px 8px 2px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.menu-list .agent-dot {
-  margin-left: auto;
-}
-
-.menu-list hr {
-  width: 100%;
-  margin: 2px 0;
-  border: none;
-  border-top: 1px solid var(--border);
-}
-
-.reset-grid,
-.optimize-button,
-.update-pcb {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  justify-content: center;
-}
-
-.check-list {
-  margin: 8px 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.check-list .ok {
-  color: var(--ok);
 }
