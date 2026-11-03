@@ -62,3 +62,67 @@ describe('open projects', () => {
     expect(() => store.writeProject('nope', store.emptyProject())).toThrow('no open project has id "nope"')
   })
 })
+
+describe('reopening a tab', () => {
+  it('compares its saved content as this version writes it, and names a local file tab after its file', async () => {
+    const { projectFromFile } = await import('./projectStore')
+    const handle = { name: 'amp.manhattan.json' }
+    // Before locations, a record kept its linked file as `handle`; `example` was written by an older version.
+    await seedSession([{ id: 'amp', name: 'Old name' }], { amp: { project: projectFromFile(example), savedContent: example, handle } })
+    vi.resetModules()
+    const store = await import('./projectStore')
+    await store.openProjectStore()
+    expect(store.loadTabs().tabs).toEqual([{ id: 'amp', name: 'amp' }])
+    expect(store.projectFile('amp')).toMatchObject({ location: { kind: 'local', handle }, dirty: false, checked: false })
+  })
+})
+
+/** Stands in for the BroadcastChannel, so a test can deliver a message from another browser tab. */
+class FakeChannel {
+  static last: FakeChannel
+  listeners: ((e: MessageEvent) => void)[] = []
+  constructor() {
+    FakeChannel.last = this
+  }
+  addEventListener(_type: string, listener: (e: MessageEvent) => void) {
+    this.listeners.push(listener)
+  }
+  postMessage() {}
+  receive(data: unknown) {
+    this.listeners.forEach((listener) => listener({ data } as MessageEvent))
+  }
+}
+
+describe('another browser tab', () => {
+  it('changing a project updates it here, and keeps whether it was checked', async () => {
+    vi.stubGlobal('BroadcastChannel', FakeChannel)
+    const store = await import('./projectStore')
+    await store.openProjectStore()
+    const { activeId } = store.loadTabs()
+    const changes: unknown[] = []
+    store.onRemoteChange((change) => changes.push(change))
+    const shown = store.readProject(activeId)
+    const changed = { ...shown, settings: { ...shown.settings, snap: 1 } }
+    const savedContent = store.projectFile(activeId).savedContent
+
+    FakeChannel.last.receive({ kind: 'project', id: activeId, stored: { project: changed, savedContent } })
+
+    expect(store.readProject(activeId)).toBe(changed)
+    expect(store.projectFile(activeId)).toMatchObject({ savedContent, dirty: true, checked: true })
+    expect(changes).toEqual([{ kind: 'project', id: activeId, project: changed }])
+  })
+
+  it('changing the tabs updates them here', async () => {
+    vi.stubGlobal('BroadcastChannel', FakeChannel)
+    const store = await import('./projectStore')
+    await store.openProjectStore()
+    const tabs = [{ id: 'other', name: 'Other' }]
+    const changes: unknown[] = []
+    store.onRemoteChange((change) => changes.push(change))
+
+    FakeChannel.last.receive({ kind: 'tabs', tabs })
+
+    expect(store.loadTabs().tabs).toEqual(tabs)
+    expect(changes).toEqual([{ kind: 'tabs', tabs }])
+  })
+})
