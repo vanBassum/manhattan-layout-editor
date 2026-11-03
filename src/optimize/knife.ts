@@ -1,7 +1,7 @@
 import { snapToGrid } from '../geometry'
 import { naturalCompare } from '../netlist'
 import type { BuiltNetlist, Island, Netlist, Settings } from '../types'
-import type { Strategy } from './index'
+import type { Strategy } from './strategy'
 import { componentNets, netPinCounts, placeOnIslands } from './common'
 
 /** Generous strips: room for parts, their clearance and a soldering iron. */

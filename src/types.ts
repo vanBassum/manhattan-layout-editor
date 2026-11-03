@@ -1,6 +1,25 @@
 // All dimensions are in millimeters.
 
-import type { Geometry } from './layout'
+export type Shape = 'axial' | 'radial' | 'smd' | 'to92' | 'to126' | 'trimmer' | 'dip' | 'row'
+
+/**
+ * Simple symbolic geometry in local coordinates (component center at 0,0, before rotation).
+ * Not a footprint: each lead leaves the body at a fixed anchor and runs to its copper island.
+ */
+export interface Geometry {
+  shape: Shape
+  body: Rect
+  anchors: Point[]
+  /** Unit vectors pointing away from the body; used for leads that have no island to go to. */
+  directions: Point[]
+  /** How far the unbent leads stick out beyond the anchors. */
+  leadLength: number
+  maxLeadLength: number
+  /** Drawn in its own color: an LED has the same round body as a capacitor can. */
+  led: boolean
+  /** Drawn with a band at pin 1: a diode's cathode. */
+  band: boolean
+}
 
 export interface Pin {
   number: string
