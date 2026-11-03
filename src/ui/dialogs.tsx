@@ -37,7 +37,7 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => dialogRef.current?.showModal(), [])
 
   return (
-    <dialog ref={dialogRef} className="ai-dialog" onClose={onClose}>
+    <dialog ref={dialogRef} className="dialog" onClose={onClose}>
       <header>
         <h2><Icon name="help" />Shortcuts</h2>
         <button className="icon-button" onClick={() => dialogRef.current?.close()} aria-label="Close">✕</button>
@@ -70,7 +70,7 @@ export function QuestionDialog<Answer extends string>({ question, onAnswer }: { 
   const last = question.choices.length - 1
 
   return (
-    <dialog ref={dialogRef} className="ai-dialog question-dialog" onCancel={() => onAnswer(question.cancel)}>
+    <dialog ref={dialogRef} className="dialog question-dialog" onCancel={() => onAnswer(question.cancel)}>
       <h2>{question.title}</h2>
       <p>{question.text}</p>
       <div className="dialog-actions">
@@ -113,7 +113,7 @@ export function AiHelpDialog({ agentConnected, onClose }: { agentConnected: bool
   useEffect(() => dialogRef.current?.showModal(), [])
 
   return (
-    <dialog ref={dialogRef} className="ai-dialog" onClose={onClose}>
+    <dialog ref={dialogRef} className="dialog" onClose={onClose}>
       <header>
         <h2><Icon name="ai" />Use your AI assistant</h2>
         <button className="icon-button" onClick={() => dialogRef.current?.close()} aria-label="Close">✕</button>

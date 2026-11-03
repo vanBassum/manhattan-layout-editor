@@ -202,7 +202,7 @@ export function FootprintDialog({ built, imported, definitions, initialRefs, iso
     : undefined
 
   return (
-    <dialog ref={dialogRef} className="footprint-dialog" onClose={onClose}>
+    <dialog ref={dialogRef} className="dialog footprint-dialog" onClose={onClose}>
       <header>
         <div>
           <h2><Icon name="convert" />Change footprint</h2>

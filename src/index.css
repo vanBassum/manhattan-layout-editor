@@ -789,9 +789,8 @@ input:focus-visible {
   white-space: nowrap;
 }
 
-/* Popups: AI help and change footprint. */
-.ai-dialog,
-.footprint-dialog {
+/* Dialogs: what every dialog shares. */
+.dialog {
   width: min(760px, calc(100vw - 32px));
   max-width: none;
   max-height: calc(100vh - 32px);
@@ -801,20 +800,17 @@ input:focus-visible {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
 }
 
-.ai-dialog::backdrop,
-.footprint-dialog::backdrop {
+.dialog::backdrop {
   background: var(--backdrop);
 }
 
-.ai-dialog header,
-.footprint-dialog header {
+.dialog header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.ai-dialog h2,
-.footprint-dialog h2 {
+.dialog h2 {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1074,7 +1070,7 @@ input:focus-visible {
   }
 }
 
-.ai-dialog ol {
+.dialog ol {
   display: grid;
   gap: 10px;
   padding-left: 20px;

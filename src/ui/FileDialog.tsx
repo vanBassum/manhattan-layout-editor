@@ -124,7 +124,7 @@ export function FileDialog(props: FileDialogProps) {
   const selectedItem = items?.find((item) => item.id === selected)
 
   return (
-    <dialog ref={dialogRef} className="ai-dialog fd" onClose={onDialogClose}>
+    <dialog ref={dialogRef} className="dialog fd" onClose={onDialogClose}>
       <header>
         <h2>
           <Icon name={mode === 'open' ? 'open' : 'save'} />
