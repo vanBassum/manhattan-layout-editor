@@ -1,9 +1,23 @@
 import { buildNetlist, buildProjectNetlist } from './definitions'
-import { rotatePoint, snapToGrid } from './geometry'
+import { boundsOf, inflate, rectContains, rectsOverlap, rotatePoint, snapToGrid } from './geometry'
 import { followNetlist } from './layout'
 import { isRealNet, naturalCompare } from './netlist'
-import { NO_WIRING } from './selection'
-import type { BuiltComponent, BuiltNetlist, LabelSymbol, NetLabel, Netlist, Point, Project, Schematic, SchematicPlacement, Wire, WiringSelection } from './types'
+import { NO_WIRING, selectedRefs, selectedWiring } from './selection'
+import type {
+  BuiltComponent,
+  BuiltNetlist,
+  LabelSymbol,
+  NetLabel,
+  Netlist,
+  Point,
+  Project,
+  Rect,
+  Schematic,
+  SchematicPlacement,
+  Selection,
+  Wire,
+  WiringSelection,
+} from './types'
 
 /** A pin end in schematic coordinates, with the direction a wire leaves it. */
 export interface PinEnd extends Point {
@@ -672,3 +686,150 @@ export function isConnection(p: Point, wires: Wire[], pinKeys: ReadonlySet<strin
   return pinKeys.has(pointKey(p)) || wires.some((w) => wireEnds(w).some((e) => samePoint(e, p)) || onWireInterior(p, w))
 }
 
+
+// ---------- Pointing at the schematic ----------
+// What a press, a drag or a selection rectangle hits and does. Only how far a grab reaches depends
+// on the zoom, so the view passes it in.
+
+/** A placed part with where its pins end. */
+export interface PlacedPart {
+  component: BuiltComponent
+  placement: SchematicPlacement
+  pins: PinEnd[]
+}
+
+/** The schematic's placed parts that `built` has a component for, with their pin ends. */
+export function placedParts(schematic: FullSchematic, built: BuiltNetlist): PlacedPart[] {
+  const componentsByRef = new Map(built.components.map((c) => [c.ref, c]))
+  return schematic.placements.flatMap((placement) => {
+    const component = componentsByRef.get(placement.ref)
+    return component ? [{ component, placement, pins: pinEnds(component, placement) }] : []
+  })
+}
+
+/** Map keys of every pin end of `parts`. */
+export const pinKeysOf = (parts: PlacedPart[]): Set<string> => new Set(parts.flatMap(({ pins }) => pins.map(pointKey)))
+
+/** A pin end or wire end under the pointer. */
+export interface Grab {
+  point: Point
+  onPin: boolean
+}
+
+/** The nearest pin end or wire end within `radius` of `p`; a pin wins over a wire end on the same spot. */
+export function grabAt(wires: Wire[], parts: PlacedPart[], p: Point, radius: number): Grab | null {
+  const pinKeys = pinKeysOf(parts)
+  const candidates: Grab[] = [
+    ...parts.flatMap(({ pins }) => pins.map((pin) => ({ point: { x: pin.x, y: pin.y }, onPin: true }))),
+    ...wires.flatMap(wireEnds).map((end) => ({ point: end, onPin: pinKeys.has(pointKey(end)) })),
+  ]
+  let best: Grab | null = null
+  let bestDistance = radius
+  for (const c of candidates) {
+    const d = Math.hypot(c.point.x - p.x, c.point.y - p.y)
+    if (d < bestDistance - 1e-9 || (best && d <= bestDistance + 1e-9 && c.onPin && !best.onPin)) [best, bestDistance] = [c, d]
+  }
+  return best
+}
+
+/** Where a part can be grabbed, and what a selection rectangle must touch: its pin ends with some margin. */
+function partArea(pins: PinEnd[]): Rect | null {
+  const bounds = boundsOf(pins.map((p) => ({ x: p.x, y: p.y, w: 0, h: 0 })))
+  return bounds && inflate(bounds, 2)
+}
+
+const rectInside = (inner: Rect, outer: Rect) =>
+  rectContains(outer, inner) && rectContains(outer, { x: inner.x + inner.w, y: inner.y + inner.h })
+
+/** True when the wire touches the rectangle; wires are horizontal or vertical, so their bounding box will do. */
+const wireTouches = (w: Wire, r: Rect) =>
+  Math.max(w.x1, w.x2) >= r.x && Math.min(w.x1, w.x2) <= r.x + r.w && Math.max(w.y1, w.y2) >= r.y && Math.min(w.y1, w.y2) <= r.y + r.h
+
+/**
+ * What a selection rectangle selects: what lies entirely inside `area`, or with `crossing`, whatever
+ * it touches. Either way, wire ends inside it are selected as points, so a wire reaching out of it
+ * stretches when the selection is dragged; ends on a pin follow that pin instead.
+ */
+export function marqueeSelection(
+  schematic: FullSchematic,
+  parts: PlacedPart[],
+  area: Rect,
+  crossing: boolean,
+): { refs: string[]; wiring: WiringSelection } {
+  const refs = parts
+    .filter(({ pins }) => {
+      const partBounds = partArea(pins)
+      return partBounds !== null && (crossing ? rectsOverlap(partBounds, area) : rectInside(partBounds, area))
+    })
+    .map(({ placement }) => placement.ref)
+  const pinKeys = pinKeysOf(parts)
+  const ends = new Map(
+    schematic.wires
+      .flatMap(wireEnds)
+      .filter((p) => rectContains(area, p) && !pinKeys.has(pointKey(p)))
+      .map((p) => [pointKey(p), p]),
+  )
+  const wiring: WiringSelection = {
+    wires: schematic.wires.flatMap((w, i) => {
+      const inside = wireEnds(w).every((end) => rectContains(area, end))
+      return inside || (crossing && wireTouches(w, area)) ? [i] : []
+    }),
+    labels: schematic.labels.flatMap((l, i) => (rectContains(area, l) ? [i] : [])),
+    points: [...ends.values()],
+  }
+  return { refs, wiring }
+}
+
+/** A point on the schematic grid. */
+export const snapPoint = (p: Point): Point => ({ x: snapToGrid(p.x, SCHEMATIC_GRID), y: snapToGrid(p.y, SCHEMATIC_GRID) })
+
+/**
+ * The selection `moving` being dragged over `base`, the schematic as it was when the drag started.
+ * `keepConnections`: drag (the wiring around it stretches along) or move (only the selection moves).
+ */
+export interface SchematicDrag {
+  moving: Selection
+  base: FullSchematic
+  keepConnections: boolean
+}
+
+/**
+ * The pointer movement `d` as the drag applies it. Dragging one wire on its own shifts it sideways
+ * only: sliding it along itself would just bend the wires at its ends. Everything else follows the pointer.
+ */
+export function alongDragAxis(drag: SchematicDrag, d: Point): Point {
+  const moving = selectedWiring(drag.moving)
+  const loneWire = drag.keepConnections && selectedRefs(drag.moving).length === 0 && moving.wires.length === 1 && moving.labels.length === 0
+  const w = loneWire ? drag.base.wires[moving.wires[0]] : undefined
+  if (!w || moving.points.length > 0) return d
+  if (w.y1 === w.y2) return { x: 0, y: d.y }
+  if (w.x1 === w.x2) return { x: d.x, y: 0 }
+  return d
+}
+
+/**
+ * The drag's base with its selection shifted by `delta`. Parts keep a rotation or flip made mid-drag,
+ * which only `current`, the schematic as it is now, has.
+ */
+export function draggedSchematic(current: FullSchematic, built: BuiltNetlist, drag: SchematicDrag, delta: Point): FullSchematic {
+  const refs = selectedRefs(drag.moving)
+  const now = new Map(current.placements.map((p) => [p.ref, p]))
+  const placements = drag.base.placements
+    .filter((p) => refs.includes(p.ref))
+    .map((origin) => ({ ...(now.get(origin.ref) ?? origin), ...snapPoint({ x: origin.x + delta.x, y: origin.y + delta.y }) }))
+  return withSchematicMoved(drag.base, built, {
+    placements,
+    wiring: selectedWiring(drag.moving),
+    delta,
+    keepConnections: drag.keepConnections,
+  })
+}
+
+/** Which way a label's name points: away from the pin it sits on, above a horizontal wire, else to the right. */
+export function labelDirection(label: Point, parts: PlacedPart[], wires: Wire[]): Point {
+  const pinDirections = new Map(parts.flatMap(({ pins }) => pins.map((pin) => [pointKey(pin), { x: pin.dx, y: pin.dy }] as const)))
+  const pin = pinDirections.get(pointKey(label))
+  if (pin) return pin
+  const onHorizontalWire = wires.some((w) => w.y1 === w.y2 && w.y1 === label.y && Math.min(w.x1, w.x2) <= label.x && label.x <= Math.max(w.x1, w.x2))
+  return onHorizontalWire ? { x: 0, y: -1 } : { x: 1, y: 0 }
+}

@@ -1,24 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { boundsOf, inflate, rectBetween, rectContains, rectsOverlap, rotatePoint, snapToGrid } from './geometry'
+import { boundsOf, inflate, rectBetween, rotatePoint, snapToGrid } from './geometry'
 import {
+  alongDragAxis,
   CELL_HEIGHT,
   CELL_WIDTH,
+  draggedSchematic,
+  grabAt,
   isConnection,
-  pinEnds,
+  labelDirection,
+  labelSymbol,
+  looseWireEnds,
+  marqueeSelection,
+  pinKeysOf,
+  placedParts,
   pointKey,
   polylineWires,
   route,
   SCHEMATIC_GRID,
-  wireEnds,
-  labelSymbol,
-  withSchematicMoved,
-  looseWireEnds,
+  snapPoint,
   withTidyWires,
   type FullSchematic,
+  type PinEnd,
   type SchematicNets,
 } from './schematic'
-import type { PinEnd } from './schematic'
 import type { SymbolGraphic } from './types'
 import {
   addToSelection,
@@ -32,7 +37,7 @@ import {
   toggleSchematicItem,
   type SchematicItem,
 } from './selection'
-import type { BuiltComponent, BuiltNetlist, NetLabel, Point, Rect, SchematicPlacement, Selection, Wire, WiringSelection } from './types'
+import type { BuiltComponent, BuiltNetlist, NetLabel, Point, Rect, SchematicPlacement, Selection } from './types'
 import { layerClasses, layerOpacities, type SchematicLayers } from './ui/layers'
 import { gridPitch, gridPitches, useViewport, ViewportGrid, type View } from './ui/viewport'
 
@@ -94,26 +99,6 @@ type Drag =
 
 type SelectionDrag = Extract<Drag, { kind: 'selection' }>
 type MarqueeDrag = Extract<Drag, { kind: 'marquee' }>
-
-/** A pin end or wire end under the pointer. */
-interface Grab {
-  point: Point
-  onPin: boolean
-}
-
-const snapPoint = (p: Point): Point => ({ x: snapToGrid(p.x, SCHEMATIC_GRID), y: snapToGrid(p.y, SCHEMATIC_GRID) })
-
-const rectInside = (inner: Rect, outer: Rect) =>
-  rectContains(outer, inner) && rectContains(outer, { x: inner.x + inner.w, y: inner.y + inner.h })
-/** True when the wire touches the rectangle; wires are horizontal or vertical, so their bounding box will do. */
-const wireTouches = (w: Wire, r: Rect) =>
-  Math.max(w.x1, w.x2) >= r.x && Math.min(w.x1, w.x2) <= r.x + r.w && Math.max(w.y1, w.y2) >= r.y && Math.min(w.y1, w.y2) <= r.y + r.h
-
-/** Where a part can be grabbed, and what a selection rectangle must touch: its pin ends with some margin. */
-function partArea(pins: PinEnd[]): Rect | null {
-  const bounds = boundsOf(pins.map((p) => ({ x: p.x, y: p.y, w: 0, h: 0 })))
-  return bounds && inflate(bounds, 2)
-}
 
 /** Text placed `distance` mm from `at` along `axis`, reading upright whichever way the axis points. */
 function textAlong(at: Point, axis: Point, distance: number) {
@@ -349,12 +334,9 @@ export function SchematicView({
   const highlightedWires = new Set(wiring.wires)
   const highlightedLabels = new Set(wiring.labels)
 
-  const componentsByRef = new Map(netlist.components.map((c) => [c.ref, c]))
-  const parts = schematic.placements.flatMap((placement) => {
-    const component = componentsByRef.get(placement.ref)
-    return component ? [{ component, placement, pins: pinEnds(component, placement) }] : []
-  })
-  const pinKeys = new Set(parts.flatMap(({ pins }) => pins.map(pointKey)))
+  const parts = placedParts(schematic, netlist)
+  const pinKeys = pinKeysOf(parts)
+  const grabRadius = Math.min(GRAB_RADIUS_PX / view.scale, MAX_GRAB_RADIUS_MM)
 
   useEffect(() => {
     const cells = schematic.placements.map((p) => ({ x: p.x - CELL_WIDTH / 2, y: p.y - CELL_HEIGHT / 2, w: CELL_WIDTH, h: CELL_HEIGHT }))
@@ -369,22 +351,6 @@ export function SchematicView({
   const toWorld = (e: { clientX: number; clientY: number }): Point => {
     const r = svgRef.current!.getBoundingClientRect()
     return { x: (e.clientX - r.left - view.ox) / view.scale, y: (e.clientY - r.top - view.oy) / view.scale }
-  }
-
-  /** The nearest pin end or wire end within grabbing distance; a pin wins over a wire end on the same spot. */
-  const grabAt = (p: Point): Grab | null => {
-    const radius = Math.min(GRAB_RADIUS_PX / view.scale, MAX_GRAB_RADIUS_MM)
-    const candidates: Grab[] = [
-      ...parts.flatMap(({ pins }) => pins.map((pin) => ({ point: { x: pin.x, y: pin.y }, onPin: true }))),
-      ...schematic.wires.flatMap(wireEnds).map((end) => ({ point: end, onPin: pinKeys.has(pointKey(end)) })),
-    ]
-    let best: Grab | null = null
-    let bestDistance = radius
-    for (const c of candidates) {
-      const d = Math.hypot(c.point.x - p.x, c.point.y - p.y)
-      if (d < bestDistance - 1e-9 || (best && d <= bestDistance + 1e-9 && c.onPin && !best.onPin)) [best, bestDistance] = [c, d]
-    }
-    return best
   }
 
   const beginDrag = (e: ReactPointerEvent, drag: Drag) => {
@@ -438,12 +404,12 @@ export function SchematicView({
     }
     if (tool === 'wire') {
       e.stopPropagation()
-      startDraft(grabAt(p)?.point ?? snapPoint(p))
+      startDraft(grabAt(schematic.wires, parts, p, grabRadius)?.point ?? snapPoint(p))
       beginDrag(e, { kind: 'draw', ...press })
       return
     }
     if (tool !== 'select') return
-    const grab = grabAt(p)
+    const grab = grabAt(schematic.wires, parts, p, grabRadius)
     if (!grab) return
     // From a pin, or with Shift from a wire end: a new wire. A loose wire end, corner or junction
     // is an item of its own: pressing it selects it, dragging it takes every wire end there along.
@@ -504,20 +470,6 @@ export function SchematicView({
     })
   }
 
-  /**
-   * Dragging one wire on its own shifts it sideways only: sliding it along itself would just bend
-   * the wires at its ends. Everything else follows the pointer.
-   */
-  const alongDragAxis = (drag: SelectionDrag, d: Point): Point => {
-    const moving = selectedWiring(drag.moving)
-    const loneWire = drag.keepConnections && selectedRefs(drag.moving).length === 0 && moving.wires.length === 1 && moving.labels.length === 0
-    const w = loneWire ? drag.base.wires[moving.wires[0]] : undefined
-    if (!w || moving.points.length > 0) return d
-    if (w.y1 === w.y2) return { x: 0, y: d.y }
-    if (w.x1 === w.x2) return { x: d.x, y: 0 }
-    return d
-  }
-
   /** Pressing a part's text selects the part; dragging moves only the text. */
   const pressPartText = (e: ReactPointerEvent, component: BuiltComponent, placement: SchematicPlacement) => {
     if (!selectToolOnly(e)) return
@@ -526,20 +478,6 @@ export function SchematicView({
     beginDrag(e, { kind: 'part-text', ref: placement.ref, start: toWorld(e), origin: textOffsetOf(component, placement), moved: false })
   }
 
-  /** The schematic with `moving` shifted by `delta` from `base`. Parts keep a rotation or flip made mid-drag. */
-  const movedSchematic = (drag: SelectionDrag) => {
-    const refs = selectedRefs(drag.moving)
-    const current = new Map(schematic.placements.map((p) => [p.ref, p]))
-    const placements = drag.base.placements
-      .filter((p) => refs.includes(p.ref))
-      .map((origin) => ({ ...(current.get(origin.ref) ?? origin), ...snapPoint({ x: origin.x + drag.delta.x, y: origin.y + drag.delta.y }) }))
-    return withSchematicMoved(drag.base, netlist, {
-      placements,
-      wiring: selectedWiring(drag.moving),
-      delta: drag.delta,
-      keepConnections: drag.keepConnections,
-    })
-  }
 
   /** After a drag: folded-up wires go, and the selection follows the wires and points that moved. */
   const finishMove = (drag: SelectionDrag) => {
@@ -569,7 +507,7 @@ export function SchematicView({
     const drag = dragRef.current
     moveDraftCursor(p)
     if (!drag) {
-      setOverPoint(tool === 'select' && grabAt(p) !== null)
+      setOverPoint(tool === 'select' && grabAt(schematic.wires, parts, p, grabRadius) !== null)
       return
     }
     if (drag.kind === 'pan') {
@@ -598,14 +536,10 @@ export function SchematicView({
       return
     }
     drag.delta = snapPoint(alongDragAxis(drag, { x: dx, y: dy }))
-    onChange(movedSchematic(drag))
+    onChange(draggedSchematic(schematic, netlist, drag, drag.delta))
   }
 
-  /**
-   * Dragged left to right (a window), the rectangle selects what lies entirely inside it; right to
-   * left (crossing), whatever it touches. Either way, wire ends inside it go along with a drag, so
-   * a wire reaching out of the window stretches; ends on a pin follow that pin instead.
-   */
+  /** Dragged left to right (a window), the rectangle selects what lies inside it; right to left (crossing), whatever it touches. */
   const finishMarquee = (drag: MarqueeDrag, e: ReactPointerEvent) => {
     setMarquee(null)
     if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) <= CLICK_TOLERANCE_PX) {
@@ -613,28 +547,8 @@ export function SchematicView({
       return
     }
     const end = toWorld(e)
-    const area = rectBetween(drag.start, end)
     const crossing = end.x < drag.start.x
-    const refs = parts
-      .filter(({ pins }) => {
-        const partBounds = partArea(pins)
-        return partBounds !== null && (crossing ? rectsOverlap(partBounds, area) : rectInside(partBounds, area))
-      })
-      .map(({ placement }) => placement.ref)
-    const ends = new Map(
-      schematic.wires
-        .flatMap(wireEnds)
-        .filter((p) => rectContains(area, p) && !pinKeys.has(pointKey(p)))
-        .map((p) => [pointKey(p), p]),
-    )
-    const found: WiringSelection = {
-      wires: schematic.wires.flatMap((w, i) => {
-        const inside = wireEnds(w).every((end) => rectContains(area, end))
-        return inside || (crossing && wireTouches(w, area)) ? [i] : []
-      }),
-      labels: schematic.labels.flatMap((l, i) => (rectContains(area, l) ? [i] : [])),
-      points: [...ends.values()],
-    }
+    const { refs, wiring: found } = marqueeSelection(schematic, parts, rectBetween(drag.start, end), crossing)
     onSelect(drag.additive ? addToSelection(selection, refs, [], found) : selectionOf(refs, [], found))
   }
 
@@ -699,15 +613,7 @@ export function SchematicView({
 
   // ---------- Drawing ----------
 
-  const pinDirections = new Map(parts.flatMap(({ pins }) => pins.map((pin) => [pointKey(pin), { x: pin.dx, y: pin.dy }] as const)))
   const conflictPoints = new Set(nets.conflicts.flatMap((c) => c.points.map(pointKey)))
-  /** Which way a label's name points: away from its pin, above a horizontal wire, else to the right. */
-  const labelDirection = (label: NetLabel): Point => {
-    const pin = pinDirections.get(pointKey(label))
-    if (pin) return pin
-    const onHorizontalWire = schematic.wires.some((w) => w.y1 === w.y2 && w.y1 === label.y && Math.min(w.x1, w.x2) <= label.x && label.x <= Math.max(w.x1, w.x2))
-    return onHorizontalWire ? { x: 0, y: -1 } : { x: 1, y: 0 }
-  }
   const px = 1 / view.scale
   const pitch = gridPitch(view.scale, gridPitches(SCHEMATIC_GRID, gridLinesPerMajor))
   const preview = draft && draftPath(draft)
@@ -764,7 +670,7 @@ export function SchematicView({
               <LabelMark
                 key={k}
                 label={label}
-                direction={labelDirection(label)}
+                direction={labelDirection(label, parts, schematic.wires)}
                 className={['sch-label', selected && 'selected', conflict && 'conflict'].filter(Boolean).join(' ')}
                 onPointerDown={(e) => pressItem(e, { kind: 'label', index: k })}
                 onDoubleClick={() => renameLabel(k)}

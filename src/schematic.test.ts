@@ -3,10 +3,16 @@ import example from './examples/Astable multivibrator.manhattan.json?raw'
 import { buildProjectNetlist } from './definitions'
 import { projectFromFile } from './documents/projectFormat'
 import {
+  alongDragAxis,
+  draggedSchematic,
   flipped,
   flippedSelection,
+  grabAt,
+  labelDirection,
+  marqueeSelection,
   pinEnds,
   pinsWithOtherNet,
+  placedParts,
   projectSchematic,
   rotatedSelection,
   unconnectedPins,
@@ -15,7 +21,18 @@ import {
   withTidyWires,
   type FullSchematic,
 } from './schematic'
+import { NO_WIRING } from './selection'
 import type { BuiltNetlist, Netlist } from './types'
+
+/** The example project's schematic with its part R1 and R1's first pin end. */
+function exampleWithR1() {
+  const project = projectFromFile(example)
+  const built = buildProjectNetlist(project)
+  const schematic = projectSchematic(project)
+  const parts = placedParts(schematic, built)
+  const r1 = parts.find((p) => p.component.ref === 'R1')!
+  return { built, schematic, parts, r1, pin: r1.pins[0] }
+}
 
 describe('pinsWithOtherNet', () => {
   const netlist = (nets: Record<string, string>): Netlist => ({
@@ -190,5 +207,114 @@ describe('withLabelChanged', () => {
       { x: 0, y: 0, name: 'A' },
       { x: 5.08, y: 0, name: 'C' },
     ])
+  })
+})
+
+describe('grabAt', () => {
+  const wires = [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }]
+
+  it('finds the nearest wire end within the radius', () => {
+    expect(grabAt(wires, [], { x: 9.5, y: 0.3 }, 1)).toEqual({ point: { x: 10.16, y: 0 }, onPin: false })
+    expect(grabAt(wires, [], { x: 8, y: 0 }, 1)).toBeNull()
+  })
+
+  it('takes the pin over a wire end on the same spot', () => {
+    const { parts, pin } = exampleWithR1()
+    const onPin = [{ x1: pin.x, y1: pin.y, x2: pin.x + 50, y2: pin.y }]
+
+    expect(grabAt(onPin, parts, { x: pin.x + 0.2, y: pin.y }, 1)).toEqual({ point: { x: pin.x, y: pin.y }, onPin: true })
+  })
+})
+
+describe('marqueeSelection', () => {
+  const schematic: FullSchematic = {
+    placements: [],
+    wires: [
+      { x1: 0, y1: 0, x2: 5.08, y2: 0 },
+      { x1: 5.08, y1: 0, x2: 20.32, y2: 0 },
+    ],
+    labels: [{ x: 2.54, y: 0, name: 'A' }],
+  }
+  const area = { x: -1, y: -1, w: 7, h: 2 }
+
+  it('selects in a window what lies inside it, and the wire ends inside it as points', () => {
+    expect(marqueeSelection(schematic, [], area, false)).toEqual({
+      refs: [],
+      wiring: { wires: [0], labels: [0], points: [{ x: 0, y: 0 }, { x: 5.08, y: 0 }] },
+    })
+  })
+
+  it('selects crossing whatever it touches', () => {
+    expect(marqueeSelection(schematic, [], area, true).wiring.wires).toEqual([0, 1])
+  })
+
+  it('selects a part by its pin ends with a margin, and leaves wire ends on its pins to the part', () => {
+    const { schematic: example, parts, r1, pin } = exampleWithR1()
+    const xs = r1.pins.map((p) => p.x)
+    const ys = r1.pins.map((p) => p.y)
+    const around = (margin: number) => ({
+      x: Math.min(...xs) - margin,
+      y: Math.min(...ys) - margin,
+      w: Math.max(...xs) - Math.min(...xs) + 2 * margin,
+      h: Math.max(...ys) - Math.min(...ys) + 2 * margin,
+    })
+    const withWire = { ...example, wires: [{ x1: pin.x, y1: pin.y, x2: pin.x, y2: pin.y + 100 }] }
+
+    expect(marqueeSelection(withWire, parts, around(2.5), false).refs).toContain('R1')
+    expect(marqueeSelection(withWire, parts, around(1), false).refs).not.toContain('R1')
+    expect(marqueeSelection(withWire, parts, around(1), true).refs).toContain('R1')
+    expect(marqueeSelection(withWire, parts, around(2.5), false).wiring.points).toEqual([])
+  })
+})
+
+describe('alongDragAxis', () => {
+  const base: FullSchematic = {
+    placements: [],
+    wires: [
+      { x1: 0, y1: 0, x2: 10.16, y2: 0 },
+      { x1: 0, y1: 0, x2: 0, y2: 10.16 },
+    ],
+    labels: [],
+  }
+  const wire = (index: number) => ({ kind: 'multi' as const, refs: [], nets: [], wiring: { ...NO_WIRING, wires: [index] } })
+  const d = { x: 3, y: 4 }
+
+  it('shifts a lone wire sideways only', () => {
+    expect(alongDragAxis({ base, moving: wire(0), keepConnections: true }, d)).toEqual({ x: 0, y: 4 })
+    expect(alongDragAxis({ base, moving: wire(1), keepConnections: true }, d)).toEqual({ x: 3, y: 0 })
+  })
+
+  it('lets a moved wire, or more than one wire, follow the pointer', () => {
+    expect(alongDragAxis({ base, moving: wire(0), keepConnections: false }, d)).toEqual(d)
+    const both = { kind: 'multi' as const, refs: [], nets: [], wiring: { ...NO_WIRING, wires: [0, 1] } }
+    expect(alongDragAxis({ base, moving: both, keepConnections: true }, d)).toEqual(d)
+  })
+})
+
+describe('draggedSchematic', () => {
+  it('moves a part to the grid from where the drag started, keeping a rotation made since', () => {
+    const { built, schematic, r1 } = exampleWithR1()
+    const index = schematic.placements.indexOf(r1.placement)
+    const rotated = { ...r1.placement, rotation: (r1.placement.rotation + 90) % 360 }
+    const current = { ...schematic, placements: schematic.placements.map((p, i) => (i === index ? rotated : p)) }
+
+    const after = draggedSchematic(current, built, { base: schematic, moving: { kind: 'part', ref: 'R1' }, keepConnections: true }, { x: 2.6, y: 0 })
+
+    expect(after.placements[index]).toEqual({ ...rotated, x: r1.placement.x + 2.54, y: r1.placement.y })
+  })
+})
+
+describe('labelDirection', () => {
+  const wires = [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }]
+
+  it('points away from the pin the label sits on', () => {
+    const { parts, pin } = exampleWithR1()
+
+    expect(labelDirection(pin, parts, [])).toEqual({ x: pin.dx, y: pin.dy })
+  })
+
+  it('points up on a horizontal wire, and right anywhere else', () => {
+    expect(labelDirection({ x: 5.08, y: 0 }, [], wires)).toEqual({ x: 0, y: -1 })
+    expect(labelDirection({ x: 5.08, y: 2.54 }, [], wires)).toEqual({ x: 1, y: 0 })
   })
 })
