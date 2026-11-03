@@ -3,11 +3,10 @@ import { connectAgentBridge } from './agentBridge'
 import { buildNetlist, buildProjectNetlist, withDefinitions } from './definitions'
 import { agentTargetId, runAgentCommand } from './agentDispatch'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
-import { compareWithDrive, openDriveDocument, saveDriveDocument, type DriveLocation } from './driveDocuments'
+import { compareWithDrive, openDriveDocument, saveDriveDocument, saveInDriveFolder, type DriveLocation } from './driveDocuments'
 import { exportDxf } from './exportDxf'
 import { driveConfigured, isSignedIn, onSignInChange, signIn, signOut, SignInNeeded } from './googleDrive'
-import { saveInFolder } from './explorerStorage'
-import { FileExplorer, type SaveTarget } from './FileExplorer'
+import { pickDriveFile, pickDriveFolder } from './googlePicker'
 import { errorText } from './errorText'
 import { downloadText, exportSvg } from './exportSvg'
 import { FootprintDialog } from './FootprintDialog'
@@ -31,6 +30,7 @@ import {
   Icon,
   LayerToggles,
   PartProperties,
+  NameDialog,
   QuestionDialog,
   PCB_LAYERS,
   SchematicCheck,
@@ -70,6 +70,7 @@ import {
   type ProjectLocation,
   type ProjectTab,
   type ProjectFile,
+  type RecentDocument,
 } from './projectStore'
 import { canvasToPng } from './screenshot'
 import { shareLinkOf, takeSharedProject } from './shareLink'
@@ -540,26 +541,32 @@ export function App() {
     return answer === 'overwrite'
   }
 
-  const confirmAction = async (title: string, text: string, action: string) =>
-    (await ask({ title, text, choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'ok', label: action }], cancel: 'cancel' })) === 'ok'
-
-  /** The file explorer, for Open or for Save as; a save resolves with where to save it, or null when cancelled. */
-  const [explorer, setExplorer] = useState<
-    { mode: 'open' } | { mode: 'save'; name: string; resolve: (target: SaveTarget | 'other' | null) => void } | null
-  >(null)
-
-  /** Asks in the file explorer for a name and place to save project `name`. */
-  const chooseSaveTarget = (name: string) =>
-    new Promise<SaveTarget | 'other' | null>((resolve) =>
-      setExplorer({
-        mode: 'save',
-        name,
-        resolve: (target) => {
-          setExplorer(null)
-          resolve(target)
+  const [nameQuestion, setNameQuestion] = useState<{ title: string; text: string; initial: string; done: (name: string | null) => void } | null>(null)
+  /** Asks for a name in a dialog; null when cancelled. */
+  const askName = (title: string, text: string, initial: string) =>
+    new Promise<string | null>((resolve) =>
+      setNameQuestion({
+        title,
+        text,
+        initial,
+        done: (name) => {
+          setNameQuestion(null)
+          resolve(name)
         },
       }),
     )
+
+  /** Asks where to save project `name`: on this computer or in Google Drive; null when cancelled. */
+  const chooseLocation = async (name: string): Promise<ProjectLocation['kind'] | null> => {
+    if (!driveConfigured) return 'local'
+    const answer = await ask({
+      title: `Save "${name}"`,
+      text: 'Where should it be saved?',
+      choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'local', label: 'This computer…' }, { answer: 'drive', label: 'Google Drive…' }],
+      cancel: 'cancel',
+    })
+    return answer === 'cancel' ? null : answer
+  }
 
   /** Writes `project` where it is saved; null when nothing was saved. */
   const saveToLocation = async (project: Project, file: ProjectFile, location: ProjectLocation): Promise<ProjectLocation | null> => {
@@ -571,38 +578,51 @@ export function App() {
     return handle && { kind: 'local', handle }
   }
 
+  /** Saves `project` to a new place in Google Drive: a folder picked in Google's picker, and a name. */
+  const saveToNewDriveDocument = async (project: Project): Promise<{ project: Project; location: ProjectLocation } | null> => {
+    if (!isSignedIn() && !(await signInToGoogle())) return null
+    const folder = await pickDriveFolder()
+    if (!folder) return null
+    const name = await askName(`Save in "${folder.name}"`, 'Name of the project in Google Drive:', project.name)
+    if (!name) return null
+    const named = { ...project, name }
+    const location = await saveInDriveFolder(named, folder.id, confirmOverwrite)
+    return location && { project: named, location }
+  }
+
+  /** Saves `project` to a file picked in the computer's own save dialog, named after it. */
+  const saveToNewLocalFile = async (project: Project): Promise<{ project: Project; location: ProjectLocation } | null> => {
+    const handle = await saveLocalFile(project, undefined, '', confirmOverwrite)
+    return handle && { project: { ...project, name: fileLabel(handle) }, location: { kind: 'local', handle } }
+  }
+
   /**
-   * Saves tab `id` where it is saved. A project without a location, or with `saveAs`, asks in the
-   * file explorer for a name and place; the tab then continues there, and the original stays as it
-   * was. False when nothing was saved.
+   * Saves tab `id` where it is saved. A project without a location, or with `saveAs`, asks where to:
+   * the computer's own save dialog, or Google's picker. The tab then continues there, and the
+   * original stays as it was. False when nothing was saved.
    */
   const saveTab = async (id: string, saveAs = false): Promise<boolean> => {
     const file = projectFile(id)
+    const current = shownProject(id)
     try {
-      let toSave = shownProject(id)
-      let saved: ProjectLocation | null
+      let saved: { project: Project; location: ProjectLocation } | null
       if (file.location && !saveAs) {
-        saved = await saveToLocation(toSave, file, file.location)
+        const location = await saveToLocation(current, file, file.location)
+        saved = location && { project: current, location }
       } else {
-        const target = await chooseSaveTarget(toSave.name)
-        if (!target) return false
-        if (target === 'other' && !canUseFiles) {
-          downloadText(`${toSave.name}.manhattan.json`, projectToFile(toSave), 'application/json')
-          markSaved(id, toSave)
+        const kind = await chooseLocation(current.name)
+        if (!kind) return false
+        if (kind === 'local' && !canUseFiles) {
+          downloadText(`${current.name}.manhattan.json`, projectToFile(current), 'application/json')
+          markSaved(id, current)
           return true
         }
-        if (target === 'other') {
-          const handle = await saveLocalFile(toSave, undefined, file.savedContent, confirmOverwrite)
-          saved = handle && { kind: 'local', handle }
-        } else {
-          toSave = { ...shownProject(id), name: target.name }
-          saved = await saveInFolder(target.folder, target.name, projectToFile(toSave), target.existing)
-        }
+        saved = kind === 'drive' ? await saveToNewDriveDocument(current) : await saveToNewLocalFile(current)
       }
       if (!saved) return false
-      if (id === activeIdRef.current) showProject(toSave)
-      markSaved(id, toSave, saved)
-      rememberRecent(toSave.name, saved)
+      if (id === activeIdRef.current) showProject(saved.project)
+      markSaved(id, saved.project, saved.location)
+      rememberRecent(saved.project.name, saved.location)
       return true
     } catch (e) {
       setError(`Could not save: ${errorText(e)}`)
@@ -610,11 +630,8 @@ export function App() {
     }
   }
 
-  /**
-   * Opens the document at `location` in a new tab, or shows the tab that already has it. A Drive
-   * document is called by its file name, which a rename in the explorer may have changed.
-   */
-  const openLocation = async (location: ProjectLocation, name?: string) => {
+  /** Opens the document at `location` in a new tab, or shows the tab that already has it. */
+  const openLocation = async (location: ProjectLocation) => {
     const shown = await tabShowing(location)
     if (shown) return switchTab(shown)
     if (location.kind === 'local') {
@@ -623,22 +640,20 @@ export function App() {
     }
     if (!isSignedIn() && !(await signInToGoogle())) return
     const opened = await openDriveDocument(location.fileId)
-    openInNewTab(name ? { ...opened.project, name } : opened.project, opened.location)
+    openInNewTab(opened.project, opened.location)
   }
 
-  const openFromExplorer = async (location: ProjectLocation, name: string) => {
-    setExplorer(null)
+  const openRecent = async (recent: RecentDocument) => {
     try {
-      await openLocation(location, name)
+      await openLocation(recent.location)
     } catch (e) {
-      forgetRecent(location)
-      setError(`Could not open "${name}" (${errorText(e)}).`)
+      forgetRecent(recent.location)
+      setError(`Could not open "${recent.name}" (${errorText(e)}); it is taken off the recent projects.`)
     }
   }
 
-  /** A project file from anywhere on this computer, through the browser's own dialog (or an upload). */
+  /** A project file from anywhere on this computer, through the computer's own dialog (or an upload). */
   const openProjectFile = async () => {
-    setExplorer(null)
     if (!canUseFiles) {
       projectFileInputRef.current!.click()
       return
@@ -648,6 +663,17 @@ export function App() {
       if (handle) await openLocation({ kind: 'local', handle })
     } catch (e) {
       setError(errorText(e))
+    }
+  }
+
+  /** A project anywhere in Google Drive, through Google's picker. */
+  const openDriveFile = async () => {
+    try {
+      if (!isSignedIn() && !(await signInToGoogle())) return
+      const picked = await pickDriveFile()
+      if (picked) await openLocation({ kind: 'drive', fileId: picked.id, version: '' })
+    } catch (e) {
+      setError(`Could not open from Google Drive: ${errorText(e)}`)
     }
   }
 
@@ -1039,7 +1065,7 @@ export function App() {
       case 's':
         return () => saveTab(activeId, shift)
       case 'o':
-        return () => setExplorer({ mode: 'open' })
+        return openProjectFile
       case 'n':
         return newProject
     }
@@ -1115,9 +1141,29 @@ export function App() {
                 <button onClick={newProject} title="An empty project in a new tab">
                   <Icon name="plus" />New project<kbd>Ctrl+N</kbd>
                 </button>
-                <button onClick={() => setExplorer({ mode: 'open' })} title="Open a project from Google Drive or this computer in a new tab">
+                <button onClick={openProjectFile} title="Open a project file from this computer in a new tab">
                   <Icon name="open" />Open…<kbd>Ctrl+O</kbd>
                 </button>
+                {driveConfigured && (
+                  <button onClick={openDriveFile} title="Pick a project in your Google Drive and open it in a new tab">
+                    <Icon name="cloud" />Open from Google Drive…
+                  </button>
+                )}
+                {recentDocuments().length > 0 && (
+                  <div className="submenu">
+                    <button aria-haspopup="menu" onClick={(e) => e.stopPropagation()}>
+                      <Icon name="clock" />Open recent<Icon name="chevronRight" />
+                    </button>
+                    <div className="menu-list submenu-list" role="menu">
+                      {recentDocuments().map((recent, k) => (
+                        <button key={k} onClick={() => openRecent(recent)} title={recent.location.kind === 'drive' ? 'Google Drive' : 'This computer'}>
+                          <Icon name={recent.location.kind === 'drive' ? 'cloud' : 'file'} />
+                          {recent.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {/* Opens on hover, or on a click (keyboard, touch), which must not close the menu. */}
                 <div className="submenu">
                   <button aria-haspopup="menu" onClick={(e) => e.stopPropagation()}>
@@ -1559,20 +1605,7 @@ export function App() {
 
       {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
       {showAiHelp && <AiHelpDialog agentConnected={agentConnected} onClose={() => setShowAiHelp(false)} />}
-      {explorer && (
-        <FileExplorer
-          mode={explorer.mode}
-          name={explorer.mode === 'save' ? explorer.name : undefined}
-          recent={recentDocuments()}
-          onSignIn={signInToGoogle}
-          isOpenInTab={async (location) => Boolean(await tabShowing(location))}
-          confirm={confirmAction}
-          onOpen={openFromExplorer}
-          onSave={(target) => explorer.mode === 'save' && explorer.resolve(target)}
-          onOtherFile={() => (explorer.mode === 'save' ? explorer.resolve('other') : openProjectFile())}
-          onClose={() => (explorer.mode === 'save' ? explorer.resolve(null) : setExplorer(null))}
-        />
-      )}
+      {nameQuestion && <NameDialog title={nameQuestion.title} text={nameQuestion.text} initial={nameQuestion.initial} onDone={nameQuestion.done} />}
       {question && <QuestionDialog question={question.question} onAnswer={question.answer} />}
       {footprintDialogRefs && (
         <FootprintDialog

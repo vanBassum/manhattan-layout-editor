@@ -29,12 +29,12 @@ pnpm dev
 
 ## Google Drive (optional)
 
-A project is saved either on this computer or in Google Drive; the tab's icon shows which. **Open…**
-and **Save as…** show a file explorer with your work folders: folders on this computer and folders in
-your Google Drive that you add, with subfolders, renaming and deleting. Projects in Google Drive save
-themselves a moment after each change, and open from any computer. Nothing is copied between the
-two: **Save as…** makes a copy elsewhere and continues there. Without Google the editor works as
-before and loads nothing from Google.
+A project is saved either on this computer or in Google Drive; the tab's icon shows which. Files on
+this computer open and save through the computer's own file dialogs, projects in Google Drive through
+Google's file picker (**Open from Google Drive…**, or Google Drive when saving). **Open recent** lists
+both. Projects in Google Drive save themselves a moment after each change, and open from any
+computer. Nothing is copied between the two: **Save as…** makes a copy elsewhere and continues there.
+Without Google the editor works as before and loads nothing from Google.
 
 The editor only sees what it saved itself in Google Drive, and what you pick in Google's file picker
 (scope `drive.file`), never the rest of your Drive.

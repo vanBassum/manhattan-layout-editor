@@ -15,7 +15,6 @@ const SIGN_IN_SCRIPT = 'https://accounts.google.com/gsi/client'
 const API = 'https://www.googleapis.com'
 const TOKEN_KEY = 'manhattan-layout-editor/drive-token'
 const SIGN_IN_CHECK_MS = 30_000
-const FOLDER_TYPE = 'application/vnd.google-apps.folder'
 
 interface TokenResponse {
   access_token?: string
@@ -171,8 +170,6 @@ export interface DriveItem {
   size?: string
 }
 
-export const isFolder = (item: DriveItem) => item.mimeType === FOLDER_TYPE
-
 const ITEM_FIELDS = 'id,name,mimeType,version,modifiedTime,size'
 // Drive queries put names between single quotes.
 const quoted = (text: string) => `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
@@ -190,17 +187,9 @@ async function search(q: string): Promise<DriveItem[]> {
   return items
 }
 
-/** What is in folder `id`. */
-export const listFolder = (id: string) => search(`${quoted(id)} in parents and trashed = false`)
-
-export async function createFolder(parentId: string, name: string): Promise<DriveItem> {
-  return json<DriveItem>(
-    call(`/drive/v3/files?fields=${ITEM_FIELDS}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, mimeType: FOLDER_TYPE, parents: [parentId] }),
-    }),
-  )
+/** The file called `name` in folder `folderId`, if the editor can see one there. */
+export async function findFile(folderId: string, name: string): Promise<DriveItem | undefined> {
+  return (await search(`${quoted(folderId)} in parents and name = ${quoted(name)} and trashed = false`))[0]
 }
 
 export async function readFile(id: string): Promise<string> {
@@ -228,23 +217,4 @@ export async function writeFile(name: string, text: string, target: { id: string
       body,
     }),
   )
-}
-
-export async function renameItem(id: string, name: string): Promise<DriveItem> {
-  return json<DriveItem>(
-    call(`/drive/v3/files/${id}?fields=${ITEM_FIELDS}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    }),
-  )
-}
-
-/** Moves the file or folder to Drive's trash, from where the user can still restore it. */
-export async function trashItem(id: string) {
-  await call(`/drive/v3/files/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ trashed: true }),
-  })
 }

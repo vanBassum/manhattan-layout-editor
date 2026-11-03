@@ -699,6 +699,33 @@ export function QuestionDialog<Answer extends string>({ question, onAnswer }: { 
   )
 }
 
+/** Asks for a name, starting from `initial`; null when cancelled. */
+export function NameDialog({ title, text, initial, onDone }: { title: string; text: string; initial: string; onDone: (name: string | null) => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => dialogRef.current?.showModal(), [])
+  const [name, setName] = useState(initial)
+  const trimmed = name.trim()
+
+  return (
+    <dialog ref={dialogRef} className="ai-dialog question-dialog" onCancel={() => onDone(null)}>
+      <h2>{title}</h2>
+      <p>{text}</p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (trimmed) onDone(trimmed)
+        }}
+      >
+        <input className="name-input" value={name} onChange={(e) => setName(e.target.value)} onFocus={(e) => e.target.select()} autoFocus />
+        <div className="dialog-actions">
+          <button type="button" onClick={() => onDone(null)}>Cancel</button>
+          <button type="submit" className="primary" disabled={!trimmed}>Save</button>
+        </div>
+      </form>
+    </dialog>
+  )
+}
+
 export function AiHelpDialog({ agentConnected, onClose }: { agentConnected: boolean; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   // A modal <dialog> gives Escape-to-close, a backdrop and focus trapping for free.

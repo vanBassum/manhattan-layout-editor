@@ -5,10 +5,12 @@ import { currentAccessToken, PICKER_API_KEY, PICKER_APP_ID, SignInNeeded } from 
 
 const PICKER_SCRIPT = 'https://apis.google.com/js/api.js'
 const FOLDER_TYPE = 'application/vnd.google-apps.folder'
+const LAST_FOLDER_KEY = 'manhattan-layout-editor/drive-folder'
 
-interface PickedDocument {
+export interface PickedDocument {
   id: string
   name: string
+  parentId?: string
 }
 
 interface PickerResponse {
@@ -21,6 +23,7 @@ interface DocsView {
   setSelectFolderEnabled(enabled: boolean): DocsView
   setMimeTypes(types: string): DocsView
   setMode(mode: string): DocsView
+  setParent(folderId: string): DocsView
 }
 
 interface PickerBuilder {
@@ -85,12 +88,41 @@ async function pick(title: string, makeView: (api: PickerApi) => DocsView): Prom
   )
 }
 
+function lastFolder(): string | null {
+  try {
+    return localStorage.getItem(LAST_FOLDER_KEY)
+  } catch {
+    return null
+  }
+}
+
+function rememberFolder(id: string | undefined) {
+  if (!id) return
+  try {
+    localStorage.setItem(LAST_FOLDER_KEY, id)
+  } catch {}
+}
+
+/** A view that starts in the folder used last, like the computer's own file dialogs do. */
+function startingInLastFolder(view: DocsView): DocsView {
+  const start = lastFolder()
+  return start ? view.setParent(start) : view
+}
+
 /** A folder anywhere in the user's Drive, or null when cancelled. */
-export const pickDriveFolder = () =>
-  pick('Choose a folder for your projects', (api) =>
-    new api.DocsView(api.ViewId.FOLDERS).setIncludeFolders(true).setSelectFolderEnabled(true).setMimeTypes(FOLDER_TYPE),
+export async function pickDriveFolder(): Promise<PickedDocument | null> {
+  const picked = await pick('Choose the folder to save in', (api) =>
+    startingInLastFolder(new api.DocsView(api.ViewId.FOLDERS).setIncludeFolders(true).setSelectFolderEnabled(true).setMimeTypes(FOLDER_TYPE)),
   )
+  rememberFolder(picked?.id)
+  return picked
+}
 
 /** A project file anywhere in the user's Drive, or null when cancelled. */
-export const pickDriveFile = () =>
-  pick('Open a project', (api) => new api.DocsView(api.ViewId.DOCS).setIncludeFolders(true).setMimeTypes('application/json').setMode(api.DocsViewMode.LIST))
+export async function pickDriveFile(): Promise<PickedDocument | null> {
+  const picked = await pick('Open a project', (api) =>
+    startingInLastFolder(new api.DocsView(api.ViewId.DOCS).setIncludeFolders(true).setMimeTypes('application/json').setMode(api.DocsViewMode.LIST)),
+  )
+  rememberFolder(picked?.parentId)
+  return picked
+}
