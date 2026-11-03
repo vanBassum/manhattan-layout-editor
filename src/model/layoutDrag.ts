@@ -1,16 +1,17 @@
-import { draggedTarget, moveBoundary, resizeRect, type Boundary, type Side } from './boundary'
+import { alignedTarget, moveBoundary, resizeRect, type Boundary, type Side } from './boundary'
 import { snapToGrid } from './geometry'
 import { gridDelta, moveGroup, movePart, moveRects, replaceIslandRects, toLocal, type MovingPart } from './layout'
 import type { Island, Layout, Point, Rect } from './types'
 
 /**
  * A drag that edits the PCB layout, holding what it moves as it was when the drag started.
- * boundary: a cut between islands or an island's outline edge, moving the copper on both sides.
+ * boundary: an island's outline edge, moving the copper on both sides; it lines up with edges
+ * within `alignTolerance` (mm) before it snaps to the grid.
  * resize: one rectangle of an island, whose dragged sides move as boundaries. lead: a lead's end.
  * part: one part. group: the parts and islands of a multi-selection.
  */
 export type LayoutDrag =
-  | { kind: 'boundary'; boundary: Boundary; islands: Island[] }
+  | { kind: 'boundary'; boundary: Boundary; islands: Island[]; alignTolerance: number }
   | { kind: 'island'; net: string; rects: Rect[] }
   | { kind: 'resize'; net: string; rectIndex: number; sides: Side[]; islands: Island[] }
   | { kind: 'lead'; ref: string; pin: string; origin: Point }
@@ -22,8 +23,10 @@ export function draggedLayout(layout: Layout, drag: LayoutDrag, delta: Point, sn
   const dx = snapToGrid(delta.x, snap)
   const dy = snapToGrid(delta.y, snap)
   switch (drag.kind) {
-    case 'boundary':
-      return { ...layout, islands: moveBoundary(drag.islands, drag.boundary, draggedTarget(drag.boundary, delta, snap)) }
+    case 'boundary': {
+      const target = alignedTarget(drag.islands, drag.boundary, delta, snap, drag.alignTolerance)
+      return { ...layout, islands: moveBoundary(drag.islands, drag.boundary, target.at) }
+    }
     case 'island': {
       const onGrid = gridDelta(drag.rects, delta.x, delta.y, snap)
       return replaceIslandRects(layout, drag.net, moveRects(drag.rects, onGrid.x, onGrid.y))

@@ -4,34 +4,6 @@ import type { Island, Rect } from './types'
 const EPS = 1e-6
 const AXES = ['x', 'y'] as const
 
-/** A straight isolation cut between the islands of two nets. */
-export interface Cut extends Boundary {
-  /** The two nets it separates, in alphabetical order. */
-  nets: [string, string]
-}
-
-/**
- * Edges shared by islands of different nets, merged into straight cuts. Pieces on one line only
- * merge when they separate the same two nets: a line that runs past several islands is several
- * cuts, each moved on its own. A plane has no cuts.
- */
-export function findCuts(islands: Island[]): Cut[] {
-  const rects = islands.filter((island) => !island.plane).flatMap((island) => island.rects.map((rect) => ({ net: island.net, rect })))
-  return AXES.flatMap((axis) => {
-    const pieces: Cut[] = []
-    for (const a of rects) {
-      for (const b of rects) {
-        if (a.net === b.net || Math.abs(highEdge(a.rect, axis) - lowEdge(b.rect, axis)) > EPS) continue
-        const from = Math.max(spanStart(a.rect, axis), spanStart(b.rect, axis))
-        const to = Math.min(spanEnd(a.rect, axis), spanEnd(b.rect, axis))
-        const nets: Cut['nets'] = a.net < b.net ? [a.net, b.net] : [b.net, a.net]
-        if (to - from > EPS) pieces.push({ axis, at: highEdge(a.rect, axis), from, to, nets })
-      }
-    }
-    return mergeCollinear(pieces, (a, b) => a.nets[0] === b.nets[0] && a.nets[1] === b.nets[1])
-  })
-}
-
 /** A straight stretch of an island's outline. `inside` says on which side of the line the island lies. */
 export interface IslandEdge extends Boundary {
   inside: 'low' | 'high'
@@ -55,7 +27,7 @@ export function islandEdges(islands: Island[], net: string): IslandEdge[] {
         ...uncovered(from, to, coveredAbove, axis).map(([f, t]) => ({ axis, at: high, from: f, to: t, inside: 'low' as const })),
       ]
     })
-    return mergeCollinear(pieces, (a, b) => a.inside === b.inside)
+    return mergeCollinear(pieces)
   })
 }
 
@@ -73,12 +45,12 @@ function uncovered(from: number, to: number, covering: Rect[], axis: Axis): [num
   return open
 }
 
-/** Joins pieces on one line that touch or overlap and are of the same kind. */
-function mergeCollinear<T extends Boundary>(pieces: T[], sameKind: (a: T, b: T) => boolean): T[] {
+/** Joins pieces on one line that touch or overlap and have the island on the same side. */
+function mergeCollinear(pieces: IslandEdge[]): IslandEdge[] {
   const sorted = [...pieces].sort((a, b) => a.at - b.at || a.from - b.from)
-  const merged: T[] = []
+  const merged: IslandEdge[] = []
   for (const piece of sorted) {
-    const joins = merged.find((m) => Math.abs(m.at - piece.at) < EPS && sameKind(m, piece) && piece.from <= m.to + EPS)
+    const joins = merged.find((m) => Math.abs(m.at - piece.at) < EPS && m.inside === piece.inside && piece.from <= m.to + EPS)
     if (joins) joins.to = Math.max(joins.to, piece.to)
     else merged.push({ ...piece })
   }

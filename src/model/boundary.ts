@@ -46,8 +46,37 @@ export function moveBoundary(islands: Island[], boundary: Boundary, target: numb
 }
 
 /** Where the boundary lands on the snap grid when the pointer has moved by `delta`. */
-export function draggedTarget({ axis, at }: Boundary, delta: Point, snap: number): number {
+function draggedTarget({ axis, at }: Boundary, delta: Point, snap: number): number {
   return snapToGrid(at + (axis === 'x' ? delta.x : delta.y), snap)
+}
+
+/** Where a dragged boundary lands, and whether it lines up with another edge there. */
+export interface AlignedTarget {
+  at: number
+  aligned: boolean
+}
+
+/**
+ * Where the boundary lands when the pointer has moved by `delta`: on the nearest edge parallel to
+ * it within `tolerance`, so islands line up with each other, else on the snap grid. `aligned` only
+ * holds when the boundary can actually reach that edge.
+ */
+export function alignedTarget(islands: Island[], boundary: Boundary, delta: Point, snap: number, tolerance: number): AlignedTarget {
+  const wanted = boundary.at + (boundary.axis === 'x' ? delta.x : delta.y)
+  const nearest = alignmentLines(islands, boundary)
+    .filter((line) => Math.abs(line - wanted) <= tolerance)
+    .sort((a, b) => Math.abs(a - wanted) - Math.abs(b - wanted))[0]
+  if (nearest === undefined) return { at: snapToGrid(wanted, snap), aligned: false }
+  return { at: nearest, aligned: Math.abs(reachableTarget(islands, boundary, nearest) - nearest) < EPS }
+}
+
+/** The edges parallel to the boundary that stay put while it moves: all but the islands' edges on it. */
+function alignmentLines(islands: Island[], boundary: Boundary): number[] {
+  const { axis, at, from, to } = boundary
+  const movesAlong = (r: Rect, edge: number) => Math.abs(edge - at) < EPS && overlapAlong(r, axis, from, to) > EPS
+  return islands.flatMap((island) =>
+    island.rects.flatMap((r) => [lowEdge(r, axis), highEdge(r, axis)].filter((edge) => island.plane || !movesAlong(r, edge))),
+  )
 }
 
 /** How far towards `target` the boundary can go; never past where it is in the other direction. */

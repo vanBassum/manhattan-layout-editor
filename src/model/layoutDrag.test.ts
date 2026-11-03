@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findCuts, islandEdges } from './cuts'
+import { islandEdges } from './islandEdges'
 import { draggedLayout } from './layoutDrag'
 import type { Island, Layout, Placement } from './types'
 
@@ -14,7 +14,7 @@ const area = (island: Island) => island.rects.reduce((sum, r) => sum + r.w * r.h
 describe('draggedLayout', () => {
   it('boundary: moves an outline edge onto the snap grid, taking copper from the neighbour', () => {
     const bottomOfA = islandEdges(layout.islands, 'A').find((e) => e.axis === 'y' && e.at === 5)!
-    const drag = { kind: 'boundary' as const, boundary: bottomOfA, islands: layout.islands }
+    const drag = { kind: 'boundary' as const, boundary: bottomOfA, islands: layout.islands, alignTolerance: 0.5 }
 
     const [movedA, movedB] = draggedLayout(layout, drag, { x: 0, y: 2.3 }, 1).islands
 
@@ -30,12 +30,16 @@ describe('draggedLayout', () => {
     ])
   })
 
-  it('boundary: moves a cut onto the snap grid, with the islands on both sides', () => {
-    const drag = { kind: 'boundary' as const, boundary: findCuts(layout.islands)[0], islands: layout.islands }
+  it('boundary: lines an outline edge up with a parallel edge near the pointer instead of the grid', () => {
+    const beside: Island = { net: 'C', rects: [{ x: 20, y: 0, w: 5, h: 3.3 }] }
+    const islands = [a, b, beside]
+    const bottomOfA = islandEdges(islands, 'A').find((e) => e.axis === 'y' && e.at === 5)!
+    const drag = { kind: 'boundary' as const, boundary: bottomOfA, islands, alignTolerance: 0.5 }
 
-    expect(draggedLayout(layout, drag, { x: 0, y: -1.6 }, 0.5).islands).toEqual([
-      { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 3.5 }] },
-      { net: 'B', rects: [{ x: 0, y: 3.5, w: 10, h: 6.5 }] },
+    expect(draggedLayout({ ...layout, islands }, drag, { x: 0, y: -1.6 }, 0.5).islands).toEqual([
+      { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 3.3 }] },
+      { net: 'B', rects: [{ x: 0, y: 3.3, w: 10, h: 6.7 }] },
+      beside,
     ])
   })
 

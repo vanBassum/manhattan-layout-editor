@@ -949,31 +949,33 @@ input:focus-visible {
   cursor: grab;
 }
 
-.cut {
+/* Outline edges of the island under the pointer: invisible until the pointer is on one. */
+.island-edge line {
   stroke: transparent;
 }
 
-.cut-x {
+.edge-x {
   cursor: ew-resize;
 }
 
-.cut-y {
+.edge-y {
   cursor: ns-resize;
 }
 
-.cut:hover {
-  stroke: var(--accent);
-  stroke-opacity: 0.45;
-}
-
 /* Outline edges of the selected island: a visible band to grab. */
-.island-edge line {
+.island-edge.outlined line {
   stroke: var(--accent);
   stroke-opacity: 0.35;
 }
 
 .island-edge.hovered line {
+  stroke: var(--accent);
   stroke-opacity: 0.7;
+}
+
+/* Where a dragged edge lines up with another island's edge. */
+.align-guide {
+  stroke: var(--accent);
 }
 
 /* The + on a hovered edge that grows the island on that side. */

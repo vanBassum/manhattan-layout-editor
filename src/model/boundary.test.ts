@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import astable from '../examples/Astable multivibrator.json?raw'
 import sziklai from '../examples/Sziklai emittor follower.json?raw'
-import { moveBoundary, resizeRect, type Boundary, type Side } from './boundary'
-import { findCuts, islandEdges } from './cuts'
+import { alignedTarget, moveBoundary, resizeRect, type Boundary, type Side } from './boundary'
+import { islandEdges } from './islandEdges'
 import { findSpacingViolations, findSplitNets } from './layout'
 import type { Island, Rect } from './types'
 
@@ -16,7 +16,8 @@ describe('moveBoundary', () => {
   const collector: Island = { net: 'Q2_C', rects: [{ x: 10, y: 0, w: 10, h: 5 }] }
   const emitter: Island = { net: 'Q2_E', rects: [{ x: 10, y: 5, w: 10, h: 5 }] }
   const islands = [bias, base, collector, emitter]
-  const biasCut = findCuts(islands).find((c) => c.axis === 'y' && c.nets[0] === 'BIAS')!
+  // The bottom edge of BIAS, which it shares with Q2_B.
+  const biasCut: Boundary = { axis: 'y', at: 5, from: 0, to: 10 }
 
   it('moves only the islands on both sides of a cut, not those further along its line', () => {
     const moved = moveBoundary(islands, biasCut, 7)
@@ -31,8 +32,8 @@ describe('moveBoundary', () => {
     const vcc: Island = { net: 'VCC', rects: [{ x: 0, y: 0, w: 20, h: 5 }] }
     const low: Island = { net: 'BIAS', rects: [{ x: 0, y: 5, w: 10, h: 5 }] }
     const out: Island = { net: 'OUT', rects: [{ x: 10, y: 5, w: 10, h: 5 }] }
-    const cut = findCuts([vcc, low, out]).find((c) => c.axis === 'y' && c.nets.includes('BIAS'))!
-    const moved = moveBoundary([vcc, low, out], cut, 7)
+    const topOfBias = islandEdges([vcc, low, out], 'BIAS').find((e) => e.axis === 'y' && e.at === 5)!
+    const moved = moveBoundary([vcc, low, out], topOfBias, 7)
     expect(islandOf(moved, 'VCC').rects).toEqual([{ x: 0, y: 0, w: 10, h: 7 }, { x: 10, y: 0, w: 10, h: 5 }])
     expect(islandOf(moved, 'BIAS').rects).toEqual([{ x: 0, y: 7, w: 10, h: 3 }])
     expect(islandOf(moved, 'OUT')).toEqual(out)
@@ -126,6 +127,39 @@ describe('resizeRect', () => {
   })
 })
 
+describe('alignedTarget', () => {
+  const a: Island = { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 5 }] }
+  const bottomOfA: Boundary = { axis: 'y', at: 5, from: 0, to: 10 }
+  // Further along the board, with bottom edges at 7.3 and 7.6.
+  const short: Island = { net: 'B', rects: [{ x: 20, y: 0, w: 5, h: 7.3 }] }
+  const long: Island = { net: 'C', rects: [{ x: 30, y: 0, w: 5, h: 7.6 }] }
+
+  it('snaps to the grid when no edge is near', () => {
+    expect(alignedTarget([a], bottomOfA, { x: 4, y: 1.3 }, 1, 0.5)).toEqual({ at: 6, aligned: false })
+  })
+
+  it('lines up with a parallel edge within the tolerance rather than with the grid', () => {
+    expect(alignedTarget([a, short], bottomOfA, { x: 0, y: 2.1 }, 1, 0.5)).toEqual({ at: 7.3, aligned: true })
+  })
+
+  it('lines up with the nearest of two edges within the tolerance', () => {
+    expect(alignedTarget([a, short, long], bottomOfA, { x: 0, y: 2.5 }, 1, 0.5)).toEqual({ at: 7.6, aligned: true })
+  })
+
+  it('snaps to the grid when the edges are further away than the tolerance', () => {
+    expect(alignedTarget([a, short, long], bottomOfA, { x: 0, y: 1.2 }, 1, 0.5)).toEqual({ at: 6, aligned: false })
+  })
+
+  it('does not line up with the edge being dragged', () => {
+    expect(alignedTarget([a], bottomOfA, { x: 0, y: 0.2 }, 0.3, 0.5)).toEqual({ at: 5.1, aligned: false })
+  })
+
+  it('is not aligned with an edge that copper in the way keeps it from reaching', () => {
+    const below: Island = { net: 'D', rects: [{ x: 0, y: 8, w: 10, h: 1 }] }
+    expect(alignedTarget([a, below], bottomOfA, { x: 0, y: 3.9 }, 1, 0.5)).toEqual({ at: 9, aligned: false })
+  })
+})
+
 /**
  * The rules every drag of a boundary keeps, checked on whole boards: no two nets overlap, and
  * islands that do not touch the boundary stay exactly as they were. An island on the boundary may
@@ -160,17 +194,6 @@ describe('moving any boundary of a board', () => {
   }
 
   for (const [name, islands] of Object.entries(boards)) {
-    it(`${name}: dragging a cut keeps the rules and the copper's total area`, () => {
-      const copper = (all: Island[]) => area(all.filter((i) => !i.plane).flatMap((i) => i.rects))
-      for (const cut of findCuts(islands)) {
-        for (const offset of offsets) {
-          const after = moveBoundary(islands, cut, cut.at + offset)
-          expectRulesKept(islands, after, cut)
-          expect(copper(after)).toBeCloseTo(copper(islands), 6)
-        }
-      }
-    })
-
     it(`${name}: dragging an outline edge, or a tab out of it, keeps the rules`, () => {
       for (const island of islands) {
         for (const edge of islandEdges(islands, island.net)) {

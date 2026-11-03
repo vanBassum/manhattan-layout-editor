@@ -2,8 +2,8 @@ import { useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from '../../model/geometry'
 import { analyzeLeads, bodyBounds, toWorld as toWorldPoint, type LeadInfo, type MovingPart, type PinStatus } from '../../model/layout'
-import { moveBoundary, type Boundary, type Side } from '../../model/boundary'
-import { findCuts, islandEdges, type IslandEdge } from '../../model/cuts'
+import { alignedTarget, moveBoundary, type Axis, type Side } from '../../model/boundary'
+import { islandEdges, type IslandEdge } from '../../model/islandEdges'
 import { draggedLayout, type LayoutDrag } from '../../model/layoutDrag'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from '../../model/selection'
 import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, Placement, Point, Rect, Selection } from '../../model/types'
@@ -17,6 +17,7 @@ import {
   screenToWorld,
   useViewport,
   ViewportGrid,
+  visibleArea,
   type MarqueeDrag,
   type PanDrag,
 } from '../viewport'
@@ -30,6 +31,9 @@ export type Tool = 'select' | 'pan'
 /** The tab the + on an island edge pulls out: how far it sticks out, and how wide it is along the edge. */
 const TAB_DEPTH_MM = 2.5
 const TAB_WIDTH_MM = 2.5
+
+/** A dragged edge lines up with another island's edge this close on screen, rather than with the grid. */
+const ALIGN_TOLERANCE_PX = 6
 
 /** Part: the part moves with its bent leads. Body: lead ends stay soldered where they are. */
 export type MoveMode = 'part' | 'body'
@@ -189,6 +193,8 @@ interface IslandEdgeHandleProps {
   edge: IslandEdge
   /** One screen pixel in mm. */
   px: number
+  /** The edges of the selected island are always shown; those of a hovered island only under the pointer. */
+  outlined: boolean
   /** A hovered edge shows the + that pulls out a tab. */
   hovered: boolean
   onPointerEnter: () => void
@@ -197,16 +203,17 @@ interface IslandEdgeHandleProps {
   onGrowPointerDown: (e: ReactPointerEvent) => void
 }
 
-function IslandEdgeHandle({ edge, px, hovered, onPointerEnter, onPointerLeave, onEdgePointerDown, onGrowPointerDown }: IslandEdgeHandleProps) {
+function IslandEdgeHandle({ edge, px, outlined, hovered, onPointerEnter, onPointerLeave, onEdgePointerDown, onGrowPointerDown }: IslandEdgeHandleProps) {
   const [x1, y1, x2, y2] = edge.axis === 'x' ? [edge.at, edge.from, edge.at, edge.to] : [edge.from, edge.at, edge.to, edge.at]
   // The + sits just outside the island, touching the edge's hit area so the pointer can reach it.
   const outward = (edge.inside === 'low' ? 1 : -1) * 9 * px
   const mid = (edge.from + edge.to) / 2
   const plus = edge.axis === 'x' ? { x: edge.at + outward, y: mid } : { x: mid, y: edge.at + outward }
+  const className = ['island-edge', outlined && 'outlined', hovered && 'hovered'].filter(Boolean).join(' ')
   return (
-    <g className={hovered ? 'island-edge hovered' : 'island-edge'} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+    <g className={className} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
       <line
-        className={edge.axis === 'x' ? 'cut-x' : 'cut-y'}
+        className={edge.axis === 'x' ? 'edge-x' : 'edge-y'}
         x1={x1}
         y1={y1}
         x2={x2}
@@ -280,14 +287,17 @@ export function Canvas(props: Props) {
   const dragRef = useRef<Drag | null>(null)
   const [hoveredRef, setHoveredRef] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<Rect | null>(null)
+  /** The island under the pointer, or whose edge is: its outline edges can be dragged. */
+  const [hoveredNet, setHoveredNet] = useState<string | null>(null)
   /** "net:index" of the outline edge under the pointer; that edge shows its +. */
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null)
+  /** The line a dragged edge lines up with, drawn as a guide across the view. */
+  const [guide, setGuide] = useState<{ axis: Axis; at: number } | null>(null)
   // While one part is hovered, the others fade so its leads are easy to follow.
   const partOpacity = (ref: string) => (hoveredRef === null || hoveredRef === ref ? 1 : 0.15)
 
   const componentsByRef = useMemo(() => new Map(netlist.components.map((c) => [c.ref, c])), [netlist])
   const islandsByNet = useMemo(() => new Map(layout.islands.map((i) => [i.net, i])), [layout.islands])
-  const cuts = useMemo(() => findCuts(layout.islands), [layout.islands])
 
   const parts = useMemo(
     () =>
@@ -377,11 +387,11 @@ export function Canvas(props: Props) {
     beginEditDrag(e, { kind: 'resize', net: island.net, rectIndex, sides: handleSides(handle), islands: layout.islands })
   }
 
-  /** A cut or an outline edge: either way the copper on both sides follows. */
-  const onBoundaryPointerDown = (e: ReactPointerEvent, boundary: Boundary) => {
+  /** Dragging an outline edge also moves the stretch a neighbour shares with it, so no gap or overlap opens. */
+  const onEdgePointerDown = (e: ReactPointerEvent, edge: IslandEdge) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    beginEditDrag(e, { kind: 'boundary', boundary, islands: layout.islands })
+    beginEditDrag(e, { kind: 'boundary', boundary: edge, islands: layout.islands, alignTolerance: ALIGN_TOLERANCE_PX / view.scale })
   }
 
   /** Pulls a tab out of the middle of `edge`; dragging the edge itself moves all of it. */
@@ -427,7 +437,12 @@ export function Canvas(props: Props) {
       drag.moved = true
       onBeginEdit()
     }
-    onLayoutChange((l) => draggedLayout(l, drag.edit, delta, snap))
+    const { edit } = drag
+    if (edit.kind === 'boundary') {
+      const target = alignedTarget(edit.islands, edit.boundary, delta, snap, edit.alignTolerance)
+      setGuide(target.aligned ? { axis: edit.boundary.axis, at: target.at } : null)
+    }
+    onLayoutChange((l) => draggedLayout(l, edit, delta, snap))
   }
 
   const finishMarquee = (drag: MarqueeDrag, e: ReactPointerEvent) => {
@@ -448,6 +463,7 @@ export function Canvas(props: Props) {
     const drag = dragRef.current
     dragRef.current = null
     svgRef.current!.releasePointerCapture(e.pointerId)
+    setGuide(null)
     if (drag?.kind === 'marquee') finishMarquee(drag, e)
     else if (drag?.kind === 'edit' && drag.pressed && !drag.moved) {
       if (drag.toggle) onSelect(toggleSelected(selection, drag.pressed))
@@ -463,8 +479,33 @@ export function Canvas(props: Props) {
   const selectedRectIndex = selection?.kind === 'island' ? selection.rectIndex : -1
   const handleRect = rectHandles ? selectedIsland?.rects[selectedRectIndex] : undefined
   const highlightedNets = new Set(selectedNets(selection))
-  const selectedEdges = selectedIsland && !selectedIsland.plane ? islandEdges(layout.islands, selectedIsland.net) : []
   const highlightedRefs = new Set(selectedRefs(selection))
+  const hoveredOnlyNet = tool === 'select' && hoveredNet !== selectedIsland?.net ? hoveredNet : null
+  const visible = visibleArea(view, size)
+
+  const edgeHandles = (net: string) =>
+    islandEdges(layout.islands, net).map((edge, k) => {
+      const hoverKey = `${net}:${k}`
+      return (
+        <IslandEdgeHandle
+          key={hoverKey}
+          edge={edge}
+          px={px}
+          outlined={net === selectedIsland?.net}
+          hovered={hoveredEdge === hoverKey}
+          onPointerEnter={() => {
+            setHoveredEdge(hoverKey)
+            setHoveredNet(net)
+          }}
+          onPointerLeave={() => {
+            setHoveredEdge((key) => (key === hoverKey ? null : key))
+            setHoveredNet((hovered) => (hovered === net ? null : hovered))
+          }}
+          onEdgePointerDown={(e) => onEdgePointerDown(e, edge)}
+          onGrowPointerDown={(e) => onGrowPointerDown(e, edge)}
+        />
+      )
+    })
 
   return (
     <svg
@@ -482,7 +523,12 @@ export function Canvas(props: Props) {
         {planesFirst(layout.islands).map((island) => {
           const style = islandStyle(island.plane === true, highlightedNets.has(island.net), problemNets.has(island.net))
           return (
-            <g key={island.net} className="island">
+            <g
+              key={island.net}
+              className="island"
+              onPointerEnter={() => setHoveredNet(island.net)}
+              onPointerLeave={() => setHoveredNet((net) => (net === island.net ? null : net))}
+            >
               {/* The copper left after cutting; the rectangles themselves only catch the pointer. */}
               <path
                 d={outlinePath(island.rects, isolation / 2)}
@@ -511,26 +557,8 @@ export function Canvas(props: Props) {
           )
         })}
 
-        {/* Dragging a cut moves the islands on both sides of it, the way a knife-cut board is edited. */}
-        {tool === 'select' && (
-          <g className="cuts">
-            {cuts.map((cut) => {
-              const [x1, y1, x2, y2] = cut.axis === 'x' ? [cut.at, cut.from, cut.at, cut.to] : [cut.from, cut.at, cut.to, cut.at]
-              return (
-                <line
-                  key={`${cut.axis}${cut.at}:${cut.from}`}
-                  className={`cut cut-${cut.axis}`}
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  strokeWidth={6 * px}
-                  onPointerDown={(e) => onBoundaryPointerDown(e, cut)}
-                />
-              )
-            })}
-          </g>
-        )}
+        {/* Under the parts, so a lead end near the edge of the island under the pointer stays reachable. */}
+        {hoveredOnlyNet !== null && edgeHandles(hoveredOnlyNet)}
 
         {parts.flatMap(({ component, leads }) =>
           leads.map((lead, k) => {
@@ -572,23 +600,20 @@ export function Canvas(props: Props) {
           )
         })}
 
-        {selectedIsland &&
-          selectedEdges.map((edge, k) => {
-            const net = selectedIsland.net
-            const hoverKey = `${net}:${k}`
-            return (
-              <IslandEdgeHandle
-                key={k}
-                edge={edge}
-                px={px}
-                hovered={hoveredEdge === hoverKey}
-                onPointerEnter={() => setHoveredEdge(hoverKey)}
-                onPointerLeave={() => setHoveredEdge((key) => (key === hoverKey ? null : key))}
-                onEdgePointerDown={(e) => onBoundaryPointerDown(e, edge)}
-                onGrowPointerDown={(e) => onGrowPointerDown(e, edge)}
-              />
-            )
-          })}
+        {/* Where it shares an edge with the hovered island, the selected island's handle lies on top and wins. */}
+        {selectedIsland && edgeHandles(selectedIsland.net)}
+
+        {guide && (
+          <line
+            className="align-guide"
+            x1={guide.axis === 'x' ? guide.at : visible.x}
+            y1={guide.axis === 'x' ? visible.y : guide.at}
+            x2={guide.axis === 'x' ? guide.at : visible.x + visible.w}
+            y2={guide.axis === 'x' ? visible.y + visible.h : guide.at}
+            strokeWidth={px}
+            pointerEvents="none"
+          />
+        )}
 
         {/* Handles only on the clicked rectangle: an island can consist of hundreds. */}
         {selectedIsland && handleRect && (

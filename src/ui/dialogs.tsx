@@ -3,9 +3,8 @@ import { Icon } from './icons'
 
 const SHORTCUTS: [string, string][] = [
   ['V / H', 'Select / pan tool'],
-  ['Drag a cut', 'Move it; both sides follow'],
-  ['Drag an island edge', 'Move that edge of the selected island'],
-  ['+ on a hovered edge', 'Grow the selected island 2.5 mm on that side'],
+  ['Drag an island edge', 'Move it; a neighbour along it follows. Lines up with nearby edges of other islands'],
+  ['+ on a hovered edge', 'Grow the island 2.5 mm on that side'],
   ['Click, Shift+click', 'Select, add to selection'],
   ['Drag empty space', 'Marquee select (Shift adds)'],
   ['Ctrl+A', 'Select all'],
