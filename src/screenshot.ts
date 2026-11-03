@@ -31,7 +31,7 @@ export async function canvasToPng(svg: SVGSVGElement, bounds: Rect): Promise<str
   copy.querySelector('.ruler')?.remove()
   copy.querySelector('.marquee')?.remove()
   copy.querySelector('.cuts')?.remove()
-  copy.querySelectorAll('.island-edge, .draw-cut, .board-outline').forEach((element) => element.remove())
+  copy.querySelectorAll('.island-edge').forEach((element) => element.remove())
   copy.querySelectorAll('[opacity]').forEach((element) => element.removeAttribute('opacity'))
 
   const background = document.createElementNS(SVG_NS, 'rect')
