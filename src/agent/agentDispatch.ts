@@ -23,6 +23,7 @@ import { withValues } from '../model/netlist'
 import { findStrategy } from '../optimize'
 import {
   agentPlacements,
+  completeSchematic,
   labelsFromAgent,
   pinsWithOtherNet,
   placedParts,
@@ -131,7 +132,7 @@ const COMMANDS: Record<string, (tab: AgentTab, args: Args) => unknown> = {
   move_island: layoutEdit(moveIsland),
   batch: layoutEdit(applyBatch),
   run_optimizer: layoutEdit((current, args) => {
-    const optimized = findStrategy(stringArg(args, 'strategy')).run(current.netlist, current.settings)
+    const optimized = findStrategy(stringArg(args, 'strategy')).run(current.netlist, current.settings, completeSchematic(current.netlist, current.schematic))
     return keepFootprintChoices(optimized, current.layout)
   }),
   set_resistor_footprint: layoutEdit((current, args, imported) => {

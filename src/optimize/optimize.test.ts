@@ -5,6 +5,7 @@ import { buildNetlist, buildProjectNetlist } from '../model/definitions'
 import { inflate, rectsOverlap } from '../model/geometry'
 import { analyzeLeads, bodyBounds, defaultLeadEnds } from '../model/layout'
 import { isRealNet } from '../model/netlist'
+import { completeSchematic, projectSchematic, type FullSchematic } from '../model/schematic'
 import type { BuiltNetlist, Layout, NetComponent, Settings } from '../model/types'
 import { STRATEGIES } from './index'
 
@@ -28,21 +29,20 @@ const BLINKER_COMPONENTS = [
 ]
 const BLINKER_NETS = ['CTRL', 'DIS', 'GND', 'LED_A', 'OUT', 'TRIG', 'VCC']
 
-const inputs: { name: string; netlist: BuiltNetlist; settings: Settings }[] = [
+const blinker = buildNetlist({ components: BLINKER_COMPONENTS, nets: BLINKER_NETS }, [], undefined)
+
+const inputs: { name: string; netlist: BuiltNetlist; settings: Settings; schematic: FullSchematic }[] = [
   ...EXAMPLES.map((example) => {
     const project = example.open()
-    return { name: example.name, netlist: buildProjectNetlist(project), settings: project.settings }
+    return { name: example.name, netlist: buildProjectNetlist(project), settings: project.settings, schematic: projectSchematic(project) }
   }),
-  {
-    name: '555 blinker',
-    netlist: buildNetlist({ components: BLINKER_COMPONENTS, nets: BLINKER_NETS }, [], undefined),
-    settings: DEFAULT_SETTINGS,
-  },
+  // No schematic drawn: the parts sit on the grid completeSchematic puts them on.
+  { name: '555 blinker', netlist: blinker, settings: DEFAULT_SETTINGS, schematic: completeSchematic(blinker, undefined) },
 ]
 
-describe.each(inputs)('$name', ({ netlist, settings }) => {
+describe.each(inputs)('$name', ({ netlist, settings, schematic }) => {
   describe.each(STRATEGIES)('$id', (strategy) => {
-    const layout: Layout = strategy.run(netlist, settings)
+    const layout: Layout = strategy.run(netlist, settings, schematic)
     const componentOf = (ref: string) => netlist.components.find((c) => c.ref === ref)!
 
     it('places every part', () => {

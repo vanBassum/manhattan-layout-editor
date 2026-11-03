@@ -404,7 +404,7 @@ export function App() {
     if (!(await confirm('Optimize', `Replace the current layout with a new ${strategy.label} layout? This can be undone.`, 'Replace layout'))) return
     let optimized: Layout
     try {
-      optimized = strategy.run(builtNetlist, settings)
+      optimized = strategy.run(builtNetlist, settings, fullSchematic)
     } catch (e) {
       setError(errorText(e))
       return
