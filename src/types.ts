@@ -51,11 +51,15 @@ export interface BuiltComponent extends NetComponent {
 // templates are copied into the project on first use; from then on the project's copy is the
 // truth, so a project keeps working when the templates change, and an agent can add its own.
 
-/** A pin end on the symbol, with the direction a wire leaves it. */
-export interface SymbolPinDefinition extends Point {
-  number: string
+/** Where a pin ends, with the direction a wire or lead leaves it. */
+export interface PinEnd extends Point {
   dx: number
   dy: number
+}
+
+/** A pin of a symbol or footprint, around the definition's origin. */
+export interface PinDefinition extends PinEnd {
+  number: string
 }
 
 /**
@@ -71,24 +75,18 @@ export type SymbolGraphic =
 
 /** Symbol in mm around its origin, y down; pin ends on the 2.54 mm grid. */
 export interface SymbolDefinition {
-  pins: SymbolPinDefinition[]
+  pins: PinDefinition[]
   graphics: SymbolGraphic[]
   /** Top-left of the reference and value text. */
   label: Point
-}
-
-/** A footprint pin: where the lead leaves the body, and the direction it points. */
-export interface FootprintPinDefinition extends Point {
-  number: string
-  dx: number
-  dy: number
 }
 
 /** Footprint in mm around its center, before rotation. `shape` picks how the body is drawn on the PCB. */
 export interface FootprintDefinition {
   shape: 'axial' | 'radial' | 'smd' | 'to92' | 'to126' | 'trimmer' | 'dip' | 'row'
   body: Rect
-  pins: FootprintPinDefinition[]
+  /** Where each lead leaves the body, and the direction it points. */
+  pins: PinDefinition[]
   /** How far unbent leads stick out beyond the body. */
   leadLength: number
   /** Leads longer than this are flagged. */

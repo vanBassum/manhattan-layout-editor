@@ -1,17 +1,17 @@
 import { generatedGeometry } from './layout'
-import type { NetComponent, Point, SymbolDefinition, SymbolGraphic, SymbolPinDefinition } from './types'
+import type { NetComponent, PinDefinition, Point, SymbolDefinition, SymbolGraphic } from './types'
 
 // Built-in schematic symbols: templates a project copies into its own component definitions.
 // All in mm, centered on 0,0, with every pin end on the 2.54 mm (0.1 inch) grid. The pin
 // numbering follows KiCad's symbol library (diode: 1 = cathode, electrolytic: 1 = plus).
 
-type Direction = Pick<SymbolPinDefinition, 'dx' | 'dy'>
+type Direction = Pick<PinDefinition, 'dx' | 'dy'>
 const LEFT: Direction = { dx: -1, dy: 0 }
 const RIGHT: Direction = { dx: 1, dy: 0 }
 const UP: Direction = { dx: 0, dy: -1 }
 const DOWN: Direction = { dx: 0, dy: 1 }
 
-const pin = (number: string, x: number, y: number, direction: Direction): SymbolPinDefinition => ({ number, x, y, ...direction })
+const pin = (number: string, x: number, y: number, direction: Direction): PinDefinition => ({ number, x, y, ...direction })
 const line = (...points: [number, number][]): SymbolGraphic => ({ type: 'line', points })
 
 /** Filled arrow head with its tip at `tip`, pointing along (dx, dy). */
@@ -94,7 +94,7 @@ export type TransistorPin = 'B' | 'C' | 'E'
 /** The emitter goes to the more positive side: down for NPN, up for PNP; its arrow points out for NPN, in for PNP. */
 function transistor(numbers: Numbers, roles: TransistorPin[], pnp: boolean): SymbolDefinition {
   const side = pnp ? -1 : 1
-  const at: Record<TransistorPin, SymbolPinDefinition> = {
+  const at: Record<TransistorPin, PinDefinition> = {
     B: pin('', -5.08, 0, LEFT),
     C: pin('', 2.54, -5.08 * side, pnp ? DOWN : UP),
     E: pin('', 2.54, 5.08 * side, pnp ? UP : DOWN),

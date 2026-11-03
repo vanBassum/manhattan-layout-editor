@@ -21,7 +21,6 @@ import {
   snapPoint,
   withTidyWires,
   type FullSchematic,
-  type PinEnd,
   type SchematicNets,
 } from './schematic'
 import type { SymbolGraphic } from './types'
@@ -37,7 +36,7 @@ import {
   toggleSchematicItem,
   type SchematicItem,
 } from './selection'
-import type { BuiltComponent, BuiltNetlist, NetLabel, Point, Rect, SchematicPlacement, Selection } from './types'
+import type { BuiltComponent, BuiltNetlist, NetLabel, PinEnd, Point, Rect, SchematicPlacement, Selection } from './types'
 import { layerClasses, layerOpacities, type SchematicLayers } from './ui/layers'
 import { gridPitch, gridPitches, useViewport, ViewportGrid, type View } from './ui/viewport'
 

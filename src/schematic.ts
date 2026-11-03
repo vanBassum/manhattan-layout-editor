@@ -9,6 +9,7 @@ import type {
   LabelSymbol,
   NetLabel,
   Netlist,
+  PinEnd,
   Point,
   Project,
   Rect,
@@ -18,12 +19,6 @@ import type {
   Wire,
   WiringSelection,
 } from './types'
-
-/** A pin end in schematic coordinates, with the direction a wire leaves it. */
-export interface PinEnd extends Point {
-  dx: number
-  dy: number
-}
 
 // The schematic is the source of the connections: wires and net labels decide which pins share a
 // net, and the netlist follows from them.
@@ -70,7 +65,7 @@ export function flipped(placement: SchematicPlacement, axis: 'horizontal' | 'ver
   return mirrored ? { ...rest, rotation } : { ...rest, rotation, mirrored: true }
 }
 
-/** Where a placed component's pins end, in the component's pin order, with their outward direction. */
+/** Where a placed component's pins end in the schematic, in the component's pin order, with their outward direction. */
 export function pinEnds(component: BuiltComponent, placement: SchematicPlacement): PinEnd[] {
   // A built part's symbol has every pin of the part.
   const byNumber = new Map(component.symbol.pins.map((p) => [p.number, p]))
