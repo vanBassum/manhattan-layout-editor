@@ -1034,21 +1034,13 @@ input:focus-visible {
   font-weight: normal;
 }
 
+/* As tall as the file name field next to it. */
 .fd-footer .primary {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 34px;
   padding: 0 18px;
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-.fd-footer .primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
 }
 
 @media (max-width: 700px) {
@@ -1453,16 +1445,14 @@ input:focus-visible {
   gap: 8px;
 }
 
-.footprint-dialog footer .primary,
-.dialog-actions .primary {
+.dialog .primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   font-weight: 600;
 }
 
-.footprint-dialog footer .primary:hover:not(:disabled),
-.dialog-actions .primary:hover:not(:disabled) {
+.dialog .primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
