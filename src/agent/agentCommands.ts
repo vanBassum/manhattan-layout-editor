@@ -63,10 +63,6 @@ export function describeProject(project: BuiltProject) {
   return {
     project: { guid: project.guid },
     units: 'mm; x to the right, y down; rotation in degrees clockwise',
-    islands:
-      'Islands of different nets touch edge to edge; their shared edge is where the isolation is cut. ' +
-      'The copper left is each island shrunk by isolation/2 on every outer edge, so a lead end must lie at ' +
-      'least isolation/2 inside its island. Islands of different nets must not overlap.',
     settings: { isolation: settings.isolation, snap: settings.snap, clearance: settings.clearance, maxLead: settings.maxLead },
     bounds: layoutBounds(project),
     nets: netlist.nets.map((net) => {
