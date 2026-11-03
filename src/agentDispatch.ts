@@ -23,8 +23,8 @@ import { findStrategy } from './optimize'
 import {
   agentPlacements,
   labelsFromAgent,
-  pinEnds,
   pinsWithOtherNet,
+  placedParts,
   projectSchematic,
   projectSchematicNets,
   wiresFromPolylines,
@@ -78,10 +78,10 @@ function describeSchematic(project: Project) {
   const built = buildNetlist(netlist, project.layout.placements, project.definitions)
   return {
     units: 'mm; x to the right, y down; grid 2.54',
-    parts: built.components.map((component, i) => ({
+    parts: placedParts(schematic.placements, built).map(({ component, placement, pins }) => ({
       value: component.value,
-      ...schematic.placements[i],
-      pins: pinEnds(component, schematic.placements[i]).map((end, k) => ({
+      ...placement,
+      pins: pins.map((end, k) => ({
         pin: component.pins[k].number,
         net: component.pins[k].net,
         x: end.x,

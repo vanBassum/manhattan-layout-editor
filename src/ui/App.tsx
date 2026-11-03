@@ -26,6 +26,7 @@ import {
   deriveNets,
   flippedSelection,
   pinsWithOtherNet,
+  placedParts,
   rotatedSelection,
   unconnectedPins,
   withLabelChanged,
@@ -142,7 +143,10 @@ export function App() {
   const { netlist, layout, settings } = project
   const builtNetlist = useMemo(() => buildNetlist(netlist, layout.placements, project.definitions), [netlist, layout.placements, project.definitions])
   const fullSchematic = useMemo(() => completeSchematic(builtNetlist, project.schematic), [builtNetlist, project.schematic])
-  const schematicNets = useMemo(() => deriveNets(netlist, builtNetlist, fullSchematic), [netlist, builtNetlist, fullSchematic])
+  const schematicNets = useMemo(
+    () => deriveNets(netlist, placedParts(fullSchematic.placements, builtNetlist), fullSchematic),
+    [netlist, builtNetlist, fullSchematic],
+  )
   /** The schematic's own nets, drawn in the schematic; the PCB keeps `builtNetlist` until it is updated. */
   const schematicNetlist = useMemo(
     () => buildNetlist(schematicNets.netlist, layout.placements, project.definitions),

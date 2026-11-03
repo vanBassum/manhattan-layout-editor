@@ -334,7 +334,7 @@ export function SchematicView({
   const highlightedWires = new Set(wiring.wires)
   const highlightedLabels = new Set(wiring.labels)
 
-  const parts = placedParts(schematic, netlist)
+  const parts = placedParts(schematic.placements, netlist)
   const pinKeys = pinKeysOf(parts)
   const grabRadius = Math.min(GRAB_RADIUS_PX / view.scale, MAX_GRAB_RADIUS_MM)
 

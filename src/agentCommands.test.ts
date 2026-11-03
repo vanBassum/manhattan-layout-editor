@@ -3,7 +3,7 @@ import example from './examples/Astable multivibrator.manhattan.json?raw'
 import { addComponent } from './agentCommands'
 import { buildNetlist } from './definitions'
 import { projectFromFile } from './documents/projectFormat'
-import { completeSchematic, deriveNets, pinsWithOtherNet } from './schematic'
+import { completeSchematic, deriveNets, pinsWithOtherNet, placedParts } from './schematic'
 import type { Project } from './types'
 
 const exampleProject = () => projectFromFile(example)
@@ -11,7 +11,8 @@ const exampleProject = () => projectFromFile(example)
 /** Pins whose net differs between the PCB and what the schematic draws. */
 function pinsOutOfSync(project: Project): string[] {
   const built = buildNetlist(project.netlist, project.layout.placements, project.definitions)
-  const nets = deriveNets(project.netlist, built, completeSchematic(built, project.schematic))
+  const schematic = completeSchematic(built, project.schematic)
+  const nets = deriveNets(project.netlist, placedParts(schematic.placements, built), schematic)
   return pinsWithOtherNet(project.netlist, nets.netlist)
 }
 

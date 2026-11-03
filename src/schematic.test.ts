@@ -4,6 +4,7 @@ import { buildProjectNetlist } from './definitions'
 import { projectFromFile } from './documents/projectFormat'
 import {
   alongDragAxis,
+  deriveNets,
   draggedSchematic,
   flipped,
   flippedSelection,
@@ -30,7 +31,7 @@ function exampleWithR1() {
   const project = projectFromFile(example)
   const built = buildProjectNetlist(project)
   const schematic = projectSchematic(project)
-  const parts = placedParts(schematic, built)
+  const parts = placedParts(schematic.placements, built)
   const r1 = parts.find((p) => p.component.ref === 'R1')!
   return { built, schematic, parts, r1, pin: r1.pins[0] }
 }
@@ -74,6 +75,25 @@ describe('withPlacementChanges', () => {
     const after = withPlacementChanges({ ...schematic, labels: [...schematic.labels, label] }, built, [moved])
 
     expect(after.labels.at(-1)).toEqual({ x: newEnd.x, y: newEnd.y, name: 'TEST' })
+  })
+})
+
+describe('deriveNets', () => {
+  const project = projectFromFile(example)
+  const built = buildProjectNetlist(project)
+  const schematic = projectSchematic(project)
+
+  it('matches pins by reference, whatever order the parts are in', () => {
+    const inOrder = deriveNets(project.netlist, placedParts(schematic.placements, built), schematic)
+    const reversed = deriveNets(project.netlist, placedParts([...schematic.placements].reverse(), built), schematic)
+
+    expect(reversed.netlist).toEqual(inOrder.netlist)
+  })
+
+  it('refuses a netlist pin that is not placed', () => {
+    const withoutR1 = schematic.placements.filter((p) => p.ref !== 'R1')
+
+    expect(() => deriveNets(project.netlist, placedParts(withoutR1, built), schematic)).toThrow('R1.1 is not placed in the schematic')
   })
 })
 

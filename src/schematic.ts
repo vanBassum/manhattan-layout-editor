@@ -90,10 +90,10 @@ export interface PlacedPart {
   pins: PinEnd[]
 }
 
-/** The schematic's placed parts that `built` has a component for, with their pin ends. */
-export function placedParts(schematic: FullSchematic, built: BuiltNetlist): PlacedPart[] {
+/** The placements that `built` has a component for, with their pin ends. */
+export function placedParts(placements: SchematicPlacement[], built: BuiltNetlist): PlacedPart[] {
   const componentsByRef = new Map(built.components.map((c) => [c.ref, c]))
-  return schematic.placements.flatMap((placement) => {
+  return placements.flatMap((placement) => {
     const component = componentsByRef.get(placement.ref)
     return component ? [{ component, placement, pins: pinEnds(component, placement) }] : []
   })
@@ -130,9 +130,9 @@ export function completeSchematic(built: BuiltNetlist, schematic: Schematic | un
   const placements = completePlacements(built, schematic)
   const labels =
     schematic?.labels ??
-    built.components.flatMap((component, i) =>
-      pinEnds(component, placements[i]).flatMap((end, k) => {
-        const net = component.pins[k]?.net ?? ''
+    placedParts(placements, built).flatMap(({ component, pins }) =>
+      pins.flatMap((end, k) => {
+        const { net } = component.pins[k]
         return isRealNet(net) ? [{ x: end.x, y: end.y, name: net }] : []
       }),
     )
@@ -190,13 +190,13 @@ export interface SchematicNets {
 /**
  * Connects pins, wire ends and labels that touch, then labels with the same name. A net is named
  * after its label; an unlabelled net of two or more pins after its first pin (e.g. "R4.2"), and a
- * pin connected to nothing gets no net.
+ * pin connected to nothing gets no net. Every pin of `netlist` must be among the placed `parts`.
  */
-export function deriveNets(netlist: Netlist, built: BuiltNetlist, schematic: FullSchematic): SchematicNets {
+export function deriveNets(netlist: Netlist, parts: PlacedPart[], wiring: Pick<FullSchematic, 'wires' | 'labels'>): SchematicNets {
   const { find, union } = unionFind()
-  const { wires, labels } = schematic
-  const pins = built.components.flatMap((component, i) =>
-    pinEnds(component, schematic.placements[i]).map((end, k) => ({ ref: component.ref, number: component.pins[k].number, end })),
+  const { wires, labels } = wiring
+  const pins = parts.flatMap(({ component, pins: ends }) =>
+    ends.map((end, k) => ({ ref: component.ref, number: component.pins[k].number, end })),
   )
   const points = [
     ...pins.map((p) => p.end),
@@ -256,10 +256,15 @@ export function deriveNets(netlist: Netlist, built: BuiltNetlist, schematic: Ful
     return groupPins.length >= 2 ? [...groupPins].sort(naturalCompare)[0] : ''
   }
 
-  let pinIndex = 0
+  const endsByPin = new Map(pins.map((p) => [`${p.ref}.${p.number}`, p.end]))
+  const netOfPin = (ref: string, number: string): string => {
+    const end = endsByPin.get(`${ref}.${number}`)
+    if (!end) throw new Error(`${ref}.${number} is not placed in the schematic`)
+    return netOf(end)
+  }
   const components = netlist.components.map((component) => ({
     ...component,
-    pins: component.pins.map((pin) => ({ ...pin, net: netOf(pins[pinIndex++].end) })),
+    pins: component.pins.map((pin) => ({ ...pin, net: netOfPin(component.ref, pin.number) })),
   }))
   const nets = new Set(components.flatMap((c) => c.pins.map((p) => p.net)).filter(isRealNet))
   const junctions = [...distinctPoints.values()].filter((p) => (degree.get(pointKey(p)) ?? 0) >= 3)
@@ -401,7 +406,7 @@ function bridgingWires(schematic: FullSchematic, fixedPins: ReadonlySet<string>,
  */
 export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist, move: SchematicMove): FullSchematic {
   const { wiring, delta, keepConnections } = move
-  const parts = placedParts(schematic, built)
+  const parts = placedParts(schematic.placements, built)
   const selectedWires = new Set(wiring.wires)
   const moves = movingPoints(schematic, parts, move)
   const follow = keepConnections ? follower(schematic, selectedWires, moves, delta) : undefined
@@ -540,7 +545,7 @@ function looseEnds(wires: Wire[], connectionPoints: Set<string>): Point[] {
 
 /** Pin ends and labels: what a wire end can connect to besides other wires. */
 function connectionPoints(schematic: FullSchematic, built: BuiltNetlist): Set<string> {
-  const pins = built.components.flatMap((component, i) => pinEnds(component, schematic.placements[i]))
+  const pins = placedParts(schematic.placements, built).flatMap((part) => part.pins)
   return new Set([...pins, ...schematic.labels].map(pointKey))
 }
 
@@ -651,8 +656,11 @@ export function labelsFromAgent(labels: unknown): NetLabel[] {
 export const projectSchematic = (project: Project): FullSchematic => completeSchematic(buildProjectNetlist(project), project.schematic)
 
 /** The nets the project's schematic gives, which the PCB does not use until it is updated. */
-export const projectSchematicNets = (project: Project): SchematicNets =>
-  deriveNets(project.netlist, buildProjectNetlist(project), projectSchematic(project))
+export function projectSchematicNets(project: Project): SchematicNets {
+  const built = buildProjectNetlist(project)
+  const schematic = completeSchematic(built, project.schematic)
+  return deriveNets(project.netlist, placedParts(schematic.placements, built), schematic)
+}
 
 /** The project with the PCB brought in line with the schematic: its nets, and islands that follow them. */
 export function withSchematicNets(project: Project): Project {
