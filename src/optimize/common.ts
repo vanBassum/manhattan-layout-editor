@@ -41,11 +41,10 @@ export interface PlacedPart {
   keepOut: Rect
 }
 
-interface Candidate {
+/** What a strategy makes of a free spot: its cost and where the part's leads end, bent or not. */
+interface Spot {
   cost: number
-  part: PlacedPart
-  /** Lines from this part's leads to the nearest placed lead of the same net. */
-  edges: [Point, Point][]
+  ends: Point[]
 }
 
 /** Lead ends of different nets stay this far apart: room for two pads, solder and a probe tip. */
@@ -99,45 +98,30 @@ export function placeComponents(netlist: BuiltNetlist, settings: Settings): Plac
   const connections: [Point, Point][] = []
 
   for (const component of placementOrder(netlist)) {
-    const { geometry } = component
-    const localEnds = defaultLeadEnds(geometry)
-    const nets = component.pins.map((p) => (isRealNet(p.net) ? p.net : null))
+    const nets = leadNets(component)
     const target = placementTarget(nets, netEnds, placed)
 
-    let best: Candidate | undefined
-    for (const radius of SEARCH_RADII) {
-      for (const offset of spiralOffsets(radius, 1)) {
-        for (const rotation of ROTATIONS) {
-          const placement = { ref: component.ref, x: target.x + offset.x, y: target.y + offset.y, rotation }
-          const keepOut = inflate(bodyBounds(geometry, placement, localEnds), settings.clearance / 2)
-          if (placed.some((p) => rectsOverlap(p.keepOut, keepOut))) continue
-          const ends = localEnds.map((p) => toWorld(p, placement))
-          if (endsTooClose(ends, nets, placed)) continue
-
-          let cost = COMPACTNESS * Math.hypot(offset.x, offset.y)
-          const edges: [Point, Point][] = []
-          ends.forEach((end, k) => {
-            const net = nets[k]
-            const others = net === null ? undefined : netEnds.get(net)
-            if (!others) return
-            const nearest = nearestPoint(others, end)
-            cost += Math.hypot(nearest.x - end.x, nearest.y - end.y)
-            edges.push([end, nearest])
-          })
-          for (const [a, b] of edges) {
-            for (const [c, d] of connections) if (segmentsCross(a, b, c, d)) cost += CROSSING_PENALTY
-          }
-          if (!best || cost < best.cost) best = { cost, part: { component, geometry, placement, ends, keepOut }, edges }
-        }
+    const { part, spot } = findBestSpot(component, target, placed, settings, (_placement, ends, offset) => {
+      let cost = COMPACTNESS * Math.hypot(offset.x, offset.y)
+      // Lines from this part's leads to the nearest placed lead of the same net.
+      const edges: [Point, Point][] = []
+      ends.forEach((end, k) => {
+        const net = nets[k]
+        const others = net === null ? undefined : netEnds.get(net)
+        if (!others) return
+        const nearest = nearestPoint(others, end)
+        cost += Math.hypot(nearest.x - end.x, nearest.y - end.y)
+        edges.push([end, nearest])
+      })
+      for (const [a, b] of edges) {
+        for (const [c, d] of connections) if (segmentsCross(a, b, c, d)) cost += CROSSING_PENALTY
       }
-      if (best) break
-    }
-    const chosen = best as Candidate | undefined
-    if (!chosen) throw new Error(`No free spot found for ${component.ref}`)
+      return { cost, ends, edges }
+    })
 
-    placed.push(chosen.part)
-    connections.push(...chosen.edges)
-    chosen.part.ends.forEach((end, k) => {
+    placed.push(part)
+    connections.push(...spot.edges)
+    part.ends.forEach((end, k) => {
       const net = nets[k]
       if (net !== null) netEnds.set(net, [...(netEnds.get(net) ?? []), end])
     })
@@ -157,50 +141,73 @@ export function placeOnIslands(netlist: BuiltNetlist, islands: Island[], setting
 
   for (const component of placementOrder(netlist)) {
     const { geometry } = component
-    const localEnds = defaultLeadEnds(geometry)
     const limit = leadLimit(geometry, settings)
-    const nets = component.pins.map((p) => (isRealNet(p.net) ? p.net : null))
+    const nets = leadNets(component)
     const own = componentNets(component).flatMap((net) => islandsByNet.get(net) ?? [])
-    const target = own.length > 0 ? islandsMeetingPoint(own) : { x: 0, y: 0 }
+    const meetingPoint = own.length > 0 ? islandsMeetingPoint(own) : { x: 0, y: 0 }
+    const target = { x: Math.round(meetingPoint.x), y: Math.round(meetingPoint.y) }
 
-    let best: { cost: number; part: PlacedPart; leads: Record<string, Point> } | undefined
-    for (const radius of SEARCH_RADII) {
-      for (const offset of spiralOffsets(radius, 1)) {
-        for (const rotation of ROTATIONS) {
-          const placement = { ref: component.ref, x: Math.round(target.x) + offset.x, y: Math.round(target.y) + offset.y, rotation }
-          const keepOut = inflate(bodyBounds(geometry, placement, localEnds), settings.clearance / 2)
-          if (placed.some((p) => rectsOverlap(p.keepOut, keepOut))) continue
-          const ends = localEnds.map((p) => toWorld(p, placement))
-
-          let cost = COMPACTNESS * Math.hypot(offset.x, offset.y)
-          let feasible = true
-          const leads: Record<string, Point> = {}
-          ends.forEach((end, k) => {
-            const net = nets[k]
-            const island = net === null ? undefined : islandsByNet.get(net)
-            if (!island) return
-            const onOwn = onCopper(island, end, settings.isolation)
-            const finalEnd = onOwn ? end : solderPoint(island, toWorld(geometry.anchors[k], placement), geometry, settings.isolation)
-            const onForeign = islands.some((i) => i.net !== net && !i.plane && onCopper(i, finalEnd, settings.isolation))
-            if (onForeign) feasible = false
-            const anchor = toWorld(geometry.anchors[k], placement)
-            cost += leadCost(Math.hypot(finalEnd.x - anchor.x, finalEnd.y - anchor.y), limit)
-            if (!onOwn) leads[component.pins[k].number] = toLocal(finalEnd, placement)
-          })
-          if (!feasible) continue
-          const finalEnds = ends.map((end, k) => (leads[component.pins[k].number] ? toWorld(leads[component.pins[k].number], placement) : end))
-          if (endsTooClose(finalEnds, nets, placed)) continue
-          if (!best || cost < best.cost) best = { cost, part: { component, geometry, placement, ends: finalEnds, keepOut }, leads }
-        }
+    const { part, spot } = findBestSpot(component, target, placed, settings, (placement, ends, offset) => {
+      let cost = COMPACTNESS * Math.hypot(offset.x, offset.y)
+      const leads: Record<string, Point> = {}
+      for (const [k, end] of ends.entries()) {
+        const net = nets[k]
+        const island = net === null ? undefined : islandsByNet.get(net)
+        if (!island) continue
+        const anchor = toWorld(geometry.anchors[k], placement)
+        const onOwn = onCopper(island, end, settings.isolation)
+        const finalEnd = onOwn ? end : solderPoint(island, anchor, geometry, settings.isolation)
+        const onForeign = islands.some((i) => i.net !== net && !i.plane && onCopper(i, finalEnd, settings.isolation))
+        if (onForeign) return null
+        cost += leadCost(Math.hypot(finalEnd.x - anchor.x, finalEnd.y - anchor.y), limit)
+        if (!onOwn) leads[component.pins[k].number] = toLocal(finalEnd, placement)
       }
-      if (best) break
-    }
-    const chosen = best as typeof best
-    if (!chosen) throw new Error(`No free spot found for ${component.ref}`)
-    placed.push(chosen.part)
-    placements.push(Object.keys(chosen.leads).length > 0 ? { ...chosen.part.placement, leads: chosen.leads } : chosen.part.placement)
+      const finalEnds = ends.map((end, k) => (leads[component.pins[k].number] ? toWorld(leads[component.pins[k].number], placement) : end))
+      return { cost, ends: finalEnds, leads }
+    })
+
+    placed.push(part)
+    placements.push(Object.keys(spot.leads).length > 0 ? { ...part.placement, leads: spot.leads } : part.placement)
   }
   return placements
+}
+
+/** Each lead's net, or null for a pin on no net. */
+function leadNets(component: BuiltComponent): (string | null)[] {
+  return component.pins.map((p) => (isRealNet(p.net) ? p.net : null))
+}
+
+/**
+ * The cheapest spot around `target` where the part's body and unbent leads keep clear of the placed
+ * parts and its lead ends stay apart from other nets' ends. `score` prices a free spot, or rules
+ * it out with null. The search radius grows until some spot is found; on a tie the spot found
+ * first, nearest the target, wins.
+ */
+function findBestSpot<S extends Spot>(
+  component: BuiltComponent,
+  target: Point,
+  placed: PlacedPart[],
+  settings: Settings,
+  score: (placement: Placement, unbentEnds: Point[], offset: Point) => S | null,
+): { part: PlacedPart; spot: S } {
+  const { geometry } = component
+  const localEnds = defaultLeadEnds(geometry)
+  const nets = leadNets(component)
+  let best: { part: PlacedPart; spot: S } | undefined
+  for (const radius of SEARCH_RADII) {
+    for (const offset of spiralOffsets(radius, 1)) {
+      for (const rotation of ROTATIONS) {
+        const placement = { ref: component.ref, x: target.x + offset.x, y: target.y + offset.y, rotation }
+        const keepOut = inflate(bodyBounds(geometry, placement, localEnds), settings.clearance / 2)
+        if (placed.some((p) => rectsOverlap(p.keepOut, keepOut))) continue
+        const spot = score(placement, localEnds.map((p) => toWorld(p, placement)), offset)
+        if (!spot || endsTooClose(spot.ends, nets, placed)) continue
+        if (!best || spot.cost < best.spot.cost) best = { part: { component, geometry, placement, ends: spot.ends, keepOut }, spot }
+      }
+    }
+    if (best) return best
+  }
+  throw new Error(`No free spot found for ${component.ref}`)
 }
 
 function closestOnAxis(a0: number, a1: number, b0: number, b1: number): [number, number] {
