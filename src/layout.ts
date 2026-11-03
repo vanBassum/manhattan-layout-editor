@@ -1,7 +1,7 @@
 import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint } from './geometry'
 import { footprintPinCount } from './footprints'
 import { isRealNet } from './netlist'
-import type { BuiltComponent, BuiltNetlist, Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
+import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, NetComponent, Netlist, Placement, Point, Rect, Shape } from './types'
 
 const PITCH = 2.54
 const ISLAND_WIDTH = 12
@@ -12,8 +12,6 @@ const PART_SPACING = 6
 const TO92_LEG_PITCH = 1.27
 /** Automatic leads end this far inside the copper, so there is room for a solder joint. */
 const SOLDER_INSET = 0.5
-
-export type Shape = 'axial' | 'radial' | 'smd' | 'to92' | 'to126' | 'trimmer' | 'dip' | 'row'
 
 /** Roughly how far a lead of each package can reach, in mm. Longer leads are flagged. */
 const MAX_LEAD_LENGTH: Record<Shape, number> = {
@@ -36,25 +34,6 @@ const CHIP_SIZES: Record<string, [number, number]> = {
   '1206': [3.2, 1.6],
   '1210': [3.2, 2.5],
   '2512': [6.3, 3.2],
-}
-
-/**
- * Simple symbolic geometry in local coordinates (component center at 0,0, before rotation).
- * Not a footprint: each lead leaves the body at a fixed anchor and runs to its copper island.
- */
-export interface Geometry {
-  shape: Shape
-  body: Rect
-  anchors: Point[]
-  /** Unit vectors pointing away from the body; used for leads that have no island to go to. */
-  directions: Point[]
-  /** How far the unbent leads stick out beyond the anchors. */
-  leadLength: number
-  maxLeadLength: number
-  /** Drawn in its own color: an LED has the same round body as a capacitor can. */
-  led: boolean
-  /** Drawn with a band at pin 1: a diode's cathode. */
-  band: boolean
 }
 
 const isLed = (component: NetComponent) =>

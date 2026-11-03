@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from './geometry'
-import { analyzeLeads, bodyBounds, toLocal, toWorld as toWorldPoint, type Geometry, type PinStatus } from './layout'
+import { analyzeLeads, bodyBounds, toLocal, toWorld as toWorldPoint, type PinStatus } from './layout'
 import { findCuts, MIN_RECT_SIZE, moveCut, type Cut } from './cuts'
 import { islandEdges, moveIslandEdge, type IslandEdge } from './raster'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
-import type { BuiltNetlist, Island, Layout, Placement, Point, Rect, Selection } from './types'
+import type { BuiltNetlist, Geometry, Island, Layout, Placement, Point, Rect, Selection } from './types'
 import { gridPitch, gridPitches, Rulers, useViewport, ViewportGrid, type View } from './viewport'
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'

@@ -1,7 +1,7 @@
 import { boundsOf, inflate, rectsOverlap, segmentsCross } from '../geometry'
-import { bodyBounds, defaultLeadEnds, onCopper, solderPoint, toLocal, toWorld, type Geometry } from '../layout'
+import { bodyBounds, defaultLeadEnds, onCopper, solderPoint, toLocal, toWorld } from '../layout'
 import { isRealNet, naturalCompare } from '../netlist'
-import type { BuiltComponent, BuiltNetlist, Island, NetComponent, Netlist, Placement, Point, Rect, Settings } from '../types'
+import type { BuiltComponent, BuiltNetlist, Geometry, Island, NetComponent, Netlist, Placement, Point, Rect, Settings } from '../types'
 
 export function componentNets(component: NetComponent): string[] {
   return [...new Set(component.pins.map((p) => p.net).filter(isRealNet))].sort(naturalCompare)

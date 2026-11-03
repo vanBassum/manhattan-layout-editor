@@ -1,7 +1,7 @@
 import { errorText } from './errorText'
-import { generatedGeometry, withFootprintChoices, type Geometry } from './layout'
+import { generatedGeometry, withFootprintChoices } from './layout'
 import { symbolTemplate } from './schematicSymbols'
-import type { BuiltNetlist, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, SymbolDefinition } from './types'
+import type { BuiltNetlist, Geometry, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, SymbolDefinition } from './types'
 
 // A part's symbol and footprints come from the project's own definitions. Parts without one get a
 // built-in template, which is copied into the project when it is loaded or saved; until then the

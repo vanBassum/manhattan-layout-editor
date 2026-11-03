@@ -2,7 +2,7 @@ import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid } from '../ge
 import { onCopper, solderPoint, toLocal, toWorld } from '../layout'
 import { isRealNet, naturalCompare } from '../netlist'
 import type { BuiltNetlist, Island, Point, Rect, Settings } from '../types'
-import type { Strategy } from './index'
+import type { Strategy } from './strategy'
 import { leadCost, leadLimit, netPinCounts, placeComponents, spiralOffsets, type PlacedPart } from './common'
 
 const GROUND_NAMES = /^(GND|AGND|DGND|PGND|VSS|0V|EARTH|GROUND)$/i
