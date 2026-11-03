@@ -59,7 +59,7 @@ const projectWith = (components: NetComponent[], definitions?: Record<string, Co
   settings: { snap: 0.5, isolation: 0.4, buildStyle: 'knife' },
 })
 
-const build = (project: Project) => buildNetlist(project.netlist, project.layout.placements, project.definitions)
+const build = (project: Project) => buildNetlist(project.netlist, project.definitions)
 
 /** What the editor draws of each part. */
 const looks = (project: Project) =>
@@ -75,10 +75,9 @@ describe('buildNetlist', () => {
   })
 
   it("uses the definition's footprint for a footprint chosen in the editor", () => {
-    const project = projectWith([resistor({ definition: 'odd' })], {
+    const project = projectWith([resistor({ definition: 'odd', chosenFootprint: 'R1206' })], {
       odd: definition({ 'R_AXIAL-0.4': ODD_FOOTPRINT, R1206: { ...ODD_FOOTPRINT, body: { x: -3, y: -1, w: 6, h: 2 } } }),
     })
-    project.layout.placements[0].footprint = 'R1206'
     const [part] = build(project).components
     expect(part.footprint).toBe('R1206')
     expect(part.geometry.body).toEqual({ x: -3, y: -1, w: 6, h: 2 })
@@ -164,10 +163,9 @@ describe('checkedDefinition', () => {
 
 describe('withDefinitions', () => {
   it('stores what buildNetlist already showed', () => {
-    const project = projectWith([resistor(), resistor({ ref: 'C1', footprint: 'CAP-TH_BD5.0-P2.00' })], {
+    const project = projectWith([resistor({ chosenFootprint: 'R1206' }), resistor({ ref: 'C1', footprint: 'CAP-TH_BD5.0-P2.00' })], {
       resistor: definition({ 'R_AXIAL-0.4': ODD_FOOTPRINT }),
     })
-    project.layout.placements[0].footprint = 'R1206'
     expect(looks(withDefinitions(project))).toEqual(looks(project))
   })
 

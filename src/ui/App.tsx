@@ -11,7 +11,7 @@ import { errorText } from '../errorText'
 import { exportSvg } from '../export/exportSvg'
 import { FootprintDialog } from './FootprintDialog'
 import { boundsOf } from '../model/geometry'
-import { changeFootprints, createLayout, findPinIssues, findSpacingViolations, findSplitNets, keepFootprintChoices } from '../model/layout'
+import { chooseFootprints, createLayout, findPinIssues, findSpacingViolations, findSplitNets } from '../model/layout'
 import { withValues } from '../model/netlist'
 import { findBuildStyle } from '../model/buildStyles'
 import { AiHelpDialog, HelpDialog, QuestionDialog, type Question } from './dialogs'
@@ -141,15 +141,15 @@ export function App() {
     parseGridLinesPerMajor(stored, DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR),
   )
   const { netlist, layout, schematic, settings } = project
-  const builtNetlist = useMemo(() => buildNetlist(netlist, layout.placements, project.definitions), [netlist, layout.placements, project.definitions])
+  const builtNetlist = useMemo(() => buildNetlist(netlist, project.definitions), [netlist, project.definitions])
   const schematicNets = useMemo(
     () => deriveNets(netlist, placedParts(schematic.placements, builtNetlist), schematic),
     [netlist, builtNetlist, schematic],
   )
   /** The schematic's own nets, drawn in the schematic; the PCB keeps `builtNetlist` until it is updated. */
   const schematicNetlist = useMemo(
-    () => buildNetlist(schematicNets.netlist, layout.placements, project.definitions),
-    [schematicNets, layout.placements, project.definitions],
+    () => buildNetlist(schematicNets.netlist, project.definitions),
+    [schematicNets, project.definitions],
   )
   const pinsNotInPcb = useMemo(() => pinsWithOtherNet(netlist, schematicNets.netlist), [netlist, schematicNets])
   const schematicOpenPins = useMemo(() => unconnectedPins(schematicNets.netlist), [schematicNets])
@@ -381,10 +381,7 @@ export function App() {
 
   const resetToGrid = async () => {
     if (!(await confirm('Reset to grid', 'Discard all manual placement and put everything back on a grid? This can be undone.', 'Reset'))) return
-    commitEdit((p) => {
-      const grid = createLayout(buildProjectNetlist(p))
-      return { ...p, layout: keepFootprintChoices(grid, p.layout) }
-    })
+    commitEdit((p) => ({ ...p, layout: createLayout(buildProjectNetlist(p)) }))
     setSelection(null)
     refit()
   }
@@ -392,7 +389,7 @@ export function App() {
   const openFootprintDialog = () => setFootprintDialogRefs(selectedRefs(selection))
 
   const applyFootprint = (refs: ReadonlySet<string>, footprint: string | undefined) =>
-    commitEdit(layoutUpdate((l) => changeFootprints(netlist, l, refs, footprint)))
+    commitEdit((p) => ({ ...p, ...chooseFootprints(p, refs, footprint) }))
 
   const exportLayout = () =>
     downloadText(`${tabName(activeId)}-isolation.svg`, exportSvg(layout.islands, settings.isolation), 'image/svg+xml')

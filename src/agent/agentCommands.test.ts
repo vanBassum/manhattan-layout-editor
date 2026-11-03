@@ -10,7 +10,7 @@ const exampleProject = () => projectFromFile(example)
 
 /** Pins whose net differs between the PCB and what the schematic draws. */
 function pinsOutOfSync(project: Project): string[] {
-  const built = buildNetlist(project.netlist, project.layout.placements, project.definitions)
+  const built = buildNetlist(project.netlist, project.definitions)
   const { schematic } = project
   const nets = deriveNets(project.netlist, placedParts(schematic.placements, built), schematic)
   return pinsWithOtherNet(project.netlist, nets.netlist)
@@ -46,7 +46,7 @@ describe('addComponent', () => {
     const definition = project.definitions![id]
     const footprint = Object.keys(definition.footprints)[0]
     const added = { ...project, ...addComponent(project, { ref: 'R9', definition: id }) }
-    const part = buildNetlist(added.netlist, added.layout.placements, added.definitions).components.find((c) => c.ref === 'R9')!
+    const part = buildNetlist(added.netlist, added.definitions).components.find((c) => c.ref === 'R9')!
     expect(part.footprint).toBe(footprint)
     expect(part.geometry.body).toEqual(definition.footprints[footprint].body)
   })

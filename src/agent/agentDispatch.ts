@@ -30,7 +30,7 @@ import {
   withPlacementChanges,
   withSchematicNets,
 } from '../model/schematic'
-import type { BuiltProject, Layout, Netlist, Project, Rect, Schematic } from '../model/types'
+import type { BuiltProject, Layout, Project, Rect, Schematic } from '../model/types'
 import { snapshotOf, type Snapshot } from '../model/undoHistory'
 
 /** What every edit returns: the problems left in the PCB. */
@@ -38,7 +38,7 @@ const projectProblems = (project: Project) => ({ problems: findProblems(builtPro
 
 /** The tab a command works on, and what the editor does for it. */
 export interface AgentTab {
-  /** As stored: without the footprint choices applied. */
+  /** As stored, not built. */
   project: Project
   /** Applies an undoable change; returns the changed project. */
   change: (changes: Partial<Snapshot>) => Project
@@ -71,7 +71,7 @@ export function agentTargetId(tabs: { id: string; name: string }[], shownId: str
 function describeSchematic(project: Project) {
   const { schematic } = project
   const { netlist, conflicts } = projectSchematicNets(project)
-  const built = buildNetlist(netlist, project.layout.placements, project.definitions)
+  const built = buildNetlist(netlist, project.definitions)
   return {
     units: 'mm; x to the right, y down; grid 2.54',
     parts: placedParts(schematic.placements, built).map(({ component, placement, pins }) => ({
@@ -91,14 +91,11 @@ function describeSchematic(project: Project) {
   }
 }
 
-/**
- * A command that changes only the layout. `edit` gets the project as built and the netlist as
- * imported; the agent gets the problems after the change.
- */
+/** A command that changes only the layout. `edit` gets the project as built; the agent gets the problems after the change. */
 const layoutEdit =
-  (edit: (current: BuiltProject, args: Args, imported: Netlist) => Layout) =>
+  (edit: (current: BuiltProject, args: Args) => Layout) =>
   (tab: AgentTab, args: Args) => {
-    const layout = edit(builtProject(tab.project), args, tab.project.netlist)
+    const layout = edit(builtProject(tab.project), args)
     return projectProblems(tab.change({ layout }))
   }
 
@@ -127,11 +124,11 @@ const COMMANDS: Record<string, (tab: AgentTab, args: Args) => unknown> = {
   set_island: layoutEdit(setIsland),
   move_island: layoutEdit(moveIsland),
   batch: layoutEdit(applyBatch),
-  set_resistor_footprint: layoutEdit((current, args, imported) => {
+  set_resistor_footprint: (tab, args) => {
     if (args.footprint !== 'through-hole' && args.footprint !== '1206') throw new Error('"footprint" must be "through-hole" or "1206"')
-    return chooseResistors(imported, current.layout, args.footprint)
-  }),
-  set_footprint: layoutEdit((current, args, imported) => setFootprint(current, imported, args)),
+    return projectProblems(tab.change(chooseResistors(tab.project, args.footprint)))
+  },
+  set_footprint: (tab, args) => projectProblems(tab.change(setFootprint(tab.project, args))),
 
   get_schematic: (tab) => describeSchematic(tab.project),
   set_schematic: schematicEdit((project, args) =>
@@ -151,7 +148,7 @@ const COMMANDS: Record<string, (tab: AgentTab, args: Args) => unknown> = {
     const definitions = { ...tab.project.definitions, [id]: checkedDefinition(args.definition) }
     // Parts already using the definition must keep all their pins in it.
     const users = tab.project.netlist.components.filter((c) => c.definition === id)
-    buildNetlist({ ...tab.project.netlist, components: users }, tab.project.layout.placements, definitions)
+    buildNetlist({ ...tab.project.netlist, components: users }, definitions)
     tab.change({ definitions })
     return { id, definitions: Object.keys(definitions) }
   },

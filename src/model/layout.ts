@@ -1,7 +1,6 @@
 import { boundsOf, coversSquare, rectsOverlap, rotatePoint, snapToGrid, withoutFloatNoise } from './geometry'
-import { footprintPinCount } from './footprints'
 import { isRealNet, pinsByNet } from './netlist'
-import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
+import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, NetComponent, Netlist, Placement, Point, Project, Rect } from './types'
 
 const ISLAND_WIDTH = 12
 const ISLAND_HEIGHT = 8
@@ -141,15 +140,8 @@ export function analyzeLeads(
  */
 export function createLayout(netlist: BuiltNetlist, previous?: Layout): Layout {
   const keptIslands = (previous?.islands ?? []).filter((i) => netlist.nets.includes(i.net))
-  const components = new Map(netlist.components.map((c) => [c.ref, c]))
-  const keptPlacements = (previous?.placements ?? []).flatMap((p) => {
-    const component = components.get(p.ref)
-    if (!component) return []
-    // A footprint choice survives a re-import unless the part's pin count changed so it no longer
-    // fits. Only library footprints have a known pin count; other names are kept unchecked.
-    const chosenPins = p.footprint ? footprintPinCount(p.footprint) : undefined
-    return chosenPins !== undefined && chosenPins !== component.pins.length ? [{ ...p, footprint: undefined }] : [p]
-  })
+  const refs = new Set(netlist.components.map((c) => c.ref))
+  const keptPlacements = (previous?.placements ?? []).filter((p) => refs.has(p.ref))
   const keptBounds = boundsOf(keptIslands.flatMap((i) => i.rects))
   const originY = keptBounds ? keptBounds.y + keptBounds.h + 10 : 0
 
@@ -213,51 +205,37 @@ export function followNetlist(layout: Layout, before: Netlist, after: BuiltNetli
 
 // ---------- Footprint choices ----------
 
-/** The netlist as built: footprints chosen in the editor replace the netlist's own. */
-export function withFootprintChoices(netlist: Netlist, placements: Placement[]): Netlist {
-  const chosen = new Map(placements.map((p) => [p.ref, p.footprint]))
-  if (![...chosen.values()].some(Boolean)) return netlist
-  return {
-    ...netlist,
-    components: netlist.components.map((c) => {
-      const footprint = chosen.get(c.ref)
-      return footprint ? { ...c, footprint } : c
-    }),
-  }
-}
-
-/** Copies the footprint choices of `from` onto a freshly generated layout, which knows nothing about them. */
-export function keepFootprintChoices(layout: Layout, from: Layout): Layout {
-  const chosen = new Map(from.placements.map((p) => [p.ref, p.footprint]))
-  return { ...layout, placements: layout.placements.map((p) => ({ ...p, footprint: chosen.get(p.ref) })) }
-}
+/** What choosing a footprint changes: the parts' choice, and their bent leads. */
+type PartsAndLayout = Pick<Project, 'netlist' | 'layout'>
 
 /**
  * Builds the parts in `refs` with `footprint`, or with their netlist footprint again when it is
- * undefined. `imported` must be the netlist as imported, without choices applied: choosing a part's
- * own netlist footprint is stored as no choice. Bent leads are reset, since they fitted the old shape.
+ * undefined; choosing a part's own netlist footprint is stored as no choice. Bent leads are reset,
+ * since they fitted the old shape.
  */
-export function changeFootprints(imported: Netlist, layout: Layout, refs: ReadonlySet<string>, footprint: string | undefined): Layout {
-  const netlistFootprints = new Map(imported.components.map((c) => [c.ref, c.footprint]))
+export function chooseFootprints({ netlist, layout }: PartsAndLayout, refs: ReadonlySet<string>, footprint: string | undefined): PartsAndLayout {
   return {
-    ...layout,
-    placements: layout.placements.map((p) => {
-      if (!refs.has(p.ref)) return p
-      const choice = footprint === netlistFootprints.get(p.ref) ? undefined : footprint
-      return { ...p, footprint: choice, leads: undefined }
-    }),
+    netlist: {
+      ...netlist,
+      components: netlist.components.map((c) => {
+        if (!refs.has(c.ref)) return c
+        const { chosenFootprint: _previous, ...component } = c
+        return footprint === undefined || footprint === c.footprint ? component : { ...component, chosenFootprint: footprint }
+      }),
+    },
+    layout: { ...layout, placements: layout.placements.map((p) => (refs.has(p.ref) ? { ...p, leads: undefined } : p)) },
   }
 }
 
 export type ResistorChoice = 'through-hole' | '1206'
 
-/** R1, R2, ... with an axial footprint. Trimmers (RV) and loads (RL) are left alone. */
+/** R1, R2, ... with an axial footprint in the netlist. Trimmers (RV) and loads (RL) are left alone. */
 const isPlainResistor = (c: NetComponent) => /^R\d+$/i.test(c.ref) && /AXIAL/i.test(c.footprint)
 
 /** Builds every plain resistor through-hole (as in the netlist) or as a 1206 chip bridging the cut between two islands. */
-export function chooseResistors(imported: Netlist, layout: Layout, choice: ResistorChoice): Layout {
-  const resistors = new Set(imported.components.filter(isPlainResistor).map((c) => c.ref))
-  return changeFootprints(imported, layout, resistors, choice === '1206' ? 'R1206' : undefined)
+export function chooseResistors(project: PartsAndLayout, choice: ResistorChoice): PartsAndLayout {
+  const resistors = new Set(project.netlist.components.filter(isPlainResistor).map((c) => c.ref))
+  return chooseFootprints(project, resistors, choice === '1206' ? 'R1206' : undefined)
 }
 
 /** Nets whose island consists of separate pieces of copper; those need a wire jumper. */

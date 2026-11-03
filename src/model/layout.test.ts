@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { buildNetlist } from './definitions'
 import {
   analyzeLeads,
+  chooseFootprints,
+  chooseResistors,
+  createLayout,
   findPinIssues,
   findProblemNets,
   findSplitNets,
@@ -28,7 +31,7 @@ const RIGHT_PAD: Island['rects'] = [{ x: 2, y: -5, w: 8, h: 10 }]
 describe('analyzeLeads', () => {
   const placement: Placement = { ref: 'R1', x: 0, y: 0, rotation: 0 }
   const statuses = (nets: string[], islands: Island[]) => {
-    const [component] = buildNetlist({ components: [resistor('R1', nets)], nets: [] }, [placement], undefined).components
+    const [component] = buildNetlist({ components: [resistor('R1', nets)], nets: [] }, undefined).components
     return analyzeLeads(component, placement, islands, 0.4).map((lead) => lead.status)
   }
 
@@ -75,13 +78,13 @@ describe('followNetlist', () => {
   const before: Netlist = { components: [resistor('R1', ['A', 'B'])], nets: ['A', 'B'] }
 
   it('keeps the layout when no connection changed', () => {
-    const after = buildNetlist(before, placements, undefined)
+    const after = buildNetlist(before, undefined)
 
     expect(followNetlist(layout, before, after)).toBe(layout)
   })
 
   it('hands the copper of a renamed net to its new name', () => {
-    const after = buildNetlist({ components: [resistor('R1', ['X', 'B'])], nets: ['B', 'X'] }, placements, undefined)
+    const after = buildNetlist({ components: [resistor('R1', ['X', 'B'])], nets: ['B', 'X'] }, undefined)
 
     expect(followNetlist(layout, before, after)).toEqual({ islands: [{ net: 'X', rects: LEFT_PAD }, { net: 'B', rects: RIGHT_PAD }], placements })
   })
@@ -108,7 +111,7 @@ describe('findPinIssues', () => {
     // A placement whose part is no longer in the netlist is left out.
     { ref: 'R9', x: 60, y: 0, rotation: 0 },
   ]
-  const built = buildNetlist({ components, nets: ['A', 'B'] }, placements, undefined)
+  const built = buildNetlist({ components, nets: ['A', 'B'] }, undefined)
 
   it('counts leads that reach no copper of their net as open; unused pins are no issue', () => {
     const layout: Layout = { islands: [], placements }
@@ -174,5 +177,47 @@ describe('moving parts', () => {
       islands: [{ net: 'A', rects: [{ x: 1, y: 2, w: 5, h: 5 }] }, b],
       placements: [{ ...placement, x: 11, y: 12 }, other],
     })
+  })
+})
+
+describe('choosing footprints', () => {
+  const bent = { '1': { x: -3, y: 2 } }
+  const project = {
+    netlist: { components: [resistor('R1', ['A', 'B']), resistor('R2', ['A', 'B']), { ...resistor('RV1', ['A', 'B']), footprint: 'RES-ADJ' }], nets: ['A', 'B'] },
+    layout: {
+      islands: [],
+      placements: ['R1', 'R2', 'RV1'].map((ref) => ({ ref, x: 0, y: 0, rotation: 0, leads: bent })),
+    },
+  }
+  const choices = (p: { netlist: Netlist }) => p.netlist.components.map((c) => c.chosenFootprint)
+
+  it('stores the choice on the part and resets its bent leads', () => {
+    const chosen = chooseFootprints(project, new Set(['R1']), 'R1206')
+
+    expect(choices(chosen)).toEqual(['R1206', undefined, undefined])
+    expect(chosen.netlist.components[0].footprint).toBe('R_AXIAL-0.4')
+    expect(chosen.layout.placements.map((p) => p.leads)).toEqual([undefined, bent, bent])
+  })
+
+  it("stores no choice for the part's own netlist footprint, or for going back to it", () => {
+    const chosen = chooseFootprints(project, new Set(['R1', 'R2']), 'R1206')
+
+    expect(choices(chooseFootprints(chosen, new Set(['R1']), undefined))).toEqual([undefined, 'R1206', undefined])
+    expect(choices(chooseFootprints(chosen, new Set(['R2']), 'R_AXIAL-0.4'))).toEqual(['R1206', undefined, undefined])
+  })
+
+  it('builds only plain resistors as 1206 chips, and through-hole again', () => {
+    const chips = chooseResistors(project, '1206')
+
+    expect(choices(chips)).toEqual(['R1206', 'R1206', undefined])
+    expect(buildNetlist(chips.netlist, undefined).components.map((c) => c.footprint)).toEqual(['R1206', 'R1206', 'RES-ADJ'])
+    expect(choices(chooseResistors(chips, 'through-hole'))).toEqual([undefined, undefined, undefined])
+  })
+
+  it('keeps the choices when the parts go back on a fresh grid', () => {
+    const chips = chooseResistors(project, '1206')
+    const grid = { ...chips, layout: createLayout(buildNetlist(chips.netlist, undefined)) }
+
+    expect(buildNetlist(grid.netlist, undefined).components.map((c) => c.footprint)).toEqual(['R1206', 'R1206', 'RES-ADJ'])
   })
 })

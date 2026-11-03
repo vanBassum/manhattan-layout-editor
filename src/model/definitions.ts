@@ -1,9 +1,8 @@
 import { errorText } from '../errorText'
 import { generatedGeometry } from './footprintTemplates'
-import { withFootprintChoices } from './layout'
 import { isJsonObject } from './netlist'
 import { symbolTemplate } from './schematicSymbols'
-import type { BuiltNetlist, Geometry, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, SymbolDefinition } from './types'
+import type { BuiltNetlist, Geometry, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Project, SymbolDefinition } from './types'
 
 // A part's symbol and footprints come from the project's own definitions. Parts without one get a
 // built-in template, which is copied into the project when it is loaded or saved; until then the
@@ -102,14 +101,14 @@ function resolvedDefinition(component: NetComponent, definitions: Definitions | 
 }
 
 /**
- * The netlist as built: footprint choices applied, and each part's geometry and symbol taken from
+ * The netlist as built: each part with its chosen footprint, and its geometry and symbol taken from
  * its definition. This is what drawing and checks work on; it is never stored.
  */
-export function buildNetlist(netlist: Netlist, placements: Placement[], definitions: Definitions | undefined): BuiltNetlist {
-  const chosen = withFootprintChoices(netlist, placements)
+export function buildNetlist(netlist: Netlist, definitions: Definitions | undefined): BuiltNetlist {
   return {
-    ...chosen,
-    components: chosen.components.map((component) => {
+    ...netlist,
+    components: netlist.components.map(({ chosenFootprint, ...part }) => {
+      const component = { ...part, footprint: chosenFootprint ?? part.footprint }
       const { id, definition } = resolvedDefinition(component, definitions)
       // Every footprint has all the symbol's pins (checkedDefinition, footprintOf) and the part only
       // uses a definition whose symbol has its pins, so this only fails for an unchecked definition.
@@ -133,8 +132,7 @@ function footprintOf(definition: ComponentDefinition, name: string, component: N
 }
 
 /** The project's own netlist, built; for the schematic's nets, build those with buildNetlist. */
-export const buildProjectNetlist = (project: Project): BuiltNetlist =>
-  buildNetlist(project.netlist, project.layout.placements, project.definitions)
+export const buildProjectNetlist = (project: Project): BuiltNetlist => buildNetlist(project.netlist, project.definitions)
 
 /** The project with its netlist built: what checks and agent edits read. */
 export const builtProject = (project: Project): BuiltProject => ({ ...project, netlist: buildProjectNetlist(project) })
@@ -145,7 +143,6 @@ export const builtProject = (project: Project): BuiltProject => ({ ...project, n
  */
 export function withDefinitions(project: Project): Project {
   const definitions: Definitions = { ...project.definitions }
-  const chosenFootprints = new Map(project.layout.placements.map((p) => [p.ref, p.footprint]))
   let changed = false
   const components = project.netlist.components.map((component) => {
     const { id, definition } = resolvedDefinition(component, definitions)
@@ -153,7 +150,7 @@ export function withDefinitions(project: Project): Project {
       definitions[id] = definition
       changed = true
     }
-    for (const name of new Set([component.footprint, chosenFootprints.get(component.ref) ?? component.footprint])) {
+    for (const name of new Set([component.footprint, component.chosenFootprint ?? component.footprint])) {
       if (definitions[id].footprints[name]) continue
       const footprint = footprintOf(definitions[id], name, component)
       definitions[id] = { ...definitions[id], footprints: { ...definitions[id].footprints, [name]: footprint } }

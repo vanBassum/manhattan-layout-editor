@@ -639,7 +639,7 @@ export function projectSchematicNets(project: Project): SchematicNets {
 /** The project with the PCB brought in line with the schematic: its nets, and islands that follow them. */
 export function withSchematicNets(project: Project): Project {
   const { netlist } = projectSchematicNets(project)
-  const built = buildNetlist(netlist, project.layout.placements, project.definitions)
+  const built = buildNetlist(netlist, project.definitions)
   return { ...project, netlist, layout: followNetlist(project.layout, project.netlist, built) }
 }
 

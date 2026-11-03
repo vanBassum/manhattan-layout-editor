@@ -31,17 +31,20 @@ export interface NetComponent {
   value: string
   /** Package name as given by the netlist, e.g. "TO-126-3_L7.6-W2.7-P2.30-L". May be empty. */
   footprint: string
+  /** Footprint chosen in the editor; the part is built with it instead of `footprint`. Missing: no choice. */
+  chosenFootprint?: string
   pins: Pin[]
   /** Key into the project's `definitions`. Missing for a new part until withDefinitions picks one. */
   definition?: string
 }
 
 /**
- * A part as `buildNetlist` makes it: the footprint chosen in the editor applied, and the footprint
- * geometry and schematic symbol taken from its definition. Never stored. Drawing and checks
- * take built parts, so they cannot be handed a part without its definition applied.
+ * A part as `buildNetlist` makes it: `footprint` is the one it is built with (the chosen one, else
+ * the netlist's), and the footprint geometry and schematic symbol come from its definition. Never
+ * stored. Drawing and checks take built parts, so they cannot be handed a part without its
+ * definition applied.
  */
-export interface BuiltComponent extends NetComponent {
+export interface BuiltComponent extends Omit<NetComponent, 'chosenFootprint'> {
   geometry: Geometry
   symbol: SymbolDefinition
 }
@@ -145,8 +148,6 @@ export interface Placement {
    * (so they follow when the component moves or rotates). Pins without an entry use their default.
    */
   leads?: Record<string, Point>
-  /** Footprint chosen in the editor; replaces the netlist's footprint for this part. */
-  footprint?: string
 }
 
 export interface Layout {

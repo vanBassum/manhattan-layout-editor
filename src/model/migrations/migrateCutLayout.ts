@@ -36,7 +36,7 @@ export function withoutCutLines(project: Project): Project {
   const settings = stored.strategy === CUT_LINES_STRATEGY ? { ...stored, strategy: 'knife' } : project.settings
   if (!knife) return { ...project, settings }
 
-  const netlist = buildNetlist(project.netlist, layout.placements, project.definitions)
+  const netlist = buildNetlist(project.netlist, project.definitions)
   const components = new Map(netlist.components.map((c) => [c.ref, c]))
   const leadEnds = layout.placements.flatMap((placement) => {
     const component = components.get(placement.ref)

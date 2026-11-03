@@ -2,10 +2,10 @@
 // and return a description or a new layout (or netlist); App applies it (with undo).
 
 import { errorText } from '../errorText'
-import { buildNetlist, withAssignedDefinition } from '../model/definitions'
+import { buildNetlist, builtProject, withAssignedDefinition } from '../model/definitions'
 import { footprintPinCount } from '../model/footprints'
 import { boundsOf } from '../model/geometry'
-import { analyzeLeads, bodyBounds, changeFootprints, createLayout, findSpacingViolations, findSplitNets, replaceIslandRects, toLocal, toWorld } from '../model/layout'
+import { analyzeLeads, bodyBounds, chooseFootprints, createLayout, findSpacingViolations, findSplitNets, replaceIslandRects, toLocal, toWorld } from '../model/layout'
 import { isRealNet, naturalCompare, pinsByNet } from '../model/netlist'
 import { agentPlacements, completePlacements, pinLabels, placedParts } from '../model/schematic'
 import type { BuiltComponent, BuiltProject, Island, Layout, Netlist, Pin, Placement, Point, Project, Rect } from '../model/types'
@@ -183,10 +183,10 @@ export function moveIsland(project: BuiltProject, args: Args): Layout {
 
 /**
  * Builds the given parts with `footprint`, or with their netlist footprint again when it is null.
- * `imported` is the netlist without footprint choices. Library footprints must match each part's pin
- * count; other footprint names cannot be checked and are accepted as given.
+ * Library footprints must match each part's pin count; other footprint names cannot be checked and
+ * are accepted as given.
  */
-export function setFootprint(project: BuiltProject, imported: Netlist, args: Args): Layout {
+export function setFootprint(project: Project, args: Args): Pick<Project, 'netlist' | 'layout'> {
   const refs = args.refs
   if (!Array.isArray(refs) || refs.length === 0 || refs.some((ref) => typeof ref !== 'string')) {
     throw new Error('"refs" must be a non-empty array of component references')
@@ -194,12 +194,12 @@ export function setFootprint(project: BuiltProject, imported: Netlist, args: Arg
   const footprint = args.footprint === null ? undefined : stringArg(args, 'footprint')
   const pins = footprint === undefined ? undefined : footprintPinCount(footprint)
   for (const ref of refs as string[]) {
-    const { component } = requireComponent(project, ref)
+    const { component } = requireComponent(builtProject(project), ref)
     if (pins !== undefined && pins !== component.pins.length) {
       throw new Error(`${footprint} has ${pins} pins but ${ref} has ${component.pins.length}; nothing was changed`)
     }
   }
-  return changeFootprints(imported, project.layout, new Set(refs as string[]), footprint)
+  return chooseFootprints(project, new Set(refs as string[]), footprint)
 }
 
 /** An agent's pin list: unique pin numbers, each with the net it joins ('' or missing: none). */
@@ -238,7 +238,7 @@ export function addComponent(project: Project, args: Args): Pick<Project, 'netli
   let netlist: Netlist = { components, nets: [...nets].sort(naturalCompare) }
   // Refuses a definition that lacks one of the pins.
   if (definitionId !== undefined) netlist = withAssignedDefinition(netlist, project.definitions, [ref], definitionId)
-  const built = buildNetlist(netlist, project.layout.placements, project.definitions)
+  const built = buildNetlist(netlist, project.definitions)
   const layout = createLayout(built, project.layout)
 
   const placed = args.x === undefined && args.y === undefined ? [] : agentPlacements(netlist, [{ ...args, ref }])

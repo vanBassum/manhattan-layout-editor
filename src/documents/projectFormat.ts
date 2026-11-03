@@ -4,7 +4,7 @@
 import { buildProjectNetlist, checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from '../model/definitions'
 import { withoutCutLines } from '../model/migrations/migrateCutLayout'
 import { completePlacements, labelSymbolForName, netlistSchematic } from '../model/schematic'
-import type { BuiltNetlist, LabelSymbol, NetLabel, Project, Schematic, SchematicPlacement, Settings, Wire } from '../model/types'
+import type { BuiltNetlist, LabelSymbol, NetLabel, Placement, Project, Schematic, SchematicPlacement, Settings, Wire } from '../model/types'
 import { BUILD_STYLES, findBuildStyle } from '../model/buildStyles'
 
 export const DEFAULT_SETTINGS: Settings = { snap: 0.5, isolation: 0.4, buildStyle: BUILD_STYLES[0].id }
@@ -51,6 +51,23 @@ function checkedSchematic(stored: StoredSchematic | undefined, built: BuiltNetli
   return { placements: completePlacements(built, placements), wires: stored.wires ?? [], labels: stored.labels.map(checkedLabel) }
 }
 
+/** A placement as stored before v9, when it held the footprint chosen for its part. */
+type StoredPlacement = Placement & { footprint?: string }
+
+/** The project with the footprint each placement held before v9 moved onto its part. */
+function withChoicesOnParts(project: Pick<Project, 'netlist' | 'layout'>): Pick<Project, 'netlist' | 'layout'> {
+  const placements = project.layout.placements as StoredPlacement[]
+  const chosen = new Map(placements.flatMap((p) => (p.footprint === undefined ? [] : [[p.ref, p.footprint]])))
+  if (chosen.size === 0) return project
+  return {
+    netlist: {
+      ...project.netlist,
+      components: project.netlist.components.map((c) => (chosen.has(c.ref) ? { ...c, chosenFootprint: chosen.get(c.ref) } : c)),
+    },
+    layout: { ...project.layout, placements: placements.map(({ footprint: _moved, ...placement }) => placement) },
+  }
+}
+
 export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
   guid: crypto.randomUUID(),
   netlist: { components: [], nets: [] },
@@ -63,7 +80,8 @@ export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => 
  * A project read from storage or a file; projects from before guids get one here, parts without a
  * component definition get one from the built-in templates, and a cut-line layout becomes islands.
  * The name older versions stored is dropped, an old strategy becomes a build style, and the
- * optimizer's settings are dropped. The schematic is completed as older versions drew it. Throws
+ * optimizer's settings are dropped. A footprint chosen on a placement (before v9) moves onto its
+ * part. The schematic is completed as older versions drew it. Throws
  * without a netlist or layout, for an invalid component definition, naming it, and for an unknown
  * build style.
  */
@@ -74,12 +92,14 @@ export function checkedProject(data: unknown): Project {
   }
   if (!project.netlist?.components || !project.layout?.islands) throw new Error('the project is damaged: netlist or layout is missing')
   const definitions = checkedDefinitions(project.definitions)
+  const { netlist, layout } = withChoicesOnParts({ netlist: project.netlist, layout: project.layout })
   const checked = withoutCutLines(
     withDefinitions({
       ...(project as Omit<Project, 'schematic'>),
       guid: project.guid || crypto.randomUUID(),
       // Recovery copies from before definitions were checked may still refer to one a re-import made unfit.
-      netlist: withoutUnfitDefinitions(project.netlist, definitions),
+      netlist: withoutUnfitDefinitions(netlist, definitions),
+      layout,
       // Completed below, once the parts are built.
       schematic: { placements: [], wires: [], labels: [] },
       definitions,
@@ -93,8 +113,9 @@ export function checkedProject(data: unknown): Project {
 // v6: component definitions (symbol and footprints) are stored in the project.
 // v7: no name inside: a project is called by its file's name.
 // v8: settings hold a build style instead of a strategy, and no optimizer settings (clearance, maxLead).
+// v9: the footprint chosen in the editor is stored on the part (chosenFootprint), not on its placement.
 const FILE_FORMAT = 'manhattan-layout-editor'
-const FILE_VERSION = 8
+const FILE_VERSION = 9
 
 export function projectToFile(project: Project): string {
   return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, project: withDefinitions(project) }, null, 2)

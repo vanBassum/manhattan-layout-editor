@@ -45,8 +45,37 @@ describe('checkedProject settings', () => {
 
   it('writes only the snap, isolation and build style', () => {
     const saved = JSON.parse(projectToFile(projectFromFile(example)))
-    expect(saved.version).toBe(8)
+    expect(saved.version).toBe(9)
     expect(Object.keys(saved.project.settings).sort()).toEqual(['buildStyle', 'isolation', 'snap'])
+  })
+})
+
+describe('checkedProject footprint choices', () => {
+  const stored = JSON.parse(example).project
+  const choicesIn = (project: Project) =>
+    Object.fromEntries(project.netlist.components.flatMap((c) => (c.chosenFootprint ? [[c.ref, c.chosenFootprint]] : [])))
+
+  it('moves the footprint a placement held before v9 onto its part', () => {
+    const placed = Object.fromEntries(stored.layout.placements.flatMap((p: { ref: string; footprint?: string }) => (p.footprint ? [[p.ref, p.footprint]] : [])))
+    const throughHole = 'RES-TH_BD1.8-L3.3-P7.62-D0.45'
+    expect(placed).toEqual({ R1: throughHole, R2: throughHole, R3: throughHole, R4: throughHole })
+    const project = checkedProject(stored)
+    expect(choicesIn(project)).toEqual(placed)
+    expect(project.layout.placements.some((p) => 'footprint' in p)).toBe(false)
+    const netlistFootprints = new Map(stored.netlist.components.map((c: { ref: string; footprint: string }) => [c.ref, c.footprint]))
+    expect(project.netlist.components.every((c) => c.footprint === netlistFootprints.get(c.ref))).toBe(true)
+  })
+
+  it('keeps the parts\' choices through a save', () => {
+    const saved = JSON.parse(projectToFile(projectFromFile(example))).project
+    expect(saved.layout.placements.some((p: object) => 'footprint' in p)).toBe(false)
+    expect(choicesIn(checkedProject(saved))).toEqual(choicesIn(checkedProject(stored)))
+  })
+
+  it('leaves a project without choices as it is', () => {
+    const placements = stored.layout.placements.map(({ footprint: _footprint, ...p }: { footprint?: string }) => p)
+    const project = checkedProject({ ...stored, layout: { ...stored.layout, placements } })
+    expect(choicesIn(project)).toEqual({})
   })
 })
 

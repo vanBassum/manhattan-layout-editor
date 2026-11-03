@@ -17,7 +17,7 @@ interface FootprintGroup {
 
 /** The part as the editor would build it with `footprint`: from its definition where that has the footprint. */
 const builtWith = (part: NetComponent, footprint: string, definitions: Project['definitions']): BuiltComponent =>
-  buildNetlist({ components: [{ ...part, footprint }], nets: [] }, [], definitions).components[0]
+  buildNetlist({ components: [{ ...part, footprint }], nets: [] }, definitions).components[0]
 
 /** Each library footprint drawn on a stand-in part, for the cards. */
 const LIBRARY_PREVIEWS = new Map(
@@ -132,7 +132,7 @@ function GroupCheckbox({ checked, mixed, onChange, label }: { checked: boolean; 
 interface FootprintDialogProps {
   /** Components as built, so each shows its current footprint. */
   built: BuiltNetlist
-  /** Components as imported, for going back to the netlist footprint. */
+  /** Components as stored, whose `footprint` is the netlist's: what going back to the netlist footprint gives. */
   imported: Netlist
   /** The project's definitions, which decide what a part looks like with another footprint. */
   definitions: Project['definitions']

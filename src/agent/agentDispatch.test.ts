@@ -56,6 +56,24 @@ describe('agent commands', () => {
     expect(result).toHaveProperty('problems.openPins')
   })
 
+  it('choose a footprint on the part, and go back to its netlist footprint', () => {
+    let project = projectFromFile(example)
+    const tab: AgentTab = { project, change: (changes) => (project = { ...project, ...changes }), step: () => project, screenshot: async () => '' }
+    const footprintOf = (ref: string) =>
+      (runAgentCommand('get_layout', {}, editorWith(tab)) as { components: { ref: string; footprint: string }[] }).components.find((c) => c.ref === ref)!.footprint
+    expect(footprintOf('R1')).toBe('RES-TH_BD1.8-L3.3-P7.62-D0.45')
+
+    runAgentCommand('set_footprint', { refs: ['R1'], footprint: 'R0805' }, editorWith(tab))
+    expect(project.netlist.components.find((c) => c.ref === 'R1')).toMatchObject({ footprint: 'R1206', chosenFootprint: 'R0805' })
+    tab.project = project
+    expect(footprintOf('R1')).toBe('R0805')
+
+    runAgentCommand('set_footprint', { refs: ['R1'], footprint: null }, editorWith(tab))
+    expect(project.netlist.components.find((c) => c.ref === 'R1')!.chosenFootprint).toBeUndefined()
+    tab.project = project
+    expect(footprintOf('R1')).toBe('R1206')
+  })
+
   it('offer exactly the batch edits the editor applies', () => {
     const offered = /command: z\.enum\(\[([^\]]*)\]\)/.exec(server)![1].match(/[a-z_]+/g)
     expect(offered).toEqual(BATCH_COMMANDS)

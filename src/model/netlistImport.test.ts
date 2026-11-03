@@ -86,4 +86,25 @@ describe('importing a netlist', () => {
     expect(r1.definition).not.toBe('power')
     expect(r2.definition).toBe('power')
   })
+
+  it('keeps the footprint chosen for a part, unless its pin count no longer fits a library footprint', () => {
+    const imported = importedProject(
+      netlistText({ R1: { value: '1k', nets: ['A', 'B'] }, R2: { value: '1k', nets: ['A', 'B'] }, R3: { value: '1k', nets: ['A', 'B'] } }),
+      'guid',
+      SETTINGS,
+    )
+    const choices: Record<string, string> = { R1: 'R1206', R2: 'R1206', R3: 'MY-OWN-PACKAGE' }
+    const current: Project = {
+      ...imported,
+      netlist: { ...imported.netlist, components: imported.netlist.components.map((c) => ({ ...c, chosenFootprint: choices[c.ref] })) },
+    }
+
+    const reimported = reimportedProject(
+      netlistText({ R1: { value: '1k', nets: ['A', 'B'] }, R2: { value: '1k', nets: ['A', 'B', 'C'] }, R3: { value: '1k', nets: ['A', 'B', 'C'] } }),
+      current,
+    )
+
+    // R2 has three pins now, which the two-pin R1206 does not fit; R3's own package cannot be checked.
+    expect(reimported.netlist.components.map((c) => c.chosenFootprint)).toEqual(['R1206', undefined, 'MY-OWN-PACKAGE'])
+  })
 })
