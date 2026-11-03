@@ -18,12 +18,18 @@ const LEAD_SPACING = 3.5
 const PAD_SPACING = 1.5
 /** Foreign lead ends must stay this far from a pad's edge, or they would touch it. */
 const FOREIGN_LEAD_CLEARANCE = 0.8
-
 /** SMD parts are made to straddle an edge: their other end may sit right next to the pad. */
-const foreignClearance = (lead: Lead) => (lead.part.component.geometry.shape === 'smd' ? 0.05 : FOREIGN_LEAD_CLEARANCE)
+const SMD_FOREIGN_LEAD_CLEARANCE = 0.05
 const PAD_SEARCH_RADIUS = 15
 const PAD_SEARCH_STEP = 0.5
+/** Small pull of a pad toward the median of its lead ends. */
+const PAD_COMPACTNESS = 0.1
+/** How far a ground lead is extended at a time while looking for bare plane. */
+const GROUND_LEAD_STEP = 0.5
 const PLANE_MARGIN = 5
+
+const foreignClearance = (lead: Lead) =>
+  lead.part.component.geometry.shape === 'smd' ? SMD_FOREIGN_LEAD_CLEARANCE : FOREIGN_LEAD_CLEARANCE
 
 interface Lead {
   part: PlacedPart
@@ -92,7 +98,7 @@ function manhattanLayout(netlist: BuiltNetlist, settings: Settings) {
           const target = solderPoint(pad, l.anchor, l.part.component.geometry, settings.isolation)
           return sum + leadCost(Math.hypot(target.x - l.anchor.x, target.y - l.anchor.y), l.limit)
         }, 0) +
-        0.1 * Math.hypot(offset.x, offset.y)
+        PAD_COMPACTNESS * Math.hypot(offset.x, offset.y)
       if (!best || cost < best.cost) best = { rect, cost }
     }
     if (!best) throw new Error(`No free spot found for the pad of net ${net}`)
@@ -137,7 +143,7 @@ function groundEnd(lead: Lead, pads: Island[]): Point | null {
   const dy = lead.end.y - lead.anchor.y
   const length = Math.hypot(dx, dy)
   if (length === 0) return null
-  for (let reach = length; reach <= lead.limit; reach += 0.5) {
+  for (let reach = length; reach <= lead.limit; reach += GROUND_LEAD_STEP) {
     const p = { x: lead.anchor.x + (dx / length) * reach, y: lead.anchor.y + (dy / length) * reach }
     if (!onPad(p)) return p
   }

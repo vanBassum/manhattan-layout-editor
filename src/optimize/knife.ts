@@ -12,6 +12,11 @@ const WIDTH_PER_PIN = 6
 /** Nets with at least this many pins become full-width rails. */
 const RAIL_MIN_PINS = 5
 const MAX_RAILS = 3
+const MIN_BOARD_WIDTH = 30
+/** The board width is rounded up to whole multiples of this. */
+const BOARD_WIDTH_STEP = 5
+/** In the net chain, sharing parts with the net just before counts this much more than with earlier ones. */
+const LAST_NET_WEIGHT = 3
 
 /**
  * Knife: unlike Manhattan, the copper comes first, because straight edge-to-edge cuts
@@ -33,7 +38,7 @@ function knifeLayout(netlist: BuiltNetlist, settings: Settings) {
   const cellWidth = (net: string) => Math.max(MIN_CELL_WIDTH, pins(net) * WIDTH_PER_PIN)
   const cells = chain.filter((net) => !rails.has(net))
   const area = cells.reduce((sum, net) => sum + cellWidth(net) * ROW_HEIGHT, 0)
-  const boardWidth = Math.ceil(Math.max(...cells.map(cellWidth), Math.sqrt(area), 30) / 5) * 5
+  const boardWidth = Math.ceil(Math.max(...cells.map(cellWidth), Math.sqrt(area), MIN_BOARD_WIDTH) / BOARD_WIDTH_STEP) * BOARD_WIDTH_STEP
 
   const rows: { rail: boolean; nets: string[] }[] = []
   let used = 0
@@ -64,11 +69,11 @@ function knifeLayout(netlist: BuiltNetlist, settings: Settings) {
     // Stretch the cells so each row runs edge to edge and every vertical cut ends on a horizontal one.
     // Neighboring cells touch: the cut runs along their shared edge, which lies on the snap grid.
     const rowWidth = ordered.reduce((sum, net) => sum + cellWidth(net), 0)
-    let used = 0
+    let unstretchedRight = 0
     let x = 0
     ordered.forEach((net, k) => {
-      used += cellWidth(net)
-      const right = k === ordered.length - 1 ? boardWidth : snapToGrid((used / rowWidth) * boardWidth, settings.snap)
+      unstretchedRight += cellWidth(net)
+      const right = k === ordered.length - 1 ? boardWidth : snapToGrid((unstretchedRight / rowWidth) * boardWidth, settings.snap)
       islands.push({ net, rects: [{ x, y, w: withoutFloatNoise(right - x), h: ROW_HEIGHT }] })
       x = right
     })
@@ -88,7 +93,7 @@ function chainNets(netlist: Netlist, nets: string[]): string[] {
   const remaining = [...nets].sort(naturalCompare)
   const chain: string[] = []
   while (remaining.length > 0) {
-    const score = (net: string) => chain.reduce((sum, p, k) => sum + shared(net, p) * (k === chain.length - 1 ? 3 : 1), 0)
+    const score = (net: string) => chain.reduce((sum, p, k) => sum + shared(net, p) * (k === chain.length - 1 ? LAST_NET_WEIGHT : 1), 0)
     let best = 0
     for (let k = 1; k < remaining.length; k++) if (score(remaining[k]) > score(remaining[best])) best = k
     const [next] = remaining.splice(best, 1)
