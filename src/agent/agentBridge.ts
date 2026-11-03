@@ -1,7 +1,7 @@
 // Connection to the local MCP server (mcp/server.mjs), which forwards an AI agent's tool calls.
 // The page executes each command on its own state and sends back the result.
 
-import { errorText } from './errorText'
+import { errorText } from '../errorText'
 
 const BRIDGE_URL = 'ws://127.0.0.1:5174'
 const MIN_RETRY_MS = 2000

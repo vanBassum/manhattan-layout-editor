@@ -12,7 +12,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
 
-// Fixed: the editor page, also the published one, connects to this port (src/agentBridge.ts).
+// Fixed: the editor page, also the published one, connects to this port (src/agent/agentBridge.ts).
 const BRIDGE_PORT = 5174
 // Pages that may act as the editor: the local dev server, plus the published GitHub Pages site.
 // MANHATTAN_ALLOWED_ORIGINS (comma separated) replaces the published-site entry.

@@ -35,7 +35,7 @@ Rules that follow from the table:
 | `optimize/*` | optimize (already in place) |
 | `exportSvg`, `exportDxf` | export (in place; `downloadText` lives in `ui/download`: it touches the DOM) |
 | `projectStore`, `projectFiles`, `driveDocuments`, `googleDrive`, `googlePicker`, `shareLink` | documents (in place, with the file format split off into `projectFormat` and the examples into `examples`) |
-| `agentBridge`, `agentCommands`, `agentDispatch` | agent |
+| `agentBridge`, `agentCommands`, `agentDispatch` | agent (in place) |
 | `App`, `AppMenu`, `ProjectTabs`, `CanvasBanners`, `PcbToolRail`, `SchematicToolRail`, `PcbSettings`, `panels`, `icons`, `dialogs`, `FileDialog`, `FootprintDialog`, `layers`, `viewport`, `preferences`, `shortcuts`, `useDocuments`, `useTabs`, `useDropdown`, `download` | ui (in place) |
 | `Canvas`, `partDrawing`, `screenshot`, `hiddenScreenshot` | ui (in place in `ui/pcb/`): they render or read the drawn board |
 | `SchematicView`, `SchematicDrawing` | ui (in place in `ui/schematic/`): the schematic's state and pointer input, and how its symbols, labels and parts are drawn |
