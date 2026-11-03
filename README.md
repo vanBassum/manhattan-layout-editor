@@ -32,7 +32,7 @@ pnpm dev
 A project is saved either on this computer or in Google Drive; the tab's icon shows which. Files on
 this computer open and save through the computer's own file dialogs. For Google Drive, Open and Save
 show the folder "Manhattan Layout Editor" in My Drive and its subfolders; another folder or file is
-picked in Google's file picker. **Open** also lists the recent projects of both. Projects in Google Drive save themselves a moment after each change, and open from any
+picked in Google's file picker. Projects in Google Drive save themselves a moment after each change, and open from any
 computer. Nothing is copied between the two: **Save as…** makes a copy elsewhere and continues there.
 Without Google the editor works as before and loads nothing from Google.
 

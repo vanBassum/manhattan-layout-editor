@@ -18,7 +18,7 @@ import { AiHelpDialog, HelpDialog, QuestionDialog, type Question } from './dialo
 import { Icon } from './icons'
 import { ComponentList, PartProperties, SchematicCheck, Section, SelectionDetails, Validation } from './panels'
 import { DEFAULT_SETTINGS } from '../documents/projectFormat'
-import { projectFile, recentDocuments, restoreErrors } from '../documents/projectStore'
+import { projectFile, restoreErrors } from '../documents/projectStore'
 import { canvasToPng } from './pcb/screenshot'
 import { shareLinkOf, takeSharedProject } from '../documents/shareLink'
 import { selectedRefs, selectedWiring, selectionOf } from '../model/selection'
@@ -249,7 +249,6 @@ export function App() {
     fileDialog,
     showOpenDialog,
     closeFileDialog,
-    openRecent,
     openFromDrive,
     openProjectFile,
     uploadInputRef,
@@ -680,10 +679,8 @@ export function App() {
         <FileDialog
           mode={fileDialog.mode}
           name={fileDialog.mode === 'save' ? fileDialog.name : undefined}
-          recent={recentDocuments()}
           signedIn={signedIn}
           onSignIn={signInToGoogle}
-          onOpenRecent={openRecent}
           onOpenDrive={openFromDrive}
           onOpenLocal={openProjectFile}
           onSave={(choice) => fileDialog.mode === 'save' && fileDialog.resolve(choice)}

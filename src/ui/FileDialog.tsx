@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { errorText } from '../errorText'
-import { driveConfigured, isFolder, listFolder, projectsFolder, SAVE_FOLDER_NAME, SignInNeeded, type DriveItem } from '../documents/googleDrive'
+import { isFolder, listFolder, projectsFolder, SAVE_FOLDER_NAME, SignInNeeded, type DriveItem } from '../documents/googleDrive'
 import { pickDriveFile, pickDriveFolder } from '../documents/googlePicker'
 import { isProjectFileName, projectNameOf } from '../documents/projectFormat'
-import type { RecentDocument } from '../documents/projectStore'
 import { Icon } from './icons'
 
 /** Where Save puts the project: through the computer's own save dialog, or in a Google Drive folder. */
@@ -13,10 +12,8 @@ interface FileDialogProps {
   mode: 'open' | 'save'
   /** Save: the name to start from. */
   name?: string
-  recent: RecentDocument[]
   signedIn: boolean
   onSignIn: () => Promise<boolean>
-  onOpenRecent: (recent: RecentDocument) => void
   onOpenDrive: (fileId: string) => void
   onOpenLocal: () => void
   onSave: (choice: SaveChoice) => void
@@ -36,14 +33,14 @@ const formatSize = (size?: string) => (size ? `${Math.max(1, Math.round(Number(s
 
 /**
  * Open and Save: on the left the places, on the right what is in them. This computer hands over to
- * the computer's own file dialog straight away; Google Drive shows its folders here.
+ * the computer's own file dialog straight away; Google Drive shows its folders here. Only builds
+ * with Google Drive show this dialog: without it, this computer is the only place.
  */
 export function FileDialog(props: FileDialogProps) {
-  const { mode, recent, signedIn } = props
+  const { mode, signedIn } = props
   const dialogRef = useRef<HTMLDialogElement>(null)
   useEffect(() => dialogRef.current?.showModal(), [])
 
-  const [place, setPlace] = useState<'recent' | 'drive'>(mode === 'open' && (recent.length > 0 || !driveConfigured) ? 'recent' : 'drive')
   const [path, setPath] = useState<DriveFolder[] | null>(lastDrivePath)
   const [items, setItems] = useState<DriveItem[] | null>(null)
   const [problem, setProblem] = useState('')
@@ -54,18 +51,18 @@ export function FileDialog(props: FileDialogProps) {
 
   // Without a folder yet, Drive starts in the projects folder.
   useEffect(() => {
-    if (place !== 'drive' || !signedIn || path) return
+    if (!signedIn || path) return
     projectsFolder().then(
       (id) => setPath([{ id, name: SAVE_FOLDER_NAME }]),
       (e) => setProblem(`Could not open Google Drive: ${errorText(e)}`),
     )
-  }, [place, signedIn, path])
+  }, [signedIn, path])
 
   useEffect(() => {
     lastDrivePath = path
     setItems(null)
     setSelected(null)
-    if (place !== 'drive' || !signedIn || !folder) return
+    if (!signedIn || !folder) return
     let current = true
     listFolder(folder.id).then(
       (listed) => current && setItems(listed.filter((item) => isFolder(item) || isProjectFileName(item.name))),
@@ -74,7 +71,7 @@ export function FileDialog(props: FileDialogProps) {
     return () => {
       current = false
     }
-  }, [place, signedIn, folder?.id])
+  }, [signedIn, folder?.id])
 
   /** Google's picker opens outside this dialog, which as a modal would block it: the dialog steps aside meanwhile. */
   const steppingAside = useRef(false)
@@ -135,24 +132,13 @@ export function FileDialog(props: FileDialogProps) {
 
       <div className="fd-body">
         <nav className="fd-places" aria-label="Places">
-          {mode === 'open' && (
-            <button className={place === 'recent' ? 'fd-place active' : 'fd-place'} onClick={() => setPlace('recent')}>
-              <Icon name="clock" />
-              <span>
-                <strong>Recent</strong>
-                <small>Projects opened or saved lately</small>
-              </span>
-            </button>
-          )}
-          {driveConfigured && (
-            <button className={place === 'drive' ? 'fd-place active' : 'fd-place'} onClick={() => setPlace('drive')}>
-              <Icon name="cloud" />
-              <span>
-                <strong>Google Drive</strong>
-                <small>{mode === 'open' ? 'Open a project from your Drive' : 'Save in a folder in your Drive'}</small>
-              </span>
-            </button>
-          )}
+          <button className="fd-place active" aria-current="true">
+            <Icon name="cloud" />
+            <span>
+              <strong>Google Drive</strong>
+              <small>{mode === 'open' ? 'Open a project from your Drive' : 'Save in a folder in your Drive'}</small>
+            </span>
+          </button>
           <button
             className="fd-place"
             onClick={() => (mode === 'open' ? props.onOpenLocal() : trimmed && props.onSave({ place: 'local', name: trimmed }))}
@@ -165,36 +151,17 @@ export function FileDialog(props: FileDialogProps) {
             </span>
             <Icon name="external" />
           </button>
-          {driveConfigured && (
-            <p className="fd-note">
-              <Icon name="help" />
-              <span>
-                Google Drive shows the projects the editor saved, and those opened before. For other files use "
-                {mode === 'open' ? 'Other file in Drive…' : 'Other folder in Drive…'}".
-              </span>
-            </p>
-          )}
+          <p className="fd-note">
+            <Icon name="help" />
+            <span>
+              Google Drive shows the projects the editor saved, and those opened before. For other files use "
+              {mode === 'open' ? 'Other file in Drive…' : 'Other folder in Drive…'}".
+            </span>
+          </p>
         </nav>
 
         <section className="fd-main">
-          {place === 'recent' ? (
-            <div className="fd-list">
-              {recent.length === 0 ? (
-                <p className="fd-empty">No recent projects yet.</p>
-              ) : (
-                recent.map((document, k) => (
-                  <button key={k} className="fd-row" onClick={() => props.onOpenRecent(document)}>
-                    <span className="fd-name">
-                      <Icon name={document.location.kind === 'drive' ? 'cloud' : 'computer'} />
-                      {document.name}
-                    </span>
-                    <span>{document.location.kind === 'drive' ? 'Google Drive' : 'This computer'}</span>
-                    <span />
-                  </button>
-                ))
-              )}
-            </div>
-          ) : !signedIn ? (
+          {!signedIn ? (
             <div className="fd-list fd-empty">
               <p>Sign in to see your projects in Google Drive.</p>
               <button className="header-button" onClick={props.onSignIn}>
@@ -263,7 +230,7 @@ export function FileDialog(props: FileDialogProps) {
         </section>
       </div>
 
-      {place === 'drive' && signedIn && (
+      {signedIn && (
         <footer className="fd-footer">
           {mode === 'save' && (
             <label className="fd-file-name">

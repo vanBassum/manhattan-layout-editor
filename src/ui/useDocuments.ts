@@ -9,16 +9,13 @@ import { projectFileName, projectFromFile, projectNameOf, projectToFile } from '
 import {
   acceptSavedContent,
   fileStatusVersion,
-  forgetRecent,
   onFileChange,
   projectFile,
-  rememberRecent,
   setSavedProject,
   tabShowing,
   unlinkLocation,
   type ProjectFile,
   type ProjectLocation,
-  type RecentDocument,
 } from '../documents/projectStore'
 import { errorText } from '../errorText'
 import { downloadText } from './download'
@@ -72,7 +69,8 @@ export function useDocuments(
   const confirmOverwrite = (name: string) => confirm(`Overwrite "${name}"?`, 'It changed elsewhere since it was opened or saved here.', 'Overwrite')
 
   const [fileDialog, setFileDialog] = useState<FileDialogState | null>(null)
-  const showOpenDialog = () => setFileDialog({ mode: 'open' })
+  // Without Google Drive there is only this computer, whose own dialog asks.
+  const showOpenDialog = () => (driveConfigured ? setFileDialog({ mode: 'open' }) : openProjectFile())
   const closeFileDialog = () => (fileDialog?.mode === 'save' ? fileDialog.resolve(null) : setFileDialog(null))
 
   /** Asks where to save project `name`; without Google Drive there is only this computer, whose own dialog asks. */
@@ -140,7 +138,6 @@ export function useDocuments(
       if (!saved) return false
       setSavedProject(id, current, saved.location)
       renameTab(id, saved.name)
-      rememberRecent(saved.name, saved.location)
       return true
     } catch (e) {
       setError(`Could not save: ${errorText(e)}`)
@@ -159,16 +156,6 @@ export function useDocuments(
     if (!isSignedIn() && !(await signInToGoogle())) return
     const opened = await openDriveDocument(location.fileId)
     openInNewTab(opened.project, opened.name, opened.location)
-  }
-
-  const openRecent = async (recent: RecentDocument) => {
-    setFileDialog(null)
-    try {
-      await openLocation(recent.location)
-    } catch (e) {
-      forgetRecent(recent.location)
-      setError(`Could not open "${recent.name}" (${errorText(e)}); it is taken off the recent projects.`)
-    }
   }
 
   // Without the File System Access API a project file is uploaded through this hidden input.
@@ -299,7 +286,6 @@ export function useDocuments(
     fileDialog,
     showOpenDialog,
     closeFileDialog,
-    openRecent,
     openFromDrive,
     openProjectFile,
     uploadInputRef,

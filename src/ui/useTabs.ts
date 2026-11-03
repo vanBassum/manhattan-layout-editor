@@ -10,7 +10,6 @@ import {
   onRemoteChange,
   readProject,
   rememberActiveTab,
-  rememberRecent,
   removeProject,
   setSavedProject,
   writeProject,
@@ -149,7 +148,6 @@ export function useTabs(onEnterTab: () => void) {
   const openInNewTab = (opened: Project, name: string, location?: ProjectLocation) => {
     const id = newTabId()
     setSavedProject(id, opened, location)
-    if (location) rememberRecent(name, location)
     replaceTabs([...tabsRef.current, { id, name }])
     showTab(id, opened)
   }

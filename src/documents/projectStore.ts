@@ -45,12 +45,6 @@ export interface ProjectFile {
   checked: boolean
 }
 
-/** A document opened or saved lately, for the Open recent menu. */
-export interface RecentDocument {
-  name: string
-  location: ProjectLocation
-}
-
 interface OpenProject extends ProjectFile {
   project: Project
   /** File content of `project`, to skip writes that change nothing. */
@@ -75,8 +69,8 @@ const DB_NAME = 'manhattan-layout-editor'
 const PROJECTS_STORE = 'projects'
 const META_STORE = 'meta'
 const TABS_RECORD = 'tabs'
-const RECENT_RECORD = 'recent'
-const MAX_RECENT = 8
+/** Until November 2026 the Open dialog listed recent documents; their list is cleared on the next start. */
+const OLD_RECENT_RECORD = 'recent'
 const ACTIVE_TAB_KEY = 'manhattan-layout-editor/active-tab'
 
 /** Why tabs from the last session could not be opened again; the editor shows them once it is up. */
@@ -84,7 +78,6 @@ export const restoreErrors: string[] = []
 
 const openProjects = new Map<string, OpenProject>()
 let openTabs: ProjectTab[] = []
-let recent: RecentDocument[] = []
 let db: IDBDatabase | null = null
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(DB_NAME)
 const fileListeners = new Set<() => void>()
@@ -236,7 +229,7 @@ async function restoreSession(db: IDBDatabase) {
       restoreErrors.push(`Could not open "${tab.name}" again: ${errorText(e)}.`)
     }
   }
-  recent = ((await request(db.transaction(META_STORE).objectStore(META_STORE).get(RECENT_RECORD))) as RecentDocument[] | undefined) ?? []
+  remove(META_STORE, OLD_RECENT_RECORD)
 }
 
 /** Loads the open projects into memory. Call once, before the editor starts. */
@@ -361,30 +354,10 @@ export function removeProject(id: string) {
   tell({ kind: 'removed', id })
 }
 
-export const recentDocuments = () => recent
-
 async function isSameLocation(a: ProjectLocation, b: ProjectLocation): Promise<boolean> {
   if (a.kind === 'drive') return b.kind === 'drive' && a.fileId === b.fileId
   if (b.kind === 'drive') return false
   return a.handle.isSameEntry(b.handle)
-}
-
-async function recentWithout(location: ProjectLocation): Promise<RecentDocument[]> {
-  const kept: RecentDocument[] = []
-  for (const document of recent) if (!(await isSameLocation(document.location, location))) kept.push(document)
-  return kept
-}
-
-/** Puts the document at `location` first in the recent documents. */
-export async function rememberRecent(name: string, location: ProjectLocation) {
-  recent = [{ name, location }, ...(await recentWithout(location))].slice(0, MAX_RECENT)
-  put(META_STORE, RECENT_RECORD, recent)
-}
-
-/** Takes a document off the recent list, for one that cannot be opened anymore. */
-export async function forgetRecent(location: ProjectLocation) {
-  recent = await recentWithout(location)
-  put(META_STORE, RECENT_RECORD, recent)
 }
 
 /** The open tab showing the document at `location`, if any. */

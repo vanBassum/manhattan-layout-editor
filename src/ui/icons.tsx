@@ -12,7 +12,6 @@ const ICON_PATHS = {
   settings: 'M12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6 M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M4.9 19.1l2.1-2.1 M17 7l2.1-2.1',
   user: 'M12 4a4 4 0 1 1 0 8a4 4 0 1 1 0-8 M4 21c0-4 3.6-6 8-6s8 2 8 6',
   importExport: 'M4 8h13l-3-3 M20 16H7l3 3',
-  clock: 'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18 M12 7v5l3 2',
   open: 'M3 7h6l2 2h10v10H3z M3 7V5h6',
   save: 'M5 4h11l3 3v13H5z M8 4v5h7V4 M8 20v-6h8v6',
   sample: 'M4 6h16v12H4z M8 10h8 M8 14h5',
