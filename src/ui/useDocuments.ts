@@ -1,7 +1,7 @@
 // Where the tabs' projects are saved: saving, opening, checking a saved document against its tab's
 // recovery copy after a reload, saving Google Drive documents by themselves, and signing in to Google.
 
-import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { compareWithDrive, openDriveDocument, overwriteDriveDocument, saveDriveDocument, saveInDriveFolder, type DriveLocation } from '../documents/driveDocuments'
 import { driveConfigured, isSignedIn, onSignInChange, signIn, SignInNeeded } from '../documents/googleDrive'
 import { canUseFiles, compareWithFile, mayUse, pickFileToOpen, readFile, saveToFile, saveToNewFile, type FileComparison } from '../documents/projectFiles'
@@ -18,35 +18,15 @@ import {
   unlinkLocation,
   type ProjectFile,
   type ProjectLocation,
-  type ProjectTab,
   type RecentDocument,
 } from '../documents/projectStore'
 import { errorText } from '../errorText'
 import { downloadText } from '../exportSvg'
 import type { SaveChoice } from '../FileDialogs'
 import type { Project } from '../types'
+import type { TabSession } from './useTabs'
 
 const DRIVE_AUTOSAVE_MS = 2000
-
-/** What the documents need from the editor's tabs. */
-export interface DocumentTabs {
-  // Latest tabs and shown tab, also between a change and the next render: they are read after awaits.
-  tabsRef: RefObject<ProjectTab[]>
-  activeIdRef: RefObject<string>
-  /** The shown tab and its project as rendered; checks and autosave follow their changes. */
-  activeId: string
-  project: Project
-  /** The project of tab `id`, including changes still waiting to be written to the recovery copy. */
-  shownProject: (id: string) => Project
-  tabName: (id: string) => string
-  renameTab: (id: string, name: string) => void
-  switchTab: (id: string) => void
-  openInNewTab: (project: Project, name: string, location?: ProjectLocation) => void
-  /** Shows `project` in the shown tab, as a change that can be undone. */
-  replaceProject: (project: Project) => void
-  setError: (error: string) => void
-  confirm: (title: string, text: string, confirmLabel: string) => Promise<boolean>
-}
 
 /** The saved document changed elsewhere while tab `id` has unsaved changes: the user picks. */
 export interface FileConflict {
@@ -62,8 +42,14 @@ export type FileDialogState = { mode: 'open' } | { mode: 'save'; name: string; r
 /** A saved project's new place, and the name it is saved under. */
 type SavedAs = { name: string; location: ProjectLocation }
 
-export function useDocuments(tabs: DocumentTabs) {
-  const { tabsRef, activeIdRef, activeId, project, shownProject, tabName, renameTab, switchTab, openInNewTab, replaceProject, setError, confirm } = tabs
+/** `confirm` asks a yes/no question; true when the user picks `confirmLabel` rather than Cancel. */
+export function useDocuments(
+  tabs: TabSession,
+  setError: (error: string) => void,
+  confirm: (title: string, text: string, confirmLabel: string) => Promise<boolean>,
+) {
+  // Checks and autosave follow the shown tab and its project as rendered.
+  const { tabsRef, activeIdRef, activeId, project, shownProject, tabName, renameTab, switchTab, openInNewTab, commitEdit } = tabs
 
   // projectFile is read while rendering; this re-renders when a tab gets or loses unsaved changes,
   // or its saved document is checked.
@@ -259,7 +245,8 @@ export function useDocuments(tabs: DocumentTabs) {
   }
 
   const loadSavedVersion = (id: string, saved: Project, location: ProjectLocation) => {
-    replaceProject(saved)
+    // The changes it replaces stay reachable with Undo.
+    commitEdit(() => saved)
     setSavedProject(id, saved, location)
     setFileConflict(null)
   }

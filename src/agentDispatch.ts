@@ -1,5 +1,6 @@
-// Runs an AI agent's command, as forwarded by the MCP server (mcp/server.mjs) through agentBridge,
-// on one project tab. Every tool of the server except list_projects is a command here.
+// Runs an AI agent's command, as forwarded by the MCP server (mcp/server.mjs) through agentBridge:
+// list_projects on the editor, every other one on one project tab. Every tool of the server is a
+// command here.
 
 import {
   addComponent,
@@ -49,6 +50,13 @@ export interface AgentTab {
   step: (direction: 'undo' | 'redo') => Project
   /** PNG (base64) of the layout as drawn, within `bounds`. */
   screenshot: (project: BuiltProject, bounds: Rect) => Promise<string>
+}
+
+/** The open tabs, and how to work on one of them. */
+export interface AgentEditor {
+  tabs: { id: string; name: string }[]
+  shownId: string
+  tab: (id: string) => AgentTab
 }
 
 /** The tab a command is for: its "project" argument, a tab id or name, else the shown tab. */
@@ -172,10 +180,16 @@ const COMMANDS: Record<string, (tab: AgentTab, args: Args) => unknown> = {
   },
 }
 
-/** The commands this module runs; the MCP server offers the same ones (see agentDispatch.test.ts). */
-export const AGENT_COMMANDS = Object.keys(COMMANDS)
+const listProjects = (editor: AgentEditor) => ({
+  projects: editor.tabs.map((t) => ({ id: t.id, name: t.name, shown: t.id === editor.shownId })),
+})
 
-export function runAgentCommand(command: string, args: Args, tab: AgentTab): unknown {
+/** The commands this module runs; the MCP server offers the same ones (see agentDispatch.test.ts). */
+export const AGENT_COMMANDS = ['list_projects', ...Object.keys(COMMANDS)]
+
+export function runAgentCommand(command: string, args: Args, editor: AgentEditor): unknown {
+  if (command === 'list_projects') return listProjects(editor)
   if (!Object.hasOwn(COMMANDS, command)) throw new Error(`Unknown command "${command}"`)
+  const tab = editor.tab(agentTargetId(editor.tabs, editor.shownId, args.project))
   return COMMANDS[command](tab, args)
 }

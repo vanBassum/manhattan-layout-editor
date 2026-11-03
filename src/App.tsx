@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
 import { buildNetlist, buildProjectNetlist, withDefinitions, withoutUnfitDefinitions } from './definitions'
-import { agentTargetId, runAgentCommand } from './agentDispatch'
+import { runAgentCommand, type AgentTab } from './agentDispatch'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { exportDxf } from './exportDxf'
 import { driveConfigured, signOut } from './documents/googleDrive'
@@ -41,25 +41,8 @@ import {
   type Question,
 } from './panels'
 import { EXAMPLES } from './documents/examples'
-import { DEFAULT_SETTINGS, emptyProject } from './documents/projectFormat'
-import {
-  UNTITLED,
-  loadTabs,
-  newTabId,
-  onRemoteChange,
-  projectFile,
-  readProject,
-  recentDocuments,
-  rememberActiveTab,
-  rememberRecent,
-  removeProject,
-  restoreErrors,
-  setSavedProject,
-  writeProject,
-  writeTabs,
-  type ProjectLocation,
-  type ProjectTab,
-} from './documents/projectStore'
+import { DEFAULT_SETTINGS } from './documents/projectFormat'
+import { projectFile, recentDocuments, restoreErrors } from './documents/projectStore'
 import { canvasToPng } from './screenshot'
 import { shareLinkOf, takeSharedProject } from './documents/shareLink'
 import { selectedRefs, selectedWiring, selectionOf } from './selection'
@@ -78,7 +61,7 @@ import type { Layout, NetLabel, Placement, Project, SchematicPlacement, Selectio
 import type { IconName } from './panels'
 import { ProjectTabs } from './ProjectTabs'
 import { useDocuments } from './ui/useDocuments'
-import { NO_HISTORY, snapshotOf, stepHistory, withEdit, type History, type Snapshot } from './undoHistory'
+import { useTabs, type UndoDirection } from './ui/useTabs'
 
 /** Which views are shown: one of them, or both side by side. */
 type ViewMode = 'schematic' | 'split' | 'layout'
@@ -221,13 +204,17 @@ function projectFromNetlist(text: string, current: Project, keepLayout: boolean)
   })
 }
 
+/** A project update that changes the layout with `update`. */
+const layoutUpdate =
+  (update: (layout: Layout) => Layout) =>
+  (project: Project): Project => ({ ...project, layout: update(project.layout) })
+
+/** A project update that replaces the schematic. It leaves the PCB alone: "Update PCB" takes its nets over when the user is ready. */
+const schematicUpdate =
+  (schematic: FullSchematic) =>
+  (project: Project): Project => ({ ...project, schematic })
+
 export function App() {
-  const [initialTabs] = useState(loadTabs)
-  const [tabs, setTabs] = useState<ProjectTab[]>(initialTabs.tabs)
-  const tabsRef = useRef(tabs)
-  tabsRef.current = tabs
-  const [activeId, setActiveId] = useState(initialTabs.activeId)
-  const [project, setProject] = useState<Project>(() => readProject(initialTabs.activeId))
   const [selection, setSelection] = useState<Selection>(null)
   const [tool, setTool] = useState<Tool>('select')
   const [moveMode, setMoveMode] = useState<MoveMode>('part')
@@ -260,11 +247,33 @@ export function App() {
     const timer = setTimeout(() => setNotice(''), 5000)
     return () => clearTimeout(timer)
   }, [notice])
+  // Another tab starts with nothing selected, no error, and its board in view.
+  const tabSession = useTabs(() => {
+    setSelection(null)
+    setError('')
+    refit()
+  })
+  const {
+    tabs,
+    activeId,
+    project,
+    tabsRef,
+    activeIdRef,
+    tabName,
+    shownProject,
+    renameTab,
+    switchTab,
+    openInNewTab,
+    newProject,
+    closeSavedTab,
+    updateProject,
+    beginEdit,
+    commitEdit,
+    clearHistory,
+    stepHiddenTab,
+    changeHiddenTab,
+  } = tabSession
   const fileInputRef = useRef<HTMLInputElement>(null)
-  /** Undo history of the shown tab. */
-  const history = useRef<History>(NO_HISTORY)
-  /** Undo history of the tabs that are not shown, so switching back keeps it. */
-  const parkedHistory = useRef(new Map<string, History>())
   const [agentConnected, setAgentConnected] = useState(false)
   const [showAiHelp, setShowAiHelp] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
@@ -300,171 +309,48 @@ export function App() {
     [schematicNets],
   )
 
-  // Latest project and shown tab, also between a change and the next render: agent commands and file
-  // checks can arrive in between. Only showProject and showTab change them, always together with the
-  // state, so they are never behind it. (tabsRef may lag one render; a lookup then only misses a tab.)
-  const projectRef = useRef(project)
-  const activeIdRef = useRef(activeId)
-
-  /** Every change to the shown project goes through here. */
-  const showProject = (next: Project) => {
-    projectRef.current = next
-    setProject(next)
-  }
-  const updateProject = (update: (current: Project) => Project) => showProject(update(projectRef.current))
-
-  const restore = (snapshot: Snapshot) => updateProject((current) => ({ ...current, ...snapshot }))
-
-  /** Call right before changing the layout or schematic, so the change can be undone. */
-  const rememberEdit = () => {
-    history.current = withEdit(history.current, snapshotOf(projectRef.current))
-  }
-
-  const stepShownTab = (direction: 'undo' | 'redo') => {
-    const stepped = stepHistory(history.current, snapshotOf(projectRef.current), direction)
-    if (!stepped) return
-    history.current = stepped.history
-    restore(stepped.restored)
-    setSelection(null)
+  const stepShownTab = (direction: UndoDirection) => {
+    if (tabSession.stepShownTab(direction)) setSelection(null)
   }
   const undo = () => stepShownTab('undo')
   const redo = () => stepShownTab('redo')
 
-  /** Undo or redo on a tab that is not shown: straight in storage, with its own history. Returns the tab's project. */
-  const stepHiddenTab = (id: string, stored: Project, direction: 'undo' | 'redo'): Project => {
-    const stepped = stepHistory(parkedHistory.current.get(id) ?? NO_HISTORY, snapshotOf(stored), direction)
-    if (!stepped) return stored
-    parkedHistory.current.set(id, stepped.history)
-    const updated = { ...stored, ...stepped.restored }
-    writeProject(id, updated)
-    return updated
-  }
-
-  /** An undoable agent change to the shown tab or a hidden one. Returns the changed project. */
-  const applyAgentChange = (id: string, stored: Project, changes: Partial<Snapshot>): Project => {
-    if (id === activeIdRef.current) {
-      rememberEdit()
-      restore({ ...snapshotOf(projectRef.current), ...changes })
-      // A selection names schematic wires and labels by index; new ones mean other things.
-      if (changes.schematic) setSelection(null)
-      return projectRef.current
-    }
-    parkedHistory.current.set(id, withEdit(parkedHistory.current.get(id) ?? NO_HISTORY, snapshotOf(stored)))
-    const updated = { ...stored, ...changes }
-    writeProject(id, updated)
-    return updated
-  }
-
-  const handleAgentCommand = useRef<(command: string, args: Record<string, unknown>) => unknown>(() => undefined)
-  handleAgentCommand.current = (command, args) => {
-    if (command === 'list_projects') {
-      return { projects: tabsRef.current.map((t) => ({ id: t.id, name: t.name, shown: t.id === activeIdRef.current })) }
-    }
-    const id = agentTargetId(tabsRef.current, activeIdRef.current, args.project)
+  /** Tab `id` as agent command `command` works on it. */
+  const agentTab = (id: string, command: string): AgentTab => {
     const shown = id === activeIdRef.current
-    const stored = shown ? projectRef.current : readProject(id)
-    const result = runAgentCommand(command, args, {
+    const stored = shownProject(id)
+    return {
       project: stored,
-      change: (changes) => applyAgentChange(id, stored, changes),
+      change: (changes) => {
+        if (!shown) return changeHiddenTab(id, stored, changes)
+        commitEdit((current) => ({ ...current, ...changes }))
+        // A selection names schematic wires and labels by index; new ones mean other things.
+        if (changes.schematic) setSelection(null)
+        // A whole new layout, as with the Optimize button.
+        if (command === 'run_optimizer') refit()
+        return shownProject(id)
+      },
       step: (direction) => {
         if (!shown) return stepHiddenTab(id, stored, direction)
         stepShownTab(direction)
-        return projectRef.current
+        return shownProject(id)
       },
       screenshot: (current, bounds) => {
         // The layout is not on screen for another tab, or while only the schematic is shown.
         const svg = shown ? document.querySelector<SVGSVGElement>('svg.canvas') : null
         return svg ? canvasToPng(svg, bounds) : screenshotHidden(current.netlist, current.layout, current.settings.isolation, bounds)
       },
-    })
-    if (shown && command === 'run_optimizer') refit()
-    return result
+    }
   }
+
+  const handleAgentCommand = useRef<(command: string, args: Record<string, unknown>) => unknown>(() => undefined)
+  handleAgentCommand.current = (command, args) =>
+    runAgentCommand(command, args, { tabs: tabsRef.current, shownId: activeIdRef.current, tab: (id) => agentTab(id, command) })
 
   useEffect(
     () => connectAgentBridge((command, args) => handleAgentCommand.current(command, args), setAgentConnected),
     [],
   )
-
-  // The agent only talks to the most recently opened browser tab; other browser tabs showing the
-  // same project follow along. The store skips writes that change nothing, so browser tabs do not
-  // echo each other.
-  useEffect(
-    () =>
-      onRemoteChange((change) => {
-        if (change.kind === 'tabs') {
-          if (change.tabs.length === 0) return
-          setTabs(change.tabs)
-          // Closed elsewhere: saving it on the way out would bring it back.
-          if (!change.tabs.some((t) => t.id === activeIdRef.current)) {
-            parkedHistory.current.delete(activeIdRef.current)
-            enterTab(change.tabs[0].id, readProject(change.tabs[0].id))
-          }
-        } else if (change.id === activeIdRef.current) {
-          showProject(change.project)
-        }
-      }),
-    [],
-  )
-
-  useEffect(() => {
-    const timer = setTimeout(() => writeProject(activeId, project), 300)
-    return () => clearTimeout(timer)
-  }, [project, activeId])
-
-  // The last change may still wait for the timer above.
-  useEffect(() => {
-    const flush = () => writeProject(activeIdRef.current, projectRef.current)
-    window.addEventListener('pagehide', flush)
-    return () => window.removeEventListener('pagehide', flush)
-  }, [])
-
-  /** The name of tab `id`'s project: its file's name, or before saving the name it started with. */
-  const tabName = (id: string) => tabsRef.current.find((t) => t.id === id)?.name ?? UNTITLED
-
-  const renameTab = (id: string, name: string) => {
-    const renamed = tabsRef.current.map((t) => (t.id === id ? { ...t, name } : t))
-    tabsRef.current = renamed
-    setTabs(renamed)
-    writeTabs(renamed)
-  }
-
-  /** Saves the shown project and its undo history, then shows `id` with its own. */
-  const showTab = (id: string, next: Project) => {
-    const activeId = activeIdRef.current
-    writeProject(activeId, projectRef.current)
-    parkedHistory.current.set(activeId, history.current)
-    enterTab(id, next)
-  }
-
-  /** Shows `id` with its own undo history; the shown tab is left as it is in storage. */
-  const enterTab = (id: string, next: Project) => {
-    history.current = parkedHistory.current.get(id) ?? NO_HISTORY
-    parkedHistory.current.delete(id)
-    showProject(next)
-    activeIdRef.current = id
-    setActiveId(id)
-    rememberActiveTab(id)
-    setSelection(null)
-    setError('')
-    refit()
-  }
-
-  const switchTab = (id: string) => {
-    if (id !== activeId) showTab(id, readProject(id))
-  }
-
-  const openInNewTab = (opened: Project, name: string, location?: ProjectLocation) => {
-    const id = newTabId()
-    setSavedProject(id, opened, location)
-    if (location) rememberRecent(name, location)
-    const next = [...tabsRef.current, { id, name }]
-    setTabs(next)
-    writeTabs(next)
-    showTab(id, opened)
-  }
-
-  const newProject = () => openInNewTab(emptyProject(project.settings), UNTITLED)
 
   // A share link opens its project in a new tab once the editor is up.
   useEffect(() => {
@@ -476,7 +362,7 @@ export function App() {
   const copyShareLink = async () => {
     let link: string
     try {
-      link = await shareLinkOf(projectRef.current)
+      link = await shareLinkOf(shownProject(activeIdRef.current))
     } catch (e) {
       setError(`Could not make a share link: ${errorText(e)}`)
       return
@@ -488,9 +374,6 @@ export function App() {
       prompt('Copy the share link:', link)
     }
   }
-
-  /** The project of tab `id`, including changes still waiting to be written to the recovery copy. */
-  const shownProject = (id: string) => (id === activeIdRef.current ? projectRef.current : readProject(id))
 
   const [question, setQuestion] = useState<{ question: Question<string>; answer: (answer: string) => void } | null>(null)
   /** Shows `question` in a dialog and resolves to the answer picked. */
@@ -527,23 +410,7 @@ export function App() {
     checkSaved,
     loadSavedVersion,
     keepRecoveryCopy,
-  } = useDocuments({
-    tabsRef,
-    activeIdRef,
-    activeId,
-    project,
-    shownProject,
-    tabName,
-    renameTab,
-    switchTab,
-    openInNewTab,
-    replaceProject: (saved) => {
-      rememberEdit()
-      showProject(saved)
-    },
-    setError,
-    confirm,
-  })
+  } = useDocuments(tabSession, setError, confirm)
 
   const closeTab = async (id: string) => {
     const tab = tabs.find((t) => t.id === id)
@@ -558,33 +425,6 @@ export function App() {
       if (choice === 'cancel' || (choice === 'save' && !(await saveTab(id)))) return
     }
     closeSavedTab(id)
-  }
-
-
-  const closeSavedTab = (id: string) => {
-    // Read fresh: an await in closeTab may have changed the tabs.
-    const tabs = tabsRef.current
-    const remaining = tabs.filter((t) => t.id !== id)
-    if (remaining.length === 0) {
-      // Always keep one tab: closing the last one leaves a fresh, empty project.
-      const created = emptyProject(project.settings)
-      setSavedProject(id, created)
-      const fresh = [{ id, name: UNTITLED }]
-      setTabs(fresh)
-      writeTabs(fresh)
-      history.current = NO_HISTORY
-      showProject(created)
-      setSelection(null)
-      return
-    }
-    setTabs(remaining)
-    writeTabs(remaining)
-    if (id === activeIdRef.current) {
-      const neighbour = remaining[Math.max(0, tabs.findIndex((t) => t.id === id) - 1)]
-      showTab(neighbour.id, readProject(neighbour.id))
-    }
-    parkedHistory.current.delete(id)
-    removeProject(id)
   }
 
   const setLayers = (next: Layers) => {
@@ -607,8 +447,10 @@ export function App() {
     writePreference(SCHEMATIC_GRID_KEY, String(linesPerMajor))
   }
 
-  const setLayout = (update: (layout: Layout) => Layout) =>
-    updateProject((p) => ({ ...p, layout: update(p.layout) }))
+  // The canvases call onBeginEdit once when a drag starts and then send every update of it here, so
+  // the whole drag is one undo step. An action done in one go is a commitEdit instead.
+  const updateLayout = (update: (layout: Layout) => Layout) => updateProject(layoutUpdate(update))
+  const updateSchematic = (next: FullSchematic) => updateProject(schematicUpdate(next))
 
   const setSettings = (changes: Partial<Settings>) =>
     updateProject((p) => ({ ...p, settings: { ...p.settings, ...changes } }))
@@ -643,7 +485,7 @@ export function App() {
       // A project not saved yet takes the netlist's name; a saved one keeps its file's.
       if (!projectFile(activeIdRef.current).location) renameTab(activeIdRef.current, name)
       // Old layouts belong to the old netlist.
-      history.current = NO_HISTORY
+      clearHistory()
       setSelection(null)
       setError('')
       refit()
@@ -668,20 +510,13 @@ export function App() {
   /** Changes the placements of `refs` with `change`, as one undo step; nothing when `refs` is empty. */
   const editPlacements = (refs: string[], change: (p: Placement) => Placement) => {
     if (refs.length === 0) return
-    rememberEdit()
-    setLayout((l) => ({ ...l, placements: l.placements.map((p) => (refs.includes(p.ref) ? change(p) : p)) }))
+    commitEdit(layoutUpdate((l) => ({ ...l, placements: l.placements.map((p) => (refs.includes(p.ref) ? change(p) : p)) })))
   }
 
   // Rotate and reset leads act on every selected part, each in place.
   const refsToEdit = selectedRefs(selection)
 
-  // Schematic edits leave the PCB alone; "Update PCB" takes their nets over when the user is ready.
-  const changeSchematic = (next: FullSchematic) => updateProject((p) => ({ ...p, schematic: next }))
-
-  const updatePcb = () => {
-    rememberEdit()
-    updateProject(withSchematicNets)
-  }
+  const updatePcb = () => commitEdit(withSchematicNets)
 
   // Ground and power symbols turn and flip like parts do.
   const labelsToTurn = selectedWiring(selection).labels
@@ -698,15 +533,13 @@ export function App() {
   const rotateSelected = (degrees: number, pane: Pane) => {
     if (pane === 'schematic') {
       if (!canTurnSchematic) return
-      rememberEdit()
       // Symbols only turn in quarter turns, so their pins stay on the grid.
       const quarterTurns = Math.max(1, Math.round(degrees / 90)) * 90
-      changeSchematic(
-        turnedSchematic(
-          (p) => ({ ...p, rotation: (p.rotation + quarterTurns) % 360 }),
-          (rotation) => (rotation + quarterTurns) % 360,
-        ),
+      const turned = turnedSchematic(
+        (p) => ({ ...p, rotation: (p.rotation + quarterTurns) % 360 }),
+        (rotation) => (rotation + quarterTurns) % 360,
       )
+      commitEdit(schematicUpdate(turned))
       return
     }
     editPlacements(refsToEdit, (p) => ({ ...p, rotation: (p.rotation + degrees) % 360 }))
@@ -715,15 +548,14 @@ export function App() {
   /** Mirrors each selected symbol in place; wires and labels on its pins go along. */
   const flipSelected = (axis: 'horizontal' | 'vertical') => {
     if (!canTurnSchematic) return
-    rememberEdit()
     // A ground or power symbol is symmetric, so mirroring it only changes which way it points.
     const turn = axis === 'horizontal' ? 360 : 540
-    changeSchematic(turnedSchematic((p) => flipped(p, axis), (rotation) => (turn - rotation) % 360))
+    commitEdit(schematicUpdate(turnedSchematic((p) => flipped(p, axis), (rotation) => (turn - rotation) % 360)))
   }
 
   const changeLabel = (index: number, changes: Partial<NetLabel>) => {
-    rememberEdit()
-    changeSchematic({ ...fullSchematic, labels: fullSchematic.labels.map((l, i) => (i === index ? { ...l, ...changes } : l)) })
+    const labels = fullSchematic.labels.map((l, i) => (i === index ? { ...l, ...changes } : l))
+    commitEdit(schematicUpdate({ ...fullSchematic, labels }))
   }
 
   const resetLeads = () => editPlacements(refsToEdit, (p) => ({ ...p, leads: undefined }))
@@ -732,10 +564,8 @@ export function App() {
     editPlacements([ref], (p) => ({ ...p, ...changes }))
 
   /** Fills in or corrects a value, e.g. a transistor type the netlist left out. */
-  const changeValue = (ref: string, value: string) => {
-    rememberEdit()
-    updateProject((p) => ({ ...p, netlist: withValues(p.netlist, [{ ref, value }]) }))
-  }
+  const changeValue = (ref: string, value: string) =>
+    commitEdit((p) => ({ ...p, netlist: withValues(p.netlist, [{ ref, value }]) }))
 
   const selectAll = () => {
     const wiring = { wires: fullSchematic.wires.map((_, i) => i), labels: fullSchematic.labels.map((_, i) => i), points: [] }
@@ -747,20 +577,20 @@ export function App() {
 
   const removeRect = () => {
     if (selection?.kind !== 'island' || !canRemoveRect) return
-    rememberEdit()
-    setLayout((l) => ({
-      ...l,
-      islands: l.islands.map((i) =>
-        i.net === selection.net ? { ...i, rects: i.rects.filter((_, k) => k !== selection.rectIndex) } : i,
-      ),
-    }))
+    commitEdit(
+      layoutUpdate((l) => ({
+        ...l,
+        islands: l.islands.map((i) =>
+          i.net === selection.net ? { ...i, rects: i.rects.filter((_, k) => k !== selection.rectIndex) } : i,
+        ),
+      })),
+    )
     setSelection({ ...selection, rectIndex: 0 })
   }
 
   const resetToGrid = async () => {
     if (!(await confirm('Reset to grid', 'Discard all manual placement and put everything back on a grid? This can be undone.', 'Reset'))) return
-    rememberEdit()
-    updateProject((p) => {
+    commitEdit((p) => {
       const grid = createLayout(buildProjectNetlist(p))
       return { ...p, layout: keepFootprintChoices(grid, p.layout) }
     })
@@ -770,10 +600,8 @@ export function App() {
 
   const openFootprintDialog = () => setFootprintDialogRefs(selectedRefs(selection))
 
-  const applyFootprint = (refs: ReadonlySet<string>, footprint: string | undefined) => {
-    rememberEdit()
-    setLayout((l) => changeFootprints(netlist, l, refs, footprint))
-  }
+  const applyFootprint = (refs: ReadonlySet<string>, footprint: string | undefined) =>
+    commitEdit(layoutUpdate((l) => changeFootprints(netlist, l, refs, footprint)))
 
   const editMode: EditMode = settings.strategy === 'knife' ? 'polygons' : 'rects'
 
@@ -787,8 +615,7 @@ export function App() {
       setError(errorText(e))
       return
     }
-    rememberEdit()
-    updateProject((p) => ({ ...p, layout: keepFootprintChoices(optimized, p.layout) }))
+    commitEdit(layoutUpdate((l) => keepFootprintChoices(optimized, l)))
     setSelection(null)
     refit()
   }
@@ -1151,8 +978,8 @@ export function App() {
                     netlist={schematicNetlist}
                     schematic={fullSchematic}
                     nets={schematicNets}
-                    onChange={changeSchematic}
-                    onBeginEdit={rememberEdit}
+                    onChange={updateSchematic}
+                    onBeginEdit={beginEdit}
                     selection={selection}
                     onSelect={setSelection}
                     tool={schematicTool}
@@ -1222,8 +1049,8 @@ export function App() {
                   <Canvas
                     netlist={builtNetlist}
                     layout={layout}
-                    onLayoutChange={setLayout}
-                    onBeginEdit={rememberEdit}
+                    onLayoutChange={updateLayout}
+                    onBeginEdit={beginEdit}
                     selection={selection}
                     onSelect={setSelection}
                     snap={settings.snap}

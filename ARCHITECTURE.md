@@ -43,7 +43,8 @@ Rules that follow from the table:
 
 ## Data flow
 
-- `App` holds the shown project in React state; every change goes through it, so it can be undone.
+- `ui/useTabs` holds the open tabs and the shown project in React state; every change goes through
+  it, so it can be undone: an action as one `commitEdit`, a drag as one `beginEdit` and its updates.
   `documents` writes a recovery copy of each change to IndexedDB and tells other browser tabs.
 - A part's drawn geometry and symbol come from `model/definitions.ts` (`buildNetlist`); the
   stored netlist never holds them.
