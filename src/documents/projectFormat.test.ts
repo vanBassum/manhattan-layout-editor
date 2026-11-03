@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import example from '../examples/Astable multivibrator.manhattan.json?raw'
+import example from '../examples/Astable multivibrator.json?raw'
 import { projectFileName, projectFromFile, projectNameOf, projectToFile, readSavedProject } from './projectFormat'
 
 describe('projectFromFile', () => {
@@ -19,8 +19,8 @@ describe('readSavedProject', () => {
 
 describe('project file names', () => {
   it('turn a name into a file name and back', () => {
-    expect(projectFileName('amp')).toBe('amp.manhattan.json')
+    expect(projectFileName('amp')).toBe('amp.json')
     expect(projectNameOf(projectFileName('amp'))).toBe('amp')
-    expect(projectNameOf('amp.json')).toBe('amp')
+    expect(projectNameOf('amp.manhattan.json')).toBe('amp')
   })
 })

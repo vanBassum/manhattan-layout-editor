@@ -70,10 +70,10 @@ export function readSavedProject(text: string): { project: Project | null; conte
   }
 }
 
-/** "amp" → "amp.manhattan.json". */
-export const projectFileName = (name: string) => `${name}.manhattan.json`
+/** "amp" → "amp.json". A project file is plain JSON; its "format" field says it is a project. */
+export const projectFileName = (name: string) => `${name}.json`
 
-/** "amp.manhattan.json" → "amp"; also takes a plain "amp.json". */
+/** "amp.json" → "amp"; also takes "amp.manhattan.json", as files were named until November 2026. */
 export const projectNameOf = (fileName: string) => fileName.replace(/(\.manhattan)?\.json$/i, '')
 
 /** Files that may hold a project, as offered for opening. */

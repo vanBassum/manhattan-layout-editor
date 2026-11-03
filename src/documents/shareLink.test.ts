@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import example from '../examples/Astable multivibrator.manhattan.json?raw'
+import example from '../examples/Astable multivibrator.json?raw'
 import { projectFromFile } from './projectFormat'
 import { shareLinkOf, takeSharedProject } from './shareLink'
 

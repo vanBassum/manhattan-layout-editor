@@ -1,6 +1,6 @@
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import example from '../examples/Astable multivibrator.manhattan.json?raw'
+import example from '../examples/Astable multivibrator.json?raw'
 import { emptyProject, projectFromFile } from './projectFormat'
 
 // projectStore keeps its state in the module, so each test loads a fresh copy on a fresh database.

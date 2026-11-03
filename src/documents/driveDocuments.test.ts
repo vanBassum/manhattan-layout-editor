@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import example from '../examples/Astable multivibrator.manhattan.json?raw'
+import example from '../examples/Astable multivibrator.json?raw'
 import { compareWithDrive, overwriteDriveDocument, saveDriveDocument, type DriveLocation } from './driveDocuments'
 import { fileVersion, readFile, writeFile } from './googleDrive'
 import { projectFromFile, projectToFile } from './projectFormat'
@@ -26,7 +26,7 @@ function driveHolds(version: string, text: string) {
 
 beforeEach(() => {
   vi.resetAllMocks()
-  vi.mocked(writeFile).mockResolvedValue({ id: 'doc', version: '4', name: 'amp.manhattan.json', mimeType: 'application/json', modifiedTime: '' })
+  vi.mocked(writeFile).mockResolvedValue({ id: 'doc', version: '4', name: 'amp.json', mimeType: 'application/json', modifiedTime: '' })
 })
 
 describe('saveDriveDocument', () => {

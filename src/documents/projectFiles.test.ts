@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import example from '../examples/Astable multivibrator.manhattan.json?raw'
+import example from '../examples/Astable multivibrator.json?raw'
 import { compareSaved, compareWithFile, saveToFile } from './projectFiles'
 import { projectFromFile, projectToFile, readSavedProject } from './projectFormat'
 import type { ProjectFile } from './projectStore'
@@ -7,7 +7,7 @@ import type { ProjectFile } from './projectStore'
 /** A file with permission already granted; `written` collects what the editor writes to it. */
 function fakeFile(content: string) {
   const file = {
-    name: 'amp.manhattan.json',
+    name: 'amp.json',
     content,
     written: [] as string[],
     getFile: async () => ({ text: async () => file.content }),
@@ -44,7 +44,7 @@ describe('saveToFile', () => {
       asked.push(name)
       return false
     })
-    expect(asked).toEqual(['amp.manhattan.json'])
+    expect(asked).toEqual(['amp.json'])
     expect(written).toBe(false)
     expect(file.written).toEqual([])
   })

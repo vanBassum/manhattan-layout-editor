@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import example from '../examples/Astable multivibrator.manhattan.json?raw'
+import example from '../examples/Astable multivibrator.json?raw'
 import { projectFromFile } from '../documents/projectFormat'
 import { buildProjectNetlist } from './definitions'
 import {

@@ -3,8 +3,8 @@
 import type { Project } from '../model/types'
 import { projectFromFile, projectNameOf } from './projectFormat'
 
-const EXAMPLE_FILES = import.meta.glob<string>('../examples/*.manhattan.json', { query: '?raw', import: 'default', eager: true })
-const FIRST_VISIT_EXAMPLE = '../examples/Astable multivibrator.manhattan.json'
+const EXAMPLE_FILES = import.meta.glob<string>('../examples/*.json', { query: '?raw', import: 'default', eager: true })
+const FIRST_VISIT_EXAMPLE = '../examples/Astable multivibrator.json'
 
 export interface Example {
   name: string

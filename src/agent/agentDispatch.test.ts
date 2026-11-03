@@ -3,7 +3,7 @@ import server from '../../mcp/server.mjs?raw'
 import llms from '../../public/llms.txt?raw'
 import { BATCH_COMMANDS } from './agentCommands'
 import { AGENT_COMMANDS, agentTargetId, runAgentCommand, type AgentEditor, type AgentTab } from './agentDispatch'
-import example from '../examples/Astable multivibrator.manhattan.json?raw'
+import example from '../examples/Astable multivibrator.json?raw'
 import { STRATEGIES } from '../optimize'
 import { emptyProject, projectFromFile } from '../documents/projectFormat'
 
