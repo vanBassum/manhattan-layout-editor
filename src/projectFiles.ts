@@ -137,4 +137,5 @@ export async function compareWithFile(handle: FileSystemFileHandle, file: Projec
 }
 
 /** "amp.manhattan.json" → "amp". */
-export const fileLabel = (handle: FileSystemFileHandle) => handle.name.replace(/(\.manhattan)?\.json$/i, '')
+export const projectNameOf = (fileName: string) => fileName.replace(/(\.manhattan)?\.json$/i, '')
+export const fileLabel = (handle: FileSystemFileHandle) => projectNameOf(handle.name)

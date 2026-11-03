@@ -3,11 +3,11 @@ import { connectAgentBridge } from './agentBridge'
 import { buildNetlist, buildProjectNetlist, withDefinitions } from './definitions'
 import { agentTargetId, runAgentCommand } from './agentDispatch'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
-import { compareWithDrive, openDriveDocument, saveDriveDocument, saveInDriveFolder, type DriveLocation } from './driveDocuments'
+import { compareWithDrive, openDriveDocument, replaceDriveFile, saveDriveDocument, saveInDriveFolder, type DriveLocation } from './driveDocuments'
 import { exportDxf } from './exportDxf'
 import { driveConfigured, isSignedIn, onSignInChange, signIn, signOut, SignInNeeded } from './googleDrive'
 import { OpenDialog, SaveAsDialog, type SaveChoice } from './FileDialogs'
-import { pickDriveFile, pickDriveFolder } from './googlePicker'
+import { isPickedFolder, pickDriveFile, pickDriveSaveTarget } from './googlePicker'
 import { errorText } from './errorText'
 import { downloadText, exportSvg } from './exportSvg'
 import { FootprintDialog } from './FootprintDialog'
@@ -42,7 +42,7 @@ import {
   Validation,
   type Question,
 } from './panels'
-import { canUseFiles, compareWithFile, fileLabel, mayUse, pickFileToOpen, readFile, saveLocalFile, type FileComparison } from './projectFiles'
+import { canUseFiles, compareWithFile, fileLabel, mayUse, pickFileToOpen, projectNameOf, readFile, saveLocalFile, type FileComparison } from './projectFiles'
 import {
   acceptSavedContent,
   addProject,
@@ -568,13 +568,19 @@ export function App() {
     return handle && { kind: 'local', handle }
   }
 
-  /** Saves `project` in a Google Drive folder picked in Google's picker. */
+  /** Saves `project` in a Google Drive folder, or over a project, picked in Google's picker. */
   const saveToNewDriveDocument = async (project: Project): Promise<{ project: Project; location: ProjectLocation } | null> => {
     if (!isSignedIn() && !(await signInToGoogle())) return null
-    const folder = await pickDriveFolder()
-    if (!folder) return null
-    const location = await saveInDriveFolder(project, folder.id, confirmOverwrite)
-    return location && { project, location }
+    const picked = await pickDriveSaveTarget()
+    if (!picked) return null
+    if (isPickedFolder(picked)) {
+      const location = await saveInDriveFolder(project, picked.id, confirmOverwrite)
+      return location && { project, location }
+    }
+    // A project picked to save over: it keeps its file name, and the project takes that name.
+    const named = { ...project, name: projectNameOf(picked.name) }
+    if (!(await confirmOverwrite(named.name))) return null
+    return { project: named, location: await replaceDriveFile(named, picked.id, picked.name) }
   }
 
   /** Saves `project` to a file picked in the computer's own save dialog; the file's name becomes the project's. */

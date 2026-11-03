@@ -9,7 +9,10 @@ const FOLDER_TYPE = 'application/vnd.google-apps.folder'
 export interface PickedDocument {
   id: string
   name: string
+  mimeType: string
 }
+
+export const isPickedFolder = (picked: PickedDocument) => picked.mimeType === FOLDER_TYPE
 
 interface PickerResponse {
   action: string
@@ -88,10 +91,15 @@ async function pick(title: string, makeView: (api: PickerApi) => DocsView): Prom
 // The views start at My Drive. Starting in another folder (setParent) would lock the user in there:
 // the picker offers no way up.
 
-/** A folder anywhere in the user's Drive, or null when cancelled. */
-export const pickDriveFolder = () =>
-  pick('Choose the folder to save in', (api) =>
-    new api.DocsView(api.ViewId.DOCS).setIncludeFolders(true).setSelectFolderEnabled(true).setMimeTypes(FOLDER_TYPE).setMode(api.DocsViewMode.LIST),
+/** A folder to save in, or a project file to save over, anywhere in the user's Drive; null when cancelled. */
+// Projects show too, as in the computer's own save dialog: picking one saves over it.
+export const pickDriveSaveTarget = () =>
+  pick('Choose a folder, or a project to replace', (api) =>
+    new api.DocsView(api.ViewId.DOCS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+      .setMimeTypes(`${FOLDER_TYPE},application/json`)
+      .setMode(api.DocsViewMode.LIST),
   )
 
 /** A project file anywhere in the user's Drive, or null when cancelled. */
