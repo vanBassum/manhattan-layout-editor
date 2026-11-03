@@ -15,6 +15,7 @@ import {
   setIsland,
   setLeadEnd,
   stringArg,
+  type Args,
 } from './agentCommands'
 import { buildNetlist, builtProject, checkedDefinition, withAssignedDefinition } from '../model/definitions'
 import { chooseResistors, keepFootprintChoices } from '../model/layout'
@@ -34,8 +35,6 @@ import {
 } from '../model/schematic'
 import type { BuiltProject, Layout, Netlist, Project, Rect } from '../model/types'
 import { snapshotOf, type Snapshot } from '../model/undoHistory'
-
-type Args = Record<string, unknown>
 
 /** What every edit returns: the problems left in the PCB. */
 const projectProblems = (project: Project) => ({ problems: findProblems(builtProject(project)) })

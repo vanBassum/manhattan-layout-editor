@@ -108,7 +108,7 @@ export function describeProject(project: BuiltProject) {
 
 // ---------- Edits ----------
 
-type Args = Record<string, unknown>
+export type Args = Record<string, unknown>
 
 export function stringArg(args: Args, name: string): string {
   const value = args[name]
