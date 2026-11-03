@@ -1,5 +1,5 @@
 import type { ProjectFile } from '../documents/projectStore'
-import { Icon } from '../panels'
+import { Icon } from './icons'
 import type { FileConflict } from './useDocuments'
 
 interface CanvasBannersProps {

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Icon } from './panels'
-import { useDropdown } from './ui/useDropdown'
+import { Icon } from './icons'
+import { useDropdown } from './useDropdown'
 
 export interface TabInfo {
   id: string

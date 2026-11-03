@@ -1,5 +1,6 @@
 import { findStrategy, STRATEGIES } from '../optimize'
-import { Icon, Section } from '../panels'
+import { Icon } from './icons'
+import { Section } from './panels'
 import type { Rect, Settings } from '../types'
 
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]

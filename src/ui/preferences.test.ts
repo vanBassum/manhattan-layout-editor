@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ALL_LAYERS, parseGridLinesPerMajor, parseLayerView, parseLayerViews, parseTheme, parseView } from './preferences'
+import { ALL_LAYERS } from './layers'
+import { parseGridLinesPerMajor, parseLayerView, parseLayerViews, parseTheme, parseView } from './preferences'
 
 afterEach(() => vi.unstubAllGlobals())
 

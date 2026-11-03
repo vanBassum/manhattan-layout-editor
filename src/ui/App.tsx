@@ -1,36 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { connectAgentBridge } from './agentBridge'
-import { buildNetlist, buildProjectNetlist, importedProject, reimportedProject } from './definitions'
-import { runAgentCommand, type AgentTab } from './agentDispatch'
-import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type MoveMode, type Tool } from './Canvas'
-import { exportDxf } from './exportDxf'
-import { FileDialog } from './FileDialogs'
-import { errorText } from './errorText'
-import { downloadText, exportSvg } from './exportSvg'
+import { connectAgentBridge } from '../agentBridge'
+import { buildNetlist, buildProjectNetlist, importedProject, reimportedProject } from '../definitions'
+import { runAgentCommand, type AgentTab } from '../agentDispatch'
+import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type MoveMode, type Tool } from '../Canvas'
+import { exportDxf } from '../exportDxf'
+import { FileDialog } from './FileDialog'
+import { errorText } from '../errorText'
+import { downloadText, exportSvg } from '../exportSvg'
 import { FootprintDialog } from './FootprintDialog'
-import { boundsOf } from './geometry'
-import { changeFootprints, createLayout, findPinIssues, findSpacingViolations, findSplitNets, keepFootprintChoices } from './layout'
-import { withValues } from './netlist'
-import { findStrategy } from './optimize'
-import {
-  AiHelpDialog,
-  ComponentList,
-  HelpDialog,
-  Icon,
-  PartProperties,
-  QuestionDialog,
-  SchematicCheck,
-  Section,
-  SelectionDetails,
-  Validation,
-  type Question,
-} from './panels'
-import { DEFAULT_SETTINGS } from './documents/projectFormat'
-import { projectFile, recentDocuments, restoreErrors } from './documents/projectStore'
-import { canvasToPng } from './screenshot'
-import { shareLinkOf, takeSharedProject } from './documents/shareLink'
-import { selectedRefs, selectedWiring, selectionOf } from './selection'
-import { screenshotHidden } from './hiddenScreenshot'
+import { boundsOf } from '../geometry'
+import { changeFootprints, createLayout, findPinIssues, findSpacingViolations, findSplitNets, keepFootprintChoices } from '../layout'
+import { withValues } from '../netlist'
+import { findStrategy } from '../optimize'
+import { AiHelpDialog, HelpDialog, QuestionDialog, type Question } from './dialogs'
+import { Icon } from './icons'
+import { ComponentList, PartProperties, SchematicCheck, Section, SelectionDetails, Validation } from './panels'
+import { DEFAULT_SETTINGS } from '../documents/projectFormat'
+import { projectFile, recentDocuments, restoreErrors } from '../documents/projectStore'
+import { canvasToPng } from '../screenshot'
+import { shareLinkOf, takeSharedProject } from '../documents/shareLink'
+import { selectedRefs, selectedWiring, selectionOf } from '../selection'
+import { screenshotHidden } from '../hiddenScreenshot'
 import {
   completeSchematic,
   deriveNets,
@@ -41,18 +31,17 @@ import {
   withLabelChanged,
   withSchematicNets,
   type FullSchematic,
-} from './schematic'
-import { SchematicView, type SchematicTool } from './SchematicView'
-import type { Layout, NetLabel, Placement, Project, Selection, Settings } from './types'
+} from '../schematic'
+import { SchematicView, type SchematicTool } from '../SchematicView'
+import type { Layout, NetLabel, Placement, Project, Selection, Settings } from '../types'
 import { ProjectTabs } from './ProjectTabs'
-import { AppMenu } from './ui/AppMenu'
-import { CanvasBanners } from './ui/CanvasBanners'
-import { PcbSettings } from './ui/PcbSettings'
-import { PcbToolRail } from './ui/PcbToolRail'
+import { AppMenu } from './AppMenu'
+import { CanvasBanners } from './CanvasBanners'
+import { ALL_LAYERS, DEFAULT_SCHEMATIC_LAYERS } from './layers'
+import { PcbSettings } from './PcbSettings'
+import { PcbToolRail } from './PcbToolRail'
 import {
-  ALL_LAYERS,
   DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR,
-  DEFAULT_SCHEMATIC_LAYERS,
   LAYERS_KEY,
   parseGridLinesPerMajor,
   parseLayerViews,
@@ -65,11 +54,11 @@ import {
   usePreference,
   VIEW_KEY,
   type ViewMode,
-} from './ui/preferences'
-import { SchematicToolRail } from './ui/SchematicToolRail'
-import { useShortcuts } from './ui/shortcuts'
-import { useDocuments } from './ui/useDocuments'
-import { useTabs, type UndoDirection } from './ui/useTabs'
+} from './preferences'
+import { SchematicToolRail } from './SchematicToolRail'
+import { useShortcuts } from './shortcuts'
+import { useDocuments } from './useDocuments'
+import { useTabs, type UndoDirection } from './useTabs'
 
 type Pane = 'schematic' | 'layout'
 

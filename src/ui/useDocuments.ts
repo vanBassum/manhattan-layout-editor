@@ -22,7 +22,7 @@ import {
 } from '../documents/projectStore'
 import { errorText } from '../errorText'
 import { downloadText } from '../exportSvg'
-import type { SaveChoice } from '../FileDialogs'
+import type { SaveChoice } from './FileDialog'
 import type { Project } from '../types'
 import type { TabSession } from './useTabs'
 

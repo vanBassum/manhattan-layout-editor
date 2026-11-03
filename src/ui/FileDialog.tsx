@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { errorText } from './errorText'
-import { driveConfigured, isFolder, listFolder, projectsFolder, SAVE_FOLDER_NAME, SignInNeeded, type DriveItem } from './documents/googleDrive'
-import { pickDriveFile, pickDriveFolder } from './documents/googlePicker'
-import { isProjectFileName, projectNameOf } from './documents/projectFormat'
-import type { RecentDocument } from './documents/projectStore'
-import { Icon } from './panels'
+import { errorText } from '../errorText'
+import { driveConfigured, isFolder, listFolder, projectsFolder, SAVE_FOLDER_NAME, SignInNeeded, type DriveItem } from '../documents/googleDrive'
+import { pickDriveFile, pickDriveFolder } from '../documents/googlePicker'
+import { isProjectFileName, projectNameOf } from '../documents/projectFormat'
+import type { RecentDocument } from '../documents/projectStore'
+import { Icon } from './icons'
 
 /** Where Save puts the project: through the computer's own save dialog, or in a Google Drive folder. */
 export type SaveChoice = { place: 'local'; name: string } | { place: 'drive'; name: string; folderId: string }

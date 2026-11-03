@@ -1,12 +1,11 @@
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type Layers } from './Canvas'
+import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR } from './Canvas'
 import { findProblemNets } from './layout'
 import { canvasToPng } from './screenshot'
 import type { BuiltNetlist, Layout, Rect } from './types'
+import { ALL_LAYERS } from './ui/layers'
 
-const SHOWN = { visible: true, opacity: 1 }
-const ALL_LAYERS: Layers = { islands: SHOWN, parts: SHOWN, references: SHOWN, values: SHOWN, netLabels: SHOWN, leads: SHOWN, grid: SHOWN }
 const ignore = () => {}
 
 /**

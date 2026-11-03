@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useState } from 'react'
 import type { RefObject } from 'react'
-import type { Rect } from './types'
+import type { Rect } from '../types'
 
 // Pan, zoom, grid and rulers shared by the layout canvas and the schematic view.
 

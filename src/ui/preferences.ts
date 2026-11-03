@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import type { Layers, LayerView } from '../Canvas'
-import { GRID_LINES_PER_MAJOR_OPTIONS } from '../panels'
-import type { SchematicLayers } from '../SchematicView'
+import { SHOWN, type LayerView } from './layers'
+import { GRID_LINES_PER_MAJOR_OPTIONS } from './panels'
 
 /** Which views are shown: one of them, or both side by side. */
 export type ViewMode = 'schematic' | 'split' | 'layout'
@@ -16,18 +15,6 @@ export const THEME_KEY = 'manhattan-layout-editor/theme'
 export const VIEW_KEY = 'manhattan-layout-editor/view'
 
 export const DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR = 6
-
-const SHOWN: LayerView = { visible: true, opacity: 1 }
-export const ALL_LAYERS: Layers = { islands: SHOWN, parts: SHOWN, references: SHOWN, values: SHOWN, netLabels: SHOWN, leads: SHOWN, grid: SHOWN }
-
-/** Net names are off until asked for: the wires already show what connects, the names only add clutter. */
-export const DEFAULT_SCHEMATIC_LAYERS: SchematicLayers = {
-  grid: SHOWN,
-  references: SHOWN,
-  values: SHOWN,
-  pinNumbers: SHOWN,
-  netNames: { visible: false, opacity: 1 },
-}
 
 // Storage can be disabled (private window, blocked site data); preferences then last one session.
 function readPreference(key: string): string | null {

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from './geometry'
 import { analyzeLeads, bodyBounds, toLocal, toWorld as toWorldPoint, type PinStatus } from './layout'
 import { findCuts, MIN_RECT_SIZE, moveCut, type Cut } from './cuts'
 import { islandEdges, moveIslandEdge, type IslandEdge } from './raster'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
 import type { BuiltNetlist, Geometry, Island, Layout, Placement, Point, Rect, Selection } from './types'
-import { gridPitch, gridPitches, Rulers, useViewport, ViewportGrid, type View } from './viewport'
+import { layerClasses, layerOpacities, type Layers } from './ui/layers'
+import { gridPitch, gridPitches, Rulers, useViewport, ViewportGrid, type View } from './ui/viewport'
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 type Side = 'left' | 'right' | 'top' | 'bottom'
@@ -60,36 +61,9 @@ const PIN_COLORS: Record<PinStatus, string> = {
   unused: '#888888',
 }
 
-export interface LayerView {
-  visible: boolean
-  /** 0..1 */
-  opacity: number
-}
-
-export type LayerName = 'islands' | 'parts' | 'references' | 'values' | 'netLabels' | 'leads' | 'grid'
-
-/** View-only settings; hidden layers stay in the DOM so the agent screenshot can still show them. */
-export type Layers = Record<LayerName, LayerView>
-
-/** Below this opacity a layer ignores clicks, so you can work on what lies underneath it. */
-const CLICKABLE_OPACITY = 0.5
-
-function layerClasses(layers: Layers): string {
-  const classes = Object.entries(layers).flatMap(([layer, view]) => {
-    if (!view.visible) return [`hide-${layer}`]
-    return view.opacity < CLICKABLE_OPACITY ? [`dim-${layer}`] : []
-  })
-  return ['canvas', ...classes].join(' ')
-}
-
 /** The finest grid pitch in mm. */
 const FINE_GRID_MM = 1
 export const DEFAULT_PCB_GRID_LINES_PER_MAJOR = 5
-
-/** CSS variables --opacity-<layer>, read by the stylesheet. */
-export function layerOpacities(layers: Record<string, LayerView>): CSSProperties {
-  return Object.fromEntries(Object.entries(layers).map(([layer, view]) => [`--opacity-${layer}`, view.opacity]))
-}
 
 interface Props {
   netlist: BuiltNetlist
@@ -587,7 +561,7 @@ export function Canvas(props: Props) {
   return (
     <svg
       ref={svgRef}
-      className={tool === 'pan' ? `${layerClasses(layers)} tool-pan` : layerClasses(layers)}
+      className={['canvas', ...layerClasses(layers, { dimFaint: true }), tool === 'pan' && 'tool-pan'].filter(Boolean).join(' ')}
       style={layerOpacities(layers)}
       onPointerDown={onBackgroundPointerDown}
       onPointerMove={onPointerMove}

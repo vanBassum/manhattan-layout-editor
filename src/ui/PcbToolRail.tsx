@@ -1,5 +1,7 @@
-import type { Layers, MoveMode, Tool } from '../Canvas'
-import { GridSettings, Icon, LayerToggles, PCB_LAYERS, RailMenu } from '../panels'
+import type { MoveMode, Tool } from '../Canvas'
+import { Icon } from './icons'
+import { PCB_LAYERS, type Layers } from './layers'
+import { GridSettings, LayerToggles, RailMenu } from './panels'
 
 interface PcbToolRailProps {
   tool: Tool

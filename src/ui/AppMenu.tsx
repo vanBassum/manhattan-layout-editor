@@ -1,9 +1,26 @@
+import type { ReactNode } from 'react'
 import { EXAMPLES } from '../documents/examples'
 import { driveConfigured, signOut } from '../documents/googleDrive'
-import { Icon, MenuGroup } from '../panels'
 import type { Project } from '../types'
+import { Icon, type IconName } from './icons'
 import type { Theme } from './preferences'
 import { useDropdown } from './useDropdown'
+
+/** A submenu of the main menu. It opens on hover, or on a click (keyboard, touch), which must not close the menu. */
+function MenuGroup({ icon, label, children }: { icon: IconName; label: string; children: ReactNode }) {
+  return (
+    <div className="submenu">
+      <button aria-haspopup="menu" onClick={(e) => e.stopPropagation()}>
+        <Icon name={icon} />
+        {label}
+        <Icon name="chevronRight" />
+      </button>
+      <div className="menu-list submenu-list" role="menu">
+        {children}
+      </div>
+    </div>
+  )
+}
 
 interface AppMenuProps {
   agentConnected: boolean

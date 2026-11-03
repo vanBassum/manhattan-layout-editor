@@ -1,5 +1,7 @@
-import { GridSettings, Icon, LayerToggles, RailMenu, SCHEMATIC_LAYERS, type IconName } from '../panels'
-import type { SchematicLayers, SchematicTool } from '../SchematicView'
+import type { SchematicTool } from '../SchematicView'
+import { Icon, type IconName } from './icons'
+import { SCHEMATIC_LAYERS, type SchematicLayers } from './layers'
+import { GridSettings, LayerToggles, RailMenu } from './panels'
 
 const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title: string }[] = [
   {

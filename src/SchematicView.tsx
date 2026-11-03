@@ -32,23 +32,14 @@ import {
   type SchematicItem,
 } from './selection'
 import type { BuiltComponent, BuiltNetlist, NetLabel, Point, Rect, SchematicPlacement, Selection, Wire, WiringSelection } from './types'
-import { gridPitch, gridPitches, useViewport, ViewportGrid, type View } from './viewport'
-import { layerOpacities, type LayerView } from './Canvas'
+import { layerClasses, layerOpacities, type SchematicLayers } from './ui/layers'
+import { gridPitch, gridPitches, useViewport, ViewportGrid, type View } from './ui/viewport'
 
 /**
  * Select: drag parts; drag from a pin end to draw a wire; drag a wire end to move it, or a wire
  * sideways to shift it. Wire: drag for one wire, or click corner by corner. Label: click to name a point.
  */
 export type SchematicTool = 'select' | 'wire' | 'label'
-
-export type SchematicLayer = 'grid' | 'references' | 'values' | 'pinNumbers' | 'netNames'
-
-/** View-only: which parts of the drawing are shown, and how strongly. A per-browser preference, not part of the project. */
-export type SchematicLayers = Record<SchematicLayer, LayerView>
-
-const hiddenLayerClasses = (layers: SchematicLayers) =>
-  (Object.keys(layers) as SchematicLayer[]).filter((layer) => !layers[layer].visible).map((layer) => ` hide-${layer}`).join('')
-
 
 /** A press that moves less than this (screen pixels) is a click, not a drag. */
 const CLICK_TOLERANCE_PX = 3
@@ -725,7 +716,7 @@ export function SchematicView({
     <div className="schematic-view">
       <svg
         ref={svgRef}
-        className={`schematic tool-${tool}${overPoint || draft ? ' over-point' : ''}${hiddenLayerClasses(layers)}`}
+        className={['schematic', `tool-${tool}`, (overPoint || draft) && 'over-point', ...layerClasses(layers, { dimFaint: false })].filter(Boolean).join(' ')}
         style={layerOpacities(layers)}
         onPointerDownCapture={onPointerDownCapture}
         onPointerDown={onBackgroundPointerDown}

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { BodyShape } from './Canvas'
-import { buildNetlist } from './definitions'
-import { FOOTPRINT_LIBRARY, type FootprintCategory, type LibraryFootprint } from './footprints'
-import { boundsOf } from './geometry'
-import { defaultLeadEnds } from './layout'
-import { Icon } from './panels'
-import type { BuiltComponent, BuiltNetlist, NetComponent, Netlist, Point, Project, Rect } from './types'
+import { BodyShape } from '../Canvas'
+import { buildNetlist } from '../definitions'
+import { FOOTPRINT_LIBRARY, type FootprintCategory, type LibraryFootprint } from '../footprints'
+import { boundsOf } from '../geometry'
+import { defaultLeadEnds } from '../layout'
+import type { BuiltComponent, BuiltNetlist, NetComponent, Netlist, Point, Project, Rect } from '../types'
+import { Icon } from './icons'
 
 /** A library footprint, or each part's own footprint from the netlist. */
 type Choice = LibraryFootprint | 'netlist'
@@ -18,6 +18,14 @@ interface FootprintGroup {
 /** The part as the editor would build it with `footprint`: from its definition where that has the footprint. */
 const builtWith = (part: NetComponent, footprint: string, definitions: Project['definitions']): BuiltComponent =>
   buildNetlist({ components: [{ ...part, footprint }], nets: [] }, [], definitions).components[0]
+
+/** Each library footprint drawn on a stand-in part, for the cards. */
+const LIBRARY_PREVIEWS = new Map(
+  FOOTPRINT_LIBRARY.map((f) => {
+    const pins = Array.from({ length: f.pins }, (_, k) => ({ number: String(k + 1), net: '' }))
+    return [f.id, builtWith({ ref: 'X1', value: '', footprint: '', pins }, f.id, undefined)]
+  }),
+)
 
 const CATEGORY_TABS: ('All' | FootprintCategory)[] = ['All', 'Resistors', 'Capacitors', 'Transistors', 'Diodes']
 const COPPER = '#d9945a'
@@ -151,10 +159,9 @@ export function FootprintDialog({ built, imported, definitions, initialRefs, iso
   const checkedGroups = groups.filter((g) => g.parts.some((c) => checked.has(c.ref)))
   const pinCounts = new Set(checkedParts.map((c) => c.pins.length))
   const importedByRef = new Map(imported.components.map((c) => [c.ref, c]))
-  const netlistFootprints = new Map(imported.components.map((c) => [c.ref, c.footprint]))
 
   const targetOf = (part: NetComponent, target: Choice) =>
-    target === 'netlist' ? netlistFootprints.get(part.ref) ?? part.footprint : target.id
+    target === 'netlist' ? importedByRef.get(part.ref)?.footprint ?? part.footprint : target.id
   // Going back to the netlist footprint always fits, whatever the pin counts.
   const choiceFits = choice === 'netlist' || (choice !== null && unavailableReason(choice, pinCounts) === undefined)
   const changing = choice && choiceFits ? checkedParts.filter((c) => targetOf(c, choice) !== c.footprint) : []
@@ -297,14 +304,7 @@ export function FootprintDialog({ built, imported, definitions, initialRefs, iso
                   aria-pressed={chosen}
                   title={f.id}
                 >
-                  <FootprintDrawing
-                    className="card-preview"
-                    component={builtWith(
-                      { ref: 'X1', value: '', footprint: '', pins: Array.from({ length: f.pins }, (_, k) => ({ number: String(k + 1), net: '' })) },
-                      f.id,
-                      undefined,
-                    )}
-                  />
+                  <FootprintDrawing className="card-preview" component={LIBRARY_PREVIEWS.get(f.id)!} />
                   <span className="card-label">{f.label}</span>
                   <span className="card-description">{reason ?? f.description}</span>
                 </button>
