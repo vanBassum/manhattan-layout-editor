@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import example from '../examples/Astable multivibrator.manhattan.json?raw'
-import { compareWithDrive, saveDriveDocument, type DriveLocation } from './driveDocuments'
+import { compareWithDrive, overwriteDriveDocument, saveDriveDocument, type DriveLocation } from './driveDocuments'
 import { fileVersion, readFile, writeFile } from './googleDrive'
 import { projectFromFile, projectToFile } from './projectFormat'
 import type { ProjectFile } from './projectStore'
@@ -17,9 +17,6 @@ const project = projectFromFile(example)
 const saved = projectToFile(project)
 const changed = { ...project, settings: { ...project.settings, snap: 1 } }
 const location: DriveLocation = { kind: 'drive', fileId: 'doc', version: '3' }
-const neverAsked = async () => {
-  throw new Error('should not ask')
-}
 
 /** The document in Drive is at `version` and holds `text`. */
 function driveHolds(version: string, text: string) {
@@ -33,34 +30,41 @@ beforeEach(() => {
 })
 
 describe('saveDriveDocument', () => {
-  it('writes without asking when the document is still at the version saved here', async () => {
+  it('writes without reading when the document is still at the version saved here', async () => {
     driveHolds('3', saved)
-    expect(await saveDriveDocument(changed, 'amp', location, saved, neverAsked)).toEqual({ kind: 'drive', fileId: 'doc', version: '4' })
+    expect(await saveDriveDocument(changed, location, saved)).toEqual({ kind: 'saved', location: { kind: 'drive', fileId: 'doc', version: '4' } })
     expect(writeFile).toHaveBeenCalledWith(projectToFile(changed), { id: 'doc' })
+    expect(readFile).not.toHaveBeenCalled()
   })
 
-  it('writes without asking when only the version changed, not the project', async () => {
+  it('writes when only the version changed, not the project', async () => {
     // An older version of the editor wrote the same project.
     driveHolds('5', example)
-    expect(await saveDriveDocument(changed, 'amp', location, saved, neverAsked)).toMatchObject({ version: '4' })
+    expect(await saveDriveDocument(changed, location, saved)).toMatchObject({ kind: 'saved', location: { version: '4' } })
   })
 
-  it('asks before overwriting a document changed elsewhere, and writes nothing when refused', async () => {
+  it('writes nothing to a document changed elsewhere, and returns what it holds at which version', async () => {
     driveHolds('5', projectToFile(changed))
-    const asked: string[] = []
-    const result = await saveDriveDocument(project, 'amp', location, saved, async (name) => {
-      asked.push(name)
-      return false
-    })
-    expect(asked).toEqual(['amp'])
-    expect(result).toBeNull()
+    const result = await saveDriveDocument(project, location, saved)
+    expect(result).toMatchObject({ kind: 'changedElsewhere', inDrive: { content: projectToFile(changed) }, location: { ...location, version: '5' } })
+    expect(result.kind === 'changedElsewhere' && result.inDrive.project?.settings.snap).toBe(1)
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(fileVersion).toHaveBeenCalledTimes(1)
+    expect(readFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns a document that is no project anymore as changed elsewhere, without a project', async () => {
+    driveHolds('5', 'hello')
+    expect(await saveDriveDocument(project, location, saved)).toMatchObject({ kind: 'changedElsewhere', inDrive: { project: null, content: 'hello' } })
     expect(writeFile).not.toHaveBeenCalled()
   })
+})
 
-  it('overwrites a document changed elsewhere when confirmed', async () => {
-    driveHolds('5', projectToFile(changed))
-    expect(await saveDriveDocument(project, 'amp', location, saved, async () => true)).toMatchObject({ version: '4' })
+describe('overwriteDriveDocument', () => {
+  it('writes without looking at what the document holds', async () => {
+    expect(await overwriteDriveDocument(project, location)).toEqual({ kind: 'drive', fileId: 'doc', version: '4' })
     expect(writeFile).toHaveBeenCalledWith(saved, { id: 'doc' })
+    expect(fileVersion).not.toHaveBeenCalled()
   })
 })
 

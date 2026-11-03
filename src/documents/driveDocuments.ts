@@ -18,21 +18,25 @@ export async function openDriveDocument(fileId: string): Promise<{ project: Proj
 }
 
 /**
- * Writes `project` to its document, called `name`. One that changed elsewhere since `savedContent`
- * is only overwritten when `confirmOverwrite` says so. Returns its new version, or null when nothing
- * was saved.
+ * What saving to a document did: write it, or leave a document that changed elsewhere alone. Then
+ * `inDrive` is what it holds now, at version `location`; its project is null when it is no project.
  */
-export async function saveDriveDocument(
-  project: Project,
-  name: string,
-  location: DriveLocation,
-  savedContent: string,
-  confirmOverwrite: (name: string) => Promise<boolean>,
-): Promise<DriveLocation | null> {
-  if ((await fileVersion(location.fileId)) !== location.version) {
+export type DriveSave =
+  | { kind: 'saved'; location: DriveLocation }
+  | { kind: 'changedElsewhere'; inDrive: { project: Project | null; content: string }; location: DriveLocation }
+
+/** Writes `project` to its document, unless that changed elsewhere since `savedContent`. */
+export async function saveDriveDocument(project: Project, location: DriveLocation, savedContent: string): Promise<DriveSave> {
+  const version = await fileVersion(location.fileId)
+  if (version !== location.version) {
     const inDrive = readSavedProject(await readFile(location.fileId))
-    if (inDrive.content !== savedContent && !(await confirmOverwrite(name))) return null
+    if (inDrive.content !== savedContent) return { kind: 'changedElsewhere', inDrive, location: { ...location, version } }
   }
+  return { kind: 'saved', location: await overwriteDriveDocument(project, location) }
+}
+
+/** Writes `project` to its document, whatever that holds now. Returns its new version. */
+export async function overwriteDriveDocument(project: Project, location: DriveLocation): Promise<DriveLocation> {
   return driveLocation(await writeFile(projectToFile(project), { id: location.fileId }))
 }
 

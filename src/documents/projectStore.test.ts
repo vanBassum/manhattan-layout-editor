@@ -63,6 +63,30 @@ describe('open projects', () => {
   })
 })
 
+describe('file status', () => {
+  it('gets a new version, and tells its listeners, only when a tab gets or loses unsaved changes', async () => {
+    const store = await import('./projectStore')
+    await store.openProjectStore()
+    const { activeId } = store.loadTabs()
+    let heard = 0
+    store.onFileChange(() => heard++)
+    const before = store.fileStatusVersion()
+    const shown = store.readProject(activeId)
+    const changed = { ...shown, settings: { ...shown.settings, snap: 1 } }
+
+    store.writeProject(activeId, changed)
+    expect(store.projectFile(activeId).dirty).toBe(true)
+    expect(store.fileStatusVersion()).toBe(before + 1)
+
+    store.writeProject(activeId, { ...changed, settings: { ...changed.settings, snap: 2 } })
+    expect(store.fileStatusVersion()).toBe(before + 1)
+
+    store.setSavedProject(activeId, changed)
+    expect(store.fileStatusVersion()).toBe(before + 2)
+    expect(heard).toBe(2)
+  })
+})
+
 describe('reopening a tab', () => {
   it('compares its saved content as this version writes it, and names a local file tab after its file', async () => {
     const handle = { name: 'amp.manhattan.json' }

@@ -150,7 +150,12 @@ function remember(id: string, stored: StoredProject, checked: boolean) {
   })
 }
 
-const notifyFiles = () => fileListeners.forEach((listener) => listener())
+let fileStatusChanges = 0
+
+function notifyFiles() {
+  fileStatusChanges++
+  fileListeners.forEach((listener) => listener())
+}
 
 // --- Before IndexedDB: localStorage --------------------------------------------------------------
 
@@ -396,6 +401,12 @@ export function rememberActiveTab(id: string) {
     sessionStorage.setItem(ACTIVE_TAB_KEY, id)
   } catch {}
 }
+
+/**
+ * Counts the changes to the tabs' file status (saved, unsaved, checked), so React can tell that
+ * projectFile may give something new: the snapshot for useSyncExternalStore with onFileChange.
+ */
+export const fileStatusVersion = () => fileStatusChanges
 
 /** Called when a tab's file status changes (saved, unsaved, checked). Returns the unsubscribe. */
 export function onFileChange(listener: () => void) {
