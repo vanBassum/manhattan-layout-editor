@@ -15,6 +15,8 @@ const ICON_PATHS = {
   newFile: 'M6 3h8l4 4v14H6z M14 3v4h4 M12 10v7 M8.5 13.5h7',
   folder: 'M3 6h6l2 2h10v11H3z',
   computer: 'M3 4h18v12H3z M8 20h8 M12 16v4',
+  external: 'M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6',
+  arrowUp: 'M12 19V5 M6 11l6-6 6 6',
   settings: 'M12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6 M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M4.9 19.1l2.1-2.1 M17 7l2.1-2.1',
   user: 'M12 4a4 4 0 1 1 0 8a4 4 0 1 1 0-8 M4 21c0-4 3.6-6 8-6s8 2 8 6',
   importExport: 'M4 8h13l-3-3 M20 16H7l3 3',

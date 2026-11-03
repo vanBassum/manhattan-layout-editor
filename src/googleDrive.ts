@@ -192,7 +192,11 @@ export async function findFile(folderId: string, name: string): Promise<DriveIte
   return (await search(`${quoted(folderId)} in parents and name = ${quoted(name)} and trashed = false`))[0]
 }
 
+/** What is in folder `id`, as far as the editor can see: what it made there, and files the user opened through the picker. */
+export const listFolder = (id: string) => search(`${quoted(id)} in parents and trashed = false`)
+
 const FOLDER_TYPE = 'application/vnd.google-apps.folder'
+export const isFolder = (item: DriveItem) => item.mimeType === FOLDER_TYPE
 export const SAVE_FOLDER_NAME = 'Manhattan Layout Editor'
 let saveFolder: Promise<string> | null = null
 

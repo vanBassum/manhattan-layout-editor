@@ -90,3 +90,13 @@ async function pick(title: string, makeView: (api: PickerApi) => DocsView): Prom
 /** A project file anywhere in the user's Drive, or null when cancelled. */
 export const pickDriveFile = () =>
   pick('Open a project', (api) => new api.DocsView(api.ViewId.DOCS).setIncludeFolders(true).setMimeTypes('application/json').setMode(api.DocsViewMode.LIST))
+
+/** A folder anywhere in the user's Drive, or null when cancelled. The picker cannot pick the folder it shows: only one listed in it. */
+export const pickDriveFolder = () =>
+  pick('Choose a folder to save in', (api) =>
+    new api.DocsView(api.ViewId.DOCS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+      .setMimeTypes('application/vnd.google-apps.folder')
+      .setMode(api.DocsViewMode.LIST),
+  )
