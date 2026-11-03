@@ -48,6 +48,22 @@ describe('checkedProject settings', () => {
   })
 })
 
+describe('checkedProject schematic labels', () => {
+  const stored = JSON.parse(example).project
+
+  it('gives a stored label without a symbol the one its name suggests', () => {
+    expect(stored.schematic.labels.every((l: object) => !('symbol' in l))).toBe(true)
+    const symbols = Object.fromEntries(checkedProject(stored).schematic!.labels!.map((l) => [l.name, l.symbol]))
+    expect(symbols).toMatchObject({ VCC: 'power', GND: 'ground', B1: 'net', LED1_A: 'net' })
+  })
+
+  it('keeps a stored symbol, also when the name suggests another', () => {
+    const labels = [{ x: 0, y: 0, name: 'GND', symbol: 'terminal' }]
+    const checked = checkedProject({ ...stored, schematic: { ...stored.schematic, labels } })
+    expect(checked.schematic!.labels!.map((l) => l.symbol)).toEqual(['terminal'])
+  })
+})
+
 describe('readSavedProject', () => {
   it('gives a project as this version writes it, and keeps text that is no project as it is', () => {
     expect(readSavedProject(example).content).toBe(projectToFile(projectFromFile(example)))

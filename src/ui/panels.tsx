@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { refPrefix } from '../model/footprintTemplates'
-import { labelSymbol } from '../model/schematic'
 import { isToggleClick, selectedRefs, selectedWiring, toggleSelected } from '../model/selection'
 import type { BuiltComponent, BuiltNetlist, LabelSymbol, Layout, NetLabel, Placement, Selection, Shape } from '../model/types'
 import { Icon, type IconName } from './icons'
@@ -327,9 +326,9 @@ function LabelProperties({ label, onChange }: { label: NetLabel; onChange: (chan
   return (
     <div className="field-list">
       <span className="field-label">Net</span>
-      <TextField value={label.name} label="Net" placeholder="e.g. VCC or GND" onCommit={(name) => name && onChange({ name, symbol: labelSymbol(label) })} />
+      <TextField value={label.name} label="Net" placeholder="e.g. VCC or GND" onCommit={(name) => name && onChange({ name })} />
       <span className="field-label">Drawn as</span>
-      <select value={labelSymbol(label)} onChange={(e) => onChange({ symbol: e.target.value as LabelSymbol })}>
+      <select value={label.symbol} onChange={(e) => onChange({ symbol: e.target.value as LabelSymbol })}>
         {LABEL_SYMBOLS.map((s) => (
           <option key={s.value} value={s.value}>{s.label}</option>
         ))}

@@ -10,6 +10,8 @@ import {
   flippedSelection,
   grabAt,
   labelDirection,
+  labelsFromAgent,
+  labelSymbolForName,
   marqueeSelection,
   pinEnds,
   pinsWithOtherNet,
@@ -68,13 +70,13 @@ describe('withPlacementChanges', () => {
     const index = built.components.findIndex((c) => c.ref === 'R1')
     const placement = schematic.placements[index]
     const [end] = pinEnds(built.components[index], placement)
-    const label = { x: end.x, y: end.y, name: 'TEST' }
+    const label = { x: end.x, y: end.y, name: 'TEST', symbol: 'net' as const }
     const moved = { ...placement, x: placement.x + 2.54 * 4 }
     const [newEnd] = pinEnds(built.components[index], moved)
 
     const after = withPlacementChanges({ ...schematic, labels: [...schematic.labels, label] }, built, [moved])
 
-    expect(after.labels.at(-1)).toEqual({ x: newEnd.x, y: newEnd.y, name: 'TEST' })
+    expect(after.labels.at(-1)).toEqual({ x: newEnd.x, y: newEnd.y, name: 'TEST', symbol: 'net' })
   })
 })
 
@@ -130,14 +132,14 @@ describe('withSchematicMoved', () => {
     const schematic: FullSchematic = {
       placements: [],
       wires: [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }],
-      labels: [{ x: 5.08, y: 0, name: 'A' }],
+      labels: [{ x: 5.08, y: 0, name: 'A', symbol: 'net' }],
     }
     const ends = [{ x: 0, y: 0 }, { x: 10.16, y: 0 }]
 
     const after = withSchematicMoved(schematic, noParts, move({ points: ends }, { x: 0, y: 2.54 }))
 
     expect(after.wires).toEqual([{ x1: 0, y1: 2.54, x2: 10.16, y2: 2.54 }])
-    expect(after.labels).toEqual([{ x: 5.08, y: 2.54, name: 'A' }])
+    expect(after.labels).toEqual([{ x: 5.08, y: 2.54, name: 'A', symbol: 'net' }])
   })
 
   it('bridges the gap where a dragged wire leaves the middle of a wire that stays', () => {
@@ -211,9 +213,9 @@ describe('withTidyWires', () => {
         { x1: 30.48, y1: 0, x2: 30.48, y2: 5.08 },
       ],
       [
-        { x: 0, y: 0, name: 'A' },
-        { x: 15.24, y: 0, name: 'B' },
-        { x: 30.48, y: 0, name: 'C' },
+        { x: 0, y: 0, name: 'A', symbol: 'net' },
+        { x: 15.24, y: 0, name: 'B', symbol: 'net' },
+        { x: 30.48, y: 0, name: 'C', symbol: 'net' },
       ],
     )
 
@@ -301,14 +303,14 @@ describe('withLabelChanged', () => {
       placements: [],
       wires: [],
       labels: [
-        { x: 0, y: 0, name: 'A' },
-        { x: 5.08, y: 0, name: 'B' },
+        { x: 0, y: 0, name: 'A', symbol: 'net' },
+        { x: 5.08, y: 0, name: 'B', symbol: 'net' },
       ],
     }
 
     expect(withLabelChanged(schematic, 1, { name: 'C' }).labels).toEqual([
-      { x: 0, y: 0, name: 'A' },
-      { x: 5.08, y: 0, name: 'C' },
+      { x: 0, y: 0, name: 'A', symbol: 'net' },
+      { x: 5.08, y: 0, name: 'C', symbol: 'net' },
     ])
   })
 })
@@ -336,7 +338,7 @@ describe('marqueeSelection', () => {
       { x1: 0, y1: 0, x2: 5.08, y2: 0 },
       { x1: 5.08, y1: 0, x2: 20.32, y2: 0 },
     ],
-    labels: [{ x: 2.54, y: 0, name: 'A' }],
+    labels: [{ x: 2.54, y: 0, name: 'A', symbol: 'net' }],
   }
   const area = { x: -1, y: -1, w: 7, h: 2 }
 
@@ -419,5 +421,31 @@ describe('labelDirection', () => {
   it('points up on a horizontal wire, and right anywhere else', () => {
     expect(labelDirection({ x: 5.08, y: 0 }, [], wires)).toEqual({ x: 0, y: -1 })
     expect(labelDirection({ x: 5.08, y: 2.54 }, [], wires)).toEqual({ x: 1, y: 0 })
+  })
+})
+
+describe('labelSymbolForName', () => {
+  it('suggests ground for ground nets, power for supply nets and a plain label otherwise', () => {
+    expect(['GND', 'AGND', 'VCC', '+5V', '-12V', 'V+', 'OUT', 'B1'].map(labelSymbolForName)).toEqual([
+      'ground',
+      'ground',
+      'power',
+      'power',
+      'power',
+      'power',
+      'net',
+      'net',
+    ])
+  })
+})
+
+describe('labelsFromAgent', () => {
+  it('gives a label without a symbol the one its name suggests, and keeps a given one', () => {
+    const labels = labelsFromAgent([
+      { x: 0, y: 0, name: 'GND' },
+      { x: 0, y: 0, name: 'VCC', symbol: 'terminal' },
+    ])
+
+    expect(labels.map((l) => l.symbol)).toEqual(['ground', 'terminal'])
   })
 })

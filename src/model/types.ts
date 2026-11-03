@@ -193,10 +193,9 @@ export interface NetLabel {
   name: string
   /**
    * How it is drawn: as its name, or as a ground, power or terminal (connection point) symbol,
-   * which then stays that symbol whatever it is renamed to. Missing (older projects): guessed from
-   * the name; a terminal is never guessed.
+   * which then stays that symbol whatever it is renamed to.
    */
-  symbol?: LabelSymbol
+  symbol: LabelSymbol
   /** Degrees clockwise, a multiple of 90. At 0 ground points down and power up. */
   rotation?: number
 }

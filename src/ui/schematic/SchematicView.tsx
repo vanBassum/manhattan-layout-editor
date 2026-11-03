@@ -9,7 +9,7 @@ import {
   grabAt,
   isConnection,
   labelDirection,
-  labelSymbol,
+  labelSymbolForName,
   looseWireEnds,
   marqueeSelection,
   pinKeysOf,
@@ -239,7 +239,7 @@ export function SchematicView({
       if (!name) return
       onBeginEdit()
       // The symbol is decided once, from the name; renaming it later keeps it.
-      onChange({ ...schematic, labels: [...schematic.labels, { ...at, name, symbol: labelSymbol({ ...at, name }) }] })
+      onChange({ ...schematic, labels: [...schematic.labels, { ...at, name, symbol: labelSymbolForName(name) }] })
       return
     }
     // As on the PCB: the left button draws a selection rectangle, the middle button pans.
@@ -307,7 +307,7 @@ export function SchematicView({
     const name = askLabelName(schematic.labels[index].name)
     if (!name) return
     onBeginEdit()
-    onChange({ ...schematic, labels: schematic.labels.map((l, k) => (k === index ? { ...l, name, symbol: labelSymbol(l) } : l)) })
+    onChange({ ...schematic, labels: schematic.labels.map((l, k) => (k === index ? { ...l, name } : l)) })
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {

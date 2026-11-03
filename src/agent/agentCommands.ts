@@ -7,7 +7,7 @@ import { footprintPinCount } from '../model/footprints'
 import { boundsOf } from '../model/geometry'
 import { analyzeLeads, bodyBounds, changeFootprints, createLayout, findSpacingViolations, findSplitNets, replaceIslandRects, toLocal, toWorld } from '../model/layout'
 import { isRealNet, naturalCompare, pinsByNet } from '../model/netlist'
-import { agentPlacements, completeSchematic, placedParts } from '../model/schematic'
+import { agentPlacements, completeSchematic, labelSymbolForName, placedParts } from '../model/schematic'
 import type { BuiltComponent, BuiltProject, Island, Layout, NetLabel, Netlist, Pin, Placement, Point, Project, Rect, Schematic } from '../model/types'
 
 const round = (v: number) => Math.round(v * 100) / 100
@@ -249,7 +249,7 @@ export function addComponent(project: Project, args: Args): Pick<Project, 'netli
     const full = completeSchematic(built, schematic)
     // completeSchematic places every component of `built`, the new one too.
     const { component, pins: ends } = placedParts(full.placements, built).find((part) => part.component.ref === ref)!
-    const labels: NetLabel[] = component.pins.flatMap((pin, k) => (isRealNet(pin.net) ? [{ x: ends[k].x, y: ends[k].y, name: pin.net }] : []))
+    const labels: NetLabel[] = component.pins.flatMap((pin, k) => (isRealNet(pin.net) ? [{ x: ends[k].x, y: ends[k].y, name: pin.net, symbol: labelSymbolForName(pin.net) }] : []))
     schematic = { ...schematic, labels: [...schematic.labels, ...labels] }
   }
   return { netlist, layout, schematic }

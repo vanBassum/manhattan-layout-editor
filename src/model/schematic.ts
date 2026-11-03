@@ -121,7 +121,7 @@ export function completeSchematic(built: BuiltNetlist, schematic: Schematic | un
     placedParts(placements, built).flatMap(({ component, pins }) =>
       pins.flatMap((end, k) => {
         const { net } = component.pins[k]
-        return isRealNet(net) ? [{ x: end.x, y: end.y, name: net }] : []
+        return isRealNet(net) ? [{ x: end.x, y: end.y, name: net, symbol: labelSymbolForName(net) }] : []
       }),
     )
   return { placements, wires: schematic?.wires ?? [], labels }
@@ -129,11 +129,10 @@ export function completeSchematic(built: BuiltNetlist, schematic: Schematic | un
 
 const isPowerName = (name: string) => /^(V\+|V-|VCC|VDD|VEE|[+-]?\d+(\.\d+)?V)$/i.test(name)
 
-/** How a label is drawn; labels from before it was stored get the symbol their name suggests. */
-export function labelSymbol(label: NetLabel): LabelSymbol {
-  if (label.symbol) return label.symbol
-  if (isGroundNet(label.name)) return 'ground'
-  return isPowerName(label.name) ? 'power' : 'net'
+/** The symbol a new label gets: what its name suggests. A terminal is never suggested. */
+export function labelSymbolForName(name: string): LabelSymbol {
+  if (isGroundNet(name)) return 'ground'
+  return isPowerName(name) ? 'power' : 'net'
 }
 
 /** True when `p` lies on the wire, ends excluded. Only straight horizontal and vertical wires take T-joins. */
@@ -624,13 +623,11 @@ export function labelsFromAgent(labels: unknown): NetLabel[] {
   return labels.map((item: { x?: unknown; y?: unknown; name?: unknown; symbol?: unknown; rotation?: unknown }, i) => {
     if (typeof item.name !== 'string' || item.name.trim() === '') throw new Error(`labels[${i}] needs a name`)
     const at = gridPoint([item.x, item.y], `labels[${i}]`)
-    const label: NetLabel = { ...at, name: item.name.trim() }
-    if (item.symbol !== undefined) {
-      if (item.symbol !== 'net' && item.symbol !== 'ground' && item.symbol !== 'power' && item.symbol !== 'terminal') {
-        throw new Error(`labels[${i}].symbol must be "net", "ground", "power" or "terminal"`)
-      }
-      label.symbol = item.symbol
+    const name = item.name.trim()
+    if (item.symbol !== undefined && item.symbol !== 'net' && item.symbol !== 'ground' && item.symbol !== 'power' && item.symbol !== 'terminal') {
+      throw new Error(`labels[${i}].symbol must be "net", "ground", "power" or "terminal"`)
     }
+    const label: NetLabel = { ...at, name, symbol: item.symbol ?? labelSymbolForName(name) }
     if (item.rotation !== undefined) {
       if (typeof item.rotation !== 'number' || item.rotation % 90 !== 0) throw new Error(`labels[${i}].rotation must be a multiple of 90`)
       label.rotation = ((item.rotation % 360) + 360) % 360

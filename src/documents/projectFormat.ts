@@ -3,7 +3,8 @@
 
 import { checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from '../model/definitions'
 import { withoutCutLines } from '../model/migrations/migrateCutLayout'
-import type { Project, Settings } from '../model/types'
+import { labelSymbolForName } from '../model/schematic'
+import type { LabelSymbol, NetLabel, Project, Settings } from '../model/types'
 import { BUILD_STYLES, findBuildStyle } from '../model/buildStyles'
 
 export const DEFAULT_SETTINGS: Settings = { snap: 0.5, isolation: 0.4, buildStyle: BUILD_STYLES[0].id }
@@ -25,7 +26,12 @@ function checkedSettings(stored: StoredSettings | undefined): Settings {
   return { ...settings, buildStyle: findBuildStyle(settings.buildStyle).id }
 }
 
-export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
+/** A label as stored before its symbol was: it was drawn as the symbol its name suggests. */
+type StoredLabel = Omit<NetLabel, 'symbol'> & { symbol?: LabelSymbol }
+
+const checkedLabel = (label: StoredLabel): NetLabel => ({ ...label, symbol: label.symbol ?? labelSymbolForName(label.name) })
+
+export const emptyProject =(settings: Settings = DEFAULT_SETTINGS): Project => ({
   guid: crypto.randomUUID(),
   netlist: { components: [], nets: [] },
   layout: { islands: [], placements: [] },
@@ -53,7 +59,9 @@ export function checkedProject(data: unknown): Project {
       definitions,
     }),
   )
-  return { ...checked, settings: checkedSettings(checked.settings) }
+  const labels = (checked.schematic?.labels as StoredLabel[] | undefined)?.map(checkedLabel)
+  const schematic = checked.schematic && (labels ? { ...checked.schematic, labels } : checked.schematic)
+  return { ...checked, schematic, settings: checkedSettings(checked.settings) }
 }
 
 // Bump the version when the stored layout changes meaning, and convert older files in projectFromFile.

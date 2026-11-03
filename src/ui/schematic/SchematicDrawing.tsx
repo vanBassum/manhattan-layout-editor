@@ -1,6 +1,5 @@
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { rotatePoint } from '../../model/geometry'
-import { labelSymbol } from '../../model/schematic'
 import type { BuiltComponent, NetLabel, PinEnd, Point, SchematicPlacement, SymbolGraphic } from '../../model/types'
 
 /** Text placed `distance` mm from `at` along `axis`, reading upright whichever way the axis points. */
@@ -27,8 +26,7 @@ interface LabelProps {
  * rotation while their name stays upright beyond the symbol's end. Any other net is just its name.
  */
 export function LabelMark({ label, direction, className, onPointerDown, onDoubleClick }: LabelProps) {
-  const { x, y, name } = label
-  const symbol = labelSymbol(label)
+  const { x, y, name, symbol } = label
   const rotation = label.rotation ?? 0
   const turned = `translate(${x} ${y}) rotate(${rotation})`
   if (symbol === 'ground') {
