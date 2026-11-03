@@ -25,8 +25,12 @@ export type MoveMode = 'part' | 'body'
 type Drag =
   | { kind: 'pan'; startX: number; startY: number; view: View }
   | { kind: 'marquee'; start: Point; startX: number; startY: number; additive: boolean }
-  /** `pressed`: the item of a multi-selection that started a group drag. */
-  | { kind: 'edit'; edit: LayoutDrag; start: Point; pressed?: SingleSelection }
+  /**
+   * `pressed`: the item whose press started the drag. A press that ends without moving toggles it
+   * in the selection when `toggle` is set (Shift/Ctrl), and otherwise selects it alone after a
+   * group drag.
+   */
+  | { kind: 'edit'; edit: LayoutDrag; start: Point; moved: boolean; pressed?: SingleSelection; toggle: boolean }
 
 type MarqueeDrag = Extract<Drag, { kind: 'marquee' }>
 
@@ -185,9 +189,6 @@ export function Canvas(props: Props) {
   const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode, rectHandles, gridLinesPerMajor } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
-  const dragChangedRef = useRef(false)
-  /** Item to toggle in the selection if the current Shift/Ctrl press ends without dragging. */
-  const toggleOnClickRef = useRef<SingleSelection | null>(null)
   const { view, setView, size, fitTo } = useViewport(svgRef)
   const [hoveredRef, setHoveredRef] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<Rect | null>(null)
@@ -235,10 +236,11 @@ export function Canvas(props: Props) {
 
   const beginDrag = (e: ReactPointerEvent, drag: Drag) => {
     dragRef.current = drag
-    dragChangedRef.current = false
-    toggleOnClickRef.current = null
     svgRef.current!.setPointerCapture(e.pointerId)
   }
+
+  const beginEditDrag = (e: ReactPointerEvent, edit: LayoutDrag, pressed?: SingleSelection, toggle = false) =>
+    beginDrag(e, { kind: 'edit', edit, start: toWorld(e), moved: false, pressed, toggle })
 
   const onBackgroundPointerDown = (e: ReactPointerEvent) => {
     if (e.button === 0 && tool === 'select') {
@@ -273,12 +275,11 @@ export function Canvas(props: Props) {
         parts: parts.filter((p) => refs.includes(p.component.ref)).map((p) => movingPart(p.component.ref, withLeads)),
         islands: layout.islands.filter((island) => nets.includes(island.net)),
       }
-      beginDrag(e, { kind: 'edit', edit: group, start: toWorld(e), pressed: item })
+      beginEditDrag(e, group, item, toggling)
     } else {
       if (!toggling) onSelect(item)
-      beginDrag(e, { kind: 'edit', edit: singleDrag(withLeads), start: toWorld(e) })
+      beginEditDrag(e, singleDrag(withLeads), item, toggling)
     }
-    if (toggling) toggleOnClickRef.current = item
   }
 
   // Non-left buttons fall through to the background handler, so middle-drag always pans.
@@ -295,20 +296,19 @@ export function Canvas(props: Props) {
     const rect = island.rects[rectIndex]
     const sides = handleSides(handle)
     const neighbours = cutNeighbours(layout.islands, island, rect, sides)
-    const edit: LayoutDrag = { kind: 'resize', net: island.net, rectIndex, sides, rect, neighbours }
-    beginDrag(e, { kind: 'edit', edit, start: toWorld(e) })
+    beginEditDrag(e, { kind: 'resize', net: island.net, rectIndex, sides, rect, neighbours })
   }
 
   const onCutPointerDown = (e: ReactPointerEvent, cut: Cut) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    beginDrag(e, { kind: 'edit', edit: { kind: 'cut', cut, islands: layout.islands }, start: toWorld(e) })
+    beginEditDrag(e, { kind: 'cut', cut, islands: layout.islands })
   }
 
   const onEdgePointerDown = (e: ReactPointerEvent, net: string, edge: IslandEdge) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    beginDrag(e, { kind: 'edit', edit: { kind: 'edge', net, edge, islands: layout.islands }, start: toWorld(e) })
+    beginEditDrag(e, { kind: 'edge', net, edge, islands: layout.islands })
   }
 
   /** Pulls a tab out of the middle of `edge`; dragging the edge itself moves all of it. */
@@ -331,7 +331,7 @@ export function Canvas(props: Props) {
       return
     }
     onSelect({ kind: 'part', ref: placement.ref })
-    beginDrag(e, { kind: 'edit', edit: { kind: 'lead', ref: placement.ref, pin, origin }, start: toWorld(e) })
+    beginEditDrag(e, { kind: 'lead', ref: placement.ref, pin, origin })
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {
@@ -347,11 +347,11 @@ export function Canvas(props: Props) {
     }
     const p = toWorld(e)
     const delta = { x: p.x - drag.start.x, y: p.y - drag.start.y }
-    if (!dragChangedRef.current) {
+    if (!drag.moved) {
       // Island edges snap to the grid, not by the delta, so the slightest jitter could move an
       // off-grid island: a press must move a few pixels before it counts as a drag.
       if (Math.hypot(delta.x, delta.y) * view.scale <= CLICK_TOLERANCE_PX) return
-      dragChangedRef.current = true
+      drag.moved = true
       onBeginEdit()
     }
     onLayoutChange((l) => draggedLayout(l, drag.edit, delta, snap))
@@ -373,14 +373,14 @@ export function Canvas(props: Props) {
 
   const onPointerUp = (e: ReactPointerEvent) => {
     const drag = dragRef.current
-    const toggleOnClick = toggleOnClickRef.current
     dragRef.current = null
-    toggleOnClickRef.current = null
     svgRef.current!.releasePointerCapture(e.pointerId)
     if (drag?.kind === 'marquee') finishMarquee(drag, e)
-    else if (toggleOnClick && !dragChangedRef.current) onSelect(toggleSelected(selection, toggleOnClick))
-    // A click without dragging on an item of a multi-selection selects just that item.
-    else if (drag?.kind === 'edit' && drag.pressed && !dragChangedRef.current) onSelect(drag.pressed)
+    else if (drag?.kind === 'edit' && drag.pressed && !drag.moved) {
+      if (drag.toggle) onSelect(toggleSelected(selection, drag.pressed))
+      // A click without dragging on an item of a multi-selection selects just that item.
+      else if (drag.edit.kind === 'group') onSelect(drag.pressed)
+    }
   }
 
   // Sizes that should stay constant on screen, expressed in mm.
