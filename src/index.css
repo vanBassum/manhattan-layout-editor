@@ -25,7 +25,6 @@
   --ruler-bg: var(--panel);
   --ruler-text: #6b7580;
   --idle-dot: #b0b6bd;
-  --shadow: var(--shadow);
   --backdrop: rgba(20, 24, 31, 0.35);
   --sch-resistor: #8a9ee6;
   --sch-power: #e03131;
@@ -60,7 +59,6 @@
   --ruler-bg: var(--panel);
   --ruler-text: #8a939d;
   --idle-dot: #5d6773;
-  --shadow: rgba(0, 0, 0, 0.5);
   --backdrop: rgba(0, 0, 0, 0.55);
   --sch-resistor: #4f63b8;
   --sch-power: #c92a2a;
@@ -353,18 +351,6 @@ input:focus-visible {
   gap: 4px;
 }
 
-.check-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.check-row input {
-  accent-color: var(--accent);
-  margin: 0;
-}
-
 .search {
   display: flex;
   align-items: center;
@@ -396,36 +382,11 @@ input:focus-visible {
   overflow-y: auto;
 }
 
-.component-list button {
-  display: grid;
-  grid-template-columns: 3.5em 1fr;
-  column-gap: 6px;
-  width: 100%;
-  border-color: transparent;
-  background: none;
-  text-align: left;
-  padding: 3px 6px;
-}
-
-.component-list button.selected {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-
 .component-list .ref {
   font-weight: 600;
 }
 
 .component-list .value {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.component-list .footprint {
-  grid-column: 2;
-  font-size: 11px;
-  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -609,8 +570,6 @@ input:focus-visible {
   min-height: 0;
   width: 100%;
   background-color: var(--canvas-bg);
-  background-image: radial-gradient(var(--grid-minor) 1px, transparent 1px);
-  background-size: 16px 16px;
   touch-action: none;
   user-select: none;
   cursor: default;
@@ -669,10 +628,6 @@ input:focus-visible {
 }
 
 /* Layer toggles hide through classes on the svg, so the agent screenshot can reset them on its copy. */
-.canvas.hide-grid {
-  background-image: none;
-}
-
 .schematic.hide-grid .grid,
 .schematic.hide-references .sch-ref,
 .schematic.hide-values .sch-value,
@@ -696,11 +651,6 @@ input:focus-visible {
 }
 
 /* Per-layer opacity comes from --opacity-<layer> on the svg (set by the Layers panel). */
-/* The grid is drawn in the SVG (.grid), so it pans and zooms with the board. */
-.canvas {
-  background-image: none;
-}
-
 .canvas .grid { opacity: var(--opacity-grid, 1); }
 .schematic .grid { opacity: var(--opacity-grid, 1); }
 .schematic .sch-ref { opacity: var(--opacity-references, 1); }
@@ -837,15 +787,6 @@ input:focus-visible {
 .shortcuts th {
   font-weight: 600;
   white-space: nowrap;
-}
-
-/* Layer rows: name plus a three-way visible / faded / hidden switch. */
-.layer-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 2px 0;
 }
 
 /* Popups: AI help and change footprint. */
@@ -1162,6 +1103,7 @@ input:focus-visible {
   grid-template-columns: auto 12px 1fr 72px;
   align-items: center;
   gap: 8px;
+  padding: 2px 0;
 }
 
 .layer-row.hidden .layer-name,
@@ -1987,14 +1929,6 @@ polyline.sch-hit-shape {
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.check-list .error {
-  color: var(--error);
-}
-
-.check-list .warn {
-  color: var(--warn);
 }
 
 .check-list .ok {
