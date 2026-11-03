@@ -83,6 +83,25 @@ export function pinEnds(component: BuiltComponent, placement: SchematicPlacement
   })
 }
 
+/** A placed part with where its pins end. */
+export interface PlacedPart {
+  component: BuiltComponent
+  placement: SchematicPlacement
+  pins: PinEnd[]
+}
+
+/** The schematic's placed parts that `built` has a component for, with their pin ends. */
+export function placedParts(schematic: FullSchematic, built: BuiltNetlist): PlacedPart[] {
+  const componentsByRef = new Map(built.components.map((c) => [c.ref, c]))
+  return schematic.placements.flatMap((placement) => {
+    const component = componentsByRef.get(placement.ref)
+    return component ? [{ component, placement, pins: pinEnds(component, placement) }] : []
+  })
+}
+
+/** Map keys of every pin end of `parts`. */
+export const pinKeysOf = (parts: PlacedPart[]): Set<string> => new Set(parts.flatMap(({ pins }) => pins.map(pointKey)))
+
 /**
  * A placement for every component, in netlist order: stored ones as they are, the rest on a grid
  * below them. Placements of components no longer in the netlist are left out.
@@ -283,33 +302,40 @@ export interface SchematicMove {
 const straight = (a: Point, b: Point) => a.x === b.x || a.y === b.y
 const wireBetween = (a: Point, b: Point): Wire => ({ x1: a.x, y1: a.y, x2: b.x, y2: b.y })
 
-/**
- * The schematic after a move or drag. Every wire stays at its index, so a selection of wires still
- * names the same wires; wires that a drag adds (bends, bridges) come after them.
- */
-export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist, move: SchematicMove): FullSchematic {
-  const { wiring, delta, keepConnections } = move
-  const shift = (p: Point): Point => ({ x: withoutFloatNoise(p.x + delta.x), y: withoutFloatNoise(p.y + delta.y) })
-  const components = new Map(built.components.map((c) => [c.ref, c]))
-  const oldPlacements = new Map(schematic.placements.map((p) => [p.ref, p]))
-  const changedRefs = new Set(move.placements.map((p) => p.ref))
+const shifted = (p: Point, delta: Point): Point => ({ x: withoutFloatNoise(p.x + delta.x), y: withoutFloatNoise(p.y + delta.y) })
 
-  // Every point that moves, from where it was to where it goes. Pins win over wiring on the same spot.
-  const moves = new Map<string, { from: Point; to: Point }>()
-  const selectedWires = new Set(wiring.wires)
-  const movingWires = schematic.wires.filter((_, i) => selectedWires.has(i))
-  for (const p of [...movingWires.flatMap(wireEnds), ...wiring.points]) moves.set(pointKey(p), { from: p, to: shift(p) })
+/** A point that moves, by the key of where it was. */
+type PointMoves = Map<string, { from: Point; to: Point }>
+
+/** Where a point of the unselected wiring goes, or undefined when it stays where it is. */
+type Follow = (p: Point) => Point | undefined
+
+/** Every point that `move` moves, from where it was to where it goes. Pins win over wiring on the same spot. */
+function movingPoints(schematic: FullSchematic, parts: PlacedPart[], move: SchematicMove): PointMoves {
+  const { wiring, delta } = move
+  const moves: PointMoves = new Map()
+  const movingWires = schematic.wires.filter((_, i) => wiring.wires.includes(i))
+  for (const p of [...movingWires.flatMap(wireEnds), ...wiring.points]) moves.set(pointKey(p), { from: p, to: shifted(p, delta) })
+  const partsByRef = new Map(parts.map((part) => [part.placement.ref, part]))
   for (const placement of move.placements) {
-    const component = components.get(placement.ref)
-    const old = oldPlacements.get(placement.ref)
-    if (!component || !old) continue
-    const newEnds = pinEnds(component, placement)
-    pinEnds(component, old).forEach((end, k) => moves.set(pointKey(end), { from: end, to: newEnds[k] }))
+    const part = partsByRef.get(placement.ref)
+    if (!part) continue
+    const newEnds = pinEnds(part.component, placement)
+    part.pins.forEach((end, k) => moves.set(pointKey(end), { from: end, to: newEnds[k] }))
   }
+  return moves
+}
+
+/**
+ * Where a point of the unselected wiring goes when it is attached to something that moves: a moving
+ * point, the middle of a selected wire, or the middle of an unselected wire whose two ends are carried
+ * by the same shift. Such a wire moves as a whole, so whatever is joined to its middle (a T-join, a
+ * label) goes along too.
+ */
+function follower(schematic: FullSchematic, selectedWires: ReadonlySet<number>, moves: PointMoves, delta: Point): Follow {
+  const movingWires = schematic.wires.filter((_, i) => selectedWires.has(i))
   const attachedTo = (p: Point): Point | undefined =>
-    moves.get(pointKey(p))?.to ?? (movingWires.some((w) => onWireInterior(p, w)) ? shift(p) : undefined)
-  // Unselected wires whose two ends are carried by the same shift move as a whole, so whatever is
-  // joined to their middle (a T-join, a label) goes along too.
+    moves.get(pointKey(p))?.to ?? (movingWires.some((w) => onWireInterior(p, w)) ? shifted(p, delta) : undefined)
   const carried = schematic.wires.flatMap((w, i) => {
     if (selectedWires.has(i)) return []
     const [a, b] = wireEnds(w)
@@ -318,24 +344,22 @@ export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist
     const d = { x: a2.x - a.x, y: a2.y - a.y }
     return samePoint(d, { x: b2.x - b.x, y: b2.y - b.y }) ? [{ wire: w, d }] : []
   })
-  /** Where a point of the unselected wiring goes when it is attached to something that moves. */
-  const follow = (p: Point): Point | undefined => {
+  return (p) => {
     const direct = attachedTo(p)
     if (direct) return direct
     const host = carried.find(({ wire }) => onWireInterior(p, wire))
-    return host && { x: withoutFloatNoise(p.x + host.d.x), y: withoutFloatNoise(p.y + host.d.y) }
+    return host && shifted(p, host.d)
   }
+}
 
+/**
+ * Every wire after the move, at its own index, followed by the pieces that bends add. Selected wires
+ * shift by `delta`. With `follow` (a drag), unselected wires attached to what moves stretch along,
+ * staying horizontal and vertical; without it (a move), they stay where they are.
+ */
+function stretchedWires(schematic: FullSchematic, parts: PlacedPart[], selectedWires: ReadonlySet<number>, delta: Point, follow?: Follow): Wire[] {
   // Things that can sit on the middle of a wire and must stay connected to it when it bends.
-  const attachmentPoints = [
-    ...schematic.labels,
-    ...schematic.wires.flatMap(wireEnds),
-    ...schematic.placements.flatMap((p) => {
-      const component = components.get(p.ref)
-      return component ? pinEnds(component, p) : []
-    }),
-  ]
-
+  const attachmentPoints = [...schematic.labels, ...schematic.wires.flatMap(wireEnds), ...parts.flatMap(({ pins }) => pins)]
   const inPlace: Wire[] = []
   const added: Wire[] = []
   const emit = (segments: Wire[], fallback: Wire) => {
@@ -344,8 +368,9 @@ export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist
   }
   schematic.wires.forEach((w, i) => {
     const [a, b] = wireEnds(w)
-    if (selectedWires.has(i)) return inPlace.push(wireBetween(shift(a), shift(b)))
-    const [a2, b2] = keepConnections ? [follow(a), follow(b)] : [undefined, undefined]
+    if (selectedWires.has(i)) return inPlace.push(wireBetween(shifted(a, delta), shifted(b, delta)))
+    if (!follow) return inPlace.push(w)
+    const [a2, b2] = [follow(a), follow(b)]
     if (!a2 && !b2) return inPlace.push(w)
     const [from, to] = [a2 ?? a, b2 ?? b]
     if (straight(from, to)) return inPlace.push(wireBetween(from, to))
@@ -356,34 +381,42 @@ export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist
     }
     emit(polylineWires(route(from, to, isHorizontal(w))), wireBetween(from, to))
   })
+  return [...inPlace, ...added]
+}
 
-  if (keepConnections) {
-    // What stays put and cannot stretch along: pins of parts that do not move, and the middle of
-    // wires that stay. Something moving away from those gets a bridging wire.
-    const fixedPins = new Set(
-      schematic.placements
-        .filter((p) => !changedRefs.has(p.ref))
-        .flatMap((p) => {
-          const component = components.get(p.ref)
-          return component ? pinEnds(component, p).map(pointKey) : []
-        }),
-    )
-    const staysPut = (p: Point) =>
-      fixedPins.has(pointKey(p)) ||
-      schematic.wires.some((w, i) => !selectedWires.has(i) && onWireInterior(p, w) && !wireEnds(w).every((end) => follow(end)))
-    for (const { from, to } of moves.values()) {
-      if (!samePoint(from, to) && staysPut(from)) added.push(...polylineWires(route(from, to, true)))
-    }
-  }
+/**
+ * Wires that bridge the gap where something moves away from what stays put and cannot stretch
+ * along: a pin of a part that does not move (`fixedPins`), or the middle of a wire that stays.
+ */
+function bridgingWires(schematic: FullSchematic, fixedPins: ReadonlySet<string>, selectedWires: ReadonlySet<number>, moves: PointMoves, follow: Follow): Wire[] {
+  const staysPut = (p: Point) =>
+    fixedPins.has(pointKey(p)) ||
+    schematic.wires.some((w, i) => !selectedWires.has(i) && onWireInterior(p, w) && !wireEnds(w).every((end) => follow(end)))
+  return [...moves.values()].flatMap(({ from, to }) => (!samePoint(from, to) && staysPut(from) ? polylineWires(route(from, to, true)) : []))
+}
+
+/**
+ * The schematic after a move or drag. Every wire stays at its index, so a selection of wires still
+ * names the same wires; wires that a drag adds (bends, bridges) come after them.
+ */
+export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist, move: SchematicMove): FullSchematic {
+  const { wiring, delta, keepConnections } = move
+  const parts = placedParts(schematic, built)
+  const selectedWires = new Set(wiring.wires)
+  const moves = movingPoints(schematic, parts, move)
+  const follow = keepConnections ? follower(schematic, selectedWires, moves, delta) : undefined
+  const changedRefs = new Set(move.placements.map((p) => p.ref))
+  const fixedPins = pinKeysOf(parts.filter(({ placement }) => !changedRefs.has(placement.ref)))
+  const bridges = follow ? bridgingWires(schematic, fixedPins, selectedWires, moves, follow) : []
 
   const byRef = new Map(move.placements.map((p) => [p.ref, p]))
   const selectedLabels = new Set(wiring.labels)
   return {
     placements: schematic.placements.map((p) => byRef.get(p.ref) ?? p),
-    wires: [...inPlace, ...added],
+    wires: [...stretchedWires(schematic, parts, selectedWires, delta, follow), ...bridges],
     labels: schematic.labels.map((l, i) => {
-      if (selectedLabels.has(i)) return { ...l, ...shift(l) }
-      const to = keepConnections ? follow(l) : undefined
+      if (selectedLabels.has(i)) return { ...l, ...shifted(l, delta) }
+      const to = follow?.(l)
       // Only the position: a point that follows a pin is that pin's end, which also carries its direction.
       return to ? { ...l, x: to.x, y: to.y } : l
     }),
@@ -686,29 +719,9 @@ export function isConnection(p: Point, wires: Wire[], pinKeys: ReadonlySet<strin
   return pinKeys.has(pointKey(p)) || wires.some((w) => wireEnds(w).some((e) => samePoint(e, p)) || onWireInterior(p, w))
 }
 
-
 // ---------- Pointing at the schematic ----------
 // What a press, a drag or a selection rectangle hits and does. Only how far a grab reaches depends
 // on the zoom, so the view passes it in.
-
-/** A placed part with where its pins end. */
-export interface PlacedPart {
-  component: BuiltComponent
-  placement: SchematicPlacement
-  pins: PinEnd[]
-}
-
-/** The schematic's placed parts that `built` has a component for, with their pin ends. */
-export function placedParts(schematic: FullSchematic, built: BuiltNetlist): PlacedPart[] {
-  const componentsByRef = new Map(built.components.map((c) => [c.ref, c]))
-  return schematic.placements.flatMap((placement) => {
-    const component = componentsByRef.get(placement.ref)
-    return component ? [{ component, placement, pins: pinEnds(component, placement) }] : []
-  })
-}
-
-/** Map keys of every pin end of `parts`. */
-export const pinKeysOf = (parts: PlacedPart[]): Set<string> => new Set(parts.flatMap(({ pins }) => pins.map(pointKey)))
 
 /** A pin end or wire end under the pointer. */
 export interface Grab {
