@@ -30,7 +30,7 @@ Rules that follow from the table:
 
 | File | Domain |
 | --- | --- |
-| `types`, `geometry`, `netlist`, `footprints`, `layout`, `definitions`, `schematicSymbols`, `schematic`, `raster`, `cuts`, `selection`, `undoHistory` | model |
+| `types`, `geometry`, `netlist`, `footprints`, `layout`, `definitions`, `schematicSymbols`, `schematic`, `raster`, `cuts`, `layoutDrag`, `selection`, `undoHistory` | model |
 | `migrateIslands`, `migrateCutLayout` | model (`model/migrations/`) |
 | `optimize/*` | optimize (already in place) |
 | `exportSvg`, `exportDxf` | export (`downloadText` moves to `ui`: it touches the DOM) |

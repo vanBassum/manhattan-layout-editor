@@ -1,21 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from './geometry'
-import {
-  analyzeLeads,
-  bodyBounds,
-  gridDelta,
-  moveGroup,
-  movePart,
-  moveRects,
-  replaceIslandRects,
-  replaceRect,
-  toLocal,
-  toWorld as toWorldPoint,
-  type MovingPart,
-  type PinStatus,
-} from './layout'
-import { cutNeighbours, findCuts, followResize, moveCut, resizeRect, type Cut, type CutNeighbour, type Side } from './cuts'
+import { analyzeLeads, bodyBounds, toWorld as toWorldPoint, type MovingPart, type PinStatus } from './layout'
+import { cutNeighbours, findCuts, type Cut, type Side } from './cuts'
+import { draggedLayout, type LayoutDrag } from './layoutDrag'
 import { islandEdges, moveIslandEdge, type IslandEdge } from './raster'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
 import type { BuiltNetlist, Geometry, Island, Layout, Placement, Point, Rect, Selection } from './types'
@@ -37,13 +25,8 @@ export type MoveMode = 'part' | 'body'
 type Drag =
   | { kind: 'pan'; startX: number; startY: number; view: View }
   | { kind: 'marquee'; start: Point; startX: number; startY: number; additive: boolean }
-  | { kind: 'island'; net: string; start: Point; rects: Rect[] }
-  | { kind: 'cut'; cut: Cut; start: Point; islands: Island[] }
-  | { kind: 'edge'; net: string; edge: IslandEdge; start: Point; islands: Island[] }
-  | { kind: 'resize'; net: string; rectIndex: number; sides: Side[]; start: Point; rect: Rect; neighbours: CutNeighbour[] }
-  | { kind: 'part'; start: Point; part: MovingPart }
-  | { kind: 'group'; start: Point; parts: MovingPart[]; islands: Island[]; pressed: SingleSelection }
-  | { kind: 'lead'; ref: string; pin: string; start: Point; origin: Point }
+  /** `pressed`: the item of a multi-selection that started a group drag. */
+  | { kind: 'edit'; edit: LayoutDrag; start: Point; pressed?: SingleSelection }
 
 type MarqueeDrag = Extract<Drag, { kind: 'marquee' }>
 
@@ -245,8 +228,6 @@ export function Canvas(props: Props) {
     // Only refit when explicitly requested, not on every layout change.
   }, [fitRequest])
 
-  const snapValue = (v: number) => snapToGrid(v, snap)
-
   const toWorld = (e: { clientX: number; clientY: number }): Point => {
     const r = svgRef.current!.getBoundingClientRect()
     return { x: (e.clientX - r.left - view.ox) / view.scale, y: (e.clientY - r.top - view.oy) / view.scale }
@@ -280,38 +261,32 @@ export function Canvas(props: Props) {
    * selected and `singleDrag` starts. Shift+drag always takes the leads along, whatever the move
    * mode. A Shift/Ctrl press that ends without dragging toggles the item in the selection instead.
    */
-  const onItemPointerDown = (e: ReactPointerEvent, item: SingleSelection, singleDrag: (withLeads: boolean) => Drag) => {
+  const onItemPointerDown = (e: ReactPointerEvent, item: SingleSelection, singleDrag: (withLeads: boolean) => LayoutDrag) => {
     if (e.button !== 0) return
     e.stopPropagation()
     const toggling = isToggleClick(e)
     const withLeads = e.shiftKey || moveMode === 'part'
     if (selection?.kind === 'multi' && isSelected(selection, item)) {
       const { refs, nets } = selection
-      beginDrag(e, {
+      const group: LayoutDrag = {
         kind: 'group',
-        start: toWorld(e),
         parts: parts.filter((p) => refs.includes(p.component.ref)).map((p) => movingPart(p.component.ref, withLeads)),
         islands: layout.islands.filter((island) => nets.includes(island.net)),
-        pressed: item,
-      })
+      }
+      beginDrag(e, { kind: 'edit', edit: group, start: toWorld(e), pressed: item })
     } else {
       if (!toggling) onSelect(item)
-      beginDrag(e, singleDrag(withLeads))
+      beginDrag(e, { kind: 'edit', edit: singleDrag(withLeads), start: toWorld(e) })
     }
     if (toggling) toggleOnClickRef.current = item
   }
 
   // Non-left buttons fall through to the background handler, so middle-drag always pans.
   const onIslandPointerDown = (e: ReactPointerEvent, island: Island, rectIndex: number) =>
-    onItemPointerDown(e, { kind: 'island', net: island.net, rectIndex }, () => ({
-      kind: 'island',
-      net: island.net,
-      start: toWorld(e),
-      rects: island.rects,
-    }))
+    onItemPointerDown(e, { kind: 'island', net: island.net, rectIndex }, () => ({ kind: 'island', net: island.net, rects: island.rects }))
 
   const onPartPointerDown = (e: ReactPointerEvent, ref: string) =>
-    onItemPointerDown(e, { kind: 'part', ref }, (withLeads) => ({ kind: 'part', start: toWorld(e), part: movingPart(ref, withLeads) }))
+    onItemPointerDown(e, { kind: 'part', ref }, (withLeads) => ({ kind: 'part', part: movingPart(ref, withLeads) }))
 
   const onHandlePointerDown = (e: ReactPointerEvent, island: Island, rectIndex: number, handle: Handle) => {
     if (e.button !== 0) return
@@ -320,19 +295,20 @@ export function Canvas(props: Props) {
     const rect = island.rects[rectIndex]
     const sides = handleSides(handle)
     const neighbours = cutNeighbours(layout.islands, island, rect, sides)
-    beginDrag(e, { kind: 'resize', net: island.net, rectIndex, sides, start: toWorld(e), rect, neighbours })
+    const edit: LayoutDrag = { kind: 'resize', net: island.net, rectIndex, sides, rect, neighbours }
+    beginDrag(e, { kind: 'edit', edit, start: toWorld(e) })
   }
 
   const onCutPointerDown = (e: ReactPointerEvent, cut: Cut) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    beginDrag(e, { kind: 'cut', cut, start: toWorld(e), islands: layout.islands })
+    beginDrag(e, { kind: 'edit', edit: { kind: 'cut', cut, islands: layout.islands }, start: toWorld(e) })
   }
 
   const onEdgePointerDown = (e: ReactPointerEvent, net: string, edge: IslandEdge) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    beginDrag(e, { kind: 'edge', net, edge, start: toWorld(e), islands: layout.islands })
+    beginDrag(e, { kind: 'edit', edit: { kind: 'edge', net, edge, islands: layout.islands }, start: toWorld(e) })
   }
 
   /** Pulls a tab out of the middle of `edge`; dragging the edge itself moves all of it. */
@@ -355,7 +331,7 @@ export function Canvas(props: Props) {
       return
     }
     onSelect({ kind: 'part', ref: placement.ref })
-    beginDrag(e, { kind: 'lead', ref: placement.ref, pin, start: toWorld(e), origin })
+    beginDrag(e, { kind: 'edit', edit: { kind: 'lead', ref: placement.ref, pin, origin }, start: toWorld(e) })
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {
@@ -370,54 +346,15 @@ export function Canvas(props: Props) {
       return
     }
     const p = toWorld(e)
-    const rawDx = p.x - drag.start.x
-    const rawDy = p.y - drag.start.y
+    const delta = { x: p.x - drag.start.x, y: p.y - drag.start.y }
     if (!dragChangedRef.current) {
       // Island edges snap to the grid, not by the delta, so the slightest jitter could move an
       // off-grid island: a press must move a few pixels before it counts as a drag.
-      if (Math.hypot(rawDx, rawDy) * view.scale <= CLICK_TOLERANCE_PX) return
+      if (Math.hypot(delta.x, delta.y) * view.scale <= CLICK_TOLERANCE_PX) return
       dragChangedRef.current = true
       onBeginEdit()
     }
-    const dx = snapValue(rawDx)
-    const dy = snapValue(rawDy)
-    if (drag.kind === 'edge') {
-      const target = snapValue(drag.edge.at + (drag.edge.axis === 'x' ? rawDx : rawDy))
-      onLayoutChange((l) => ({ ...l, islands: moveIslandEdge(drag.islands, drag.net, drag.edge, target) }))
-    } else if (drag.kind === 'island') {
-      const delta = gridDelta(drag.rects, rawDx, rawDy, snap)
-      const moved = moveRects(drag.rects, delta.x, delta.y)
-      onLayoutChange((l) => replaceIslandRects(l, drag.net, moved))
-    } else if (drag.kind === 'cut') {
-      const target = snapValue(drag.cut.at + (drag.cut.axis === 'x' ? rawDx : rawDy))
-      onLayoutChange((l) => ({ ...l, islands: moveCut(drag.islands, drag.cut, target) }))
-    } else if (drag.kind === 'resize') {
-      const resized = resizeRect(drag.rect, drag.sides, rawDx, rawDy, snap)
-      onLayoutChange((l) =>
-        drag.neighbours.reduce(
-          (next, n) => replaceRect(next, n.net, n.rectIndex, followResize(n, resized)),
-          replaceRect(l, drag.net, drag.rectIndex, resized),
-        ),
-      )
-    } else if (drag.kind === 'lead') {
-      // Stored relative to the body as it is now (it may have rotated mid-drag), so the bent lead follows the component.
-      const end = { x: drag.origin.x + dx, y: drag.origin.y + dy }
-      onLayoutChange((l) => ({
-        ...l,
-        placements: l.placements.map((pl) =>
-          pl.ref === drag.ref ? { ...pl, leads: { ...pl.leads, [drag.pin]: toLocal(end, pl) } } : pl,
-        ),
-      }))
-    } else if (drag.kind === 'part') {
-      onLayoutChange((l) => ({
-        ...l,
-        placements: l.placements.map((pl) => (pl.ref === drag.part.placement.ref ? movePart(pl, drag.part, dx, dy) : pl)),
-      }))
-    } else {
-      // Parts move by the same delta as the islands, so they stay where they sit on the copper.
-      const delta = drag.islands.length > 0 ? gridDelta(drag.islands[0].rects, rawDx, rawDy, snap) : { x: dx, y: dy }
-      onLayoutChange((l) => moveGroup(l, drag.parts, drag.islands, delta.x, delta.y))
-    }
+    onLayoutChange((l) => draggedLayout(l, drag.edit, delta, snap))
   }
 
   const finishMarquee = (drag: MarqueeDrag, e: ReactPointerEvent) => {
@@ -443,7 +380,7 @@ export function Canvas(props: Props) {
     if (drag?.kind === 'marquee') finishMarquee(drag, e)
     else if (toggleOnClick && !dragChangedRef.current) onSelect(toggleSelected(selection, toggleOnClick))
     // A click without dragging on an item of a multi-selection selects just that item.
-    else if (drag?.kind === 'group' && !dragChangedRef.current) onSelect(drag.pressed)
+    else if (drag?.kind === 'edit' && drag.pressed && !dragChangedRef.current) onSelect(drag.pressed)
   }
 
   // Sizes that should stay constant on screen, expressed in mm.
