@@ -1,8 +1,9 @@
 // Where the tabs' projects are saved: saving, opening, checking a saved document against its tab's
-// recovery copy after a reload, saving Google Drive documents by themselves, and signing in to Google.
+// recovery copy after a reload, and signing in to Google. A document is only written when the user
+// saves: Save, Save as, or Save in the question before closing a tab.
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { compareWithDrive, openDriveDocument, overwriteDriveDocument, saveDriveDocument, saveInDriveFolder, type DriveLocation } from '../documents/driveDocuments'
+import { compareWithDrive, openDriveDocument, overwriteDriveDocument, saveDriveDocument, saveInDriveFolder } from '../documents/driveDocuments'
 import { driveConfigured, isSignedIn, onSignInChange, signIn, SignInNeeded } from '../documents/googleDrive'
 import { canUseFiles, compareWithFile, mayUse, pickFileToOpen, readFile, saveToFile, saveToNewFile, type FileComparison } from '../documents/projectFiles'
 import { projectFileName, projectFromFile, projectNameOf, projectToFile } from '../documents/projectFormat'
@@ -22,8 +23,6 @@ import { downloadText } from './download'
 import type { SaveChoice } from './FileDialog'
 import type { Project } from '../model/types'
 import type { TabSession } from './useTabs'
-
-const DRIVE_AUTOSAVE_MS = 2000
 
 /** The saved document changed elsewhere while tab `id` has unsaved changes: the user picks. */
 export interface FileConflict {
@@ -45,12 +44,11 @@ export function useDocuments(
   setError: (error: string) => void,
   confirm: (title: string, text: string, confirmLabel: string) => Promise<boolean>,
 ) {
-  // Checks and autosave follow the shown tab and its project as rendered.
-  const { tabsRef, activeIdRef, activeId, project, shownProject, tabName, renameTab, switchTab, openInNewTab, commitEdit } = tabs
+  const { activeIdRef, activeId, shownProject, tabName, renameTab, switchTab, openInNewTab, commitEdit } = tabs
 
   // projectFile is read while rendering; this re-renders when a tab gets or loses unsaved changes,
   // or its saved document is checked.
-  const fileStatus = useSyncExternalStore(onFileChange, fileStatusVersion)
+  useSyncExternalStore(onFileChange, fileStatusVersion)
 
   const [signedIn, setSignedIn] = useState(isSignedIn)
   useEffect(() => onSignInChange(() => setSignedIn(isSignedIn())), [])
@@ -247,37 +245,6 @@ export function useDocuments(
   useEffect(() => {
     checkSaved(activeId, false)
   }, [activeId, signedIn])
-
-  // A Google Drive document saves itself a moment after the last change. One that changed in Drive
-  // meanwhile is not overwritten: the tab shows both versions to pick from.
-  const autosaving = useRef(new Set<string>())
-  useEffect(() => {
-    if (!signedIn) return
-    const timer = setTimeout(() => {
-      for (const tab of tabsRef.current) {
-        const file = projectFile(tab.id)
-        if (file.location?.kind === 'drive' && file.dirty && file.checked && fileConflict?.id !== tab.id) autosave(tab.id, file.location)
-      }
-    }, DRIVE_AUTOSAVE_MS)
-    return () => clearTimeout(timer)
-  }, [project, fileStatus, signedIn, fileConflict])
-
-  const autosave = async (id: string, location: DriveLocation) => {
-    if (autosaving.current.has(id)) return
-    autosaving.current.add(id)
-    const toSave = shownProject(id)
-    try {
-      const result = await saveDriveDocument(toSave, location, projectFile(id).savedContent)
-      // Changes made while saving stay unsaved, and save in turn.
-      if (result.kind === 'saved') acceptSavedContent(id, projectToFile(toSave), result.location)
-      else if (!result.inDrive.project) setError(`Could not save "${tabName(id)}" to Google Drive: it is not a Manhattan project anymore`)
-      else setFileConflict({ id, project: result.inDrive.project, content: result.inDrive.content, location: result.location })
-    } catch (e) {
-      if (!(e instanceof SignInNeeded)) setError(`Could not save "${tabName(id)}" to Google Drive: ${errorText(e)}`)
-    } finally {
-      autosaving.current.delete(id)
-    }
-  }
 
   return {
     signedIn,

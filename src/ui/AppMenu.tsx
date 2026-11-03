@@ -110,7 +110,7 @@ export function AppMenu(props: AppMenuProps) {
               <hr />
               <MenuGroup icon="user" label="Google account">
                 {signedIn ? (
-                  <button onClick={signOut} title="Google Drive projects stay open here; they save again after signing in">
+                  <button onClick={signOut} title="Google Drive projects stay open here; saving one asks to sign in again">
                     <Icon name="cloud" />Sign out
                   </button>
                 ) : (
