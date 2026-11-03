@@ -1,39 +1,33 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
 import { formatQuantity, unitFor } from './quantity'
 
-// A small oscilloscope: voltage against time for a few nets. Each net gets a lane with its own
-// voltage scale, like a scope channel, so a small input and a large output both show their shape;
-// the lanes share the time axis and one crosshair that reads every trace.
+// Voltage against time for up to three nets on one axis, with a crosshair that reads every trace
+// and two cursors, A and B, placed by clicking.
+
+export type SeriesSlot = 1 | 2 | 3
 
 export interface ScopeTrace {
   net: string
   volts: number[]
-  /** The categorical colour slot, so a net keeps its colour whatever else is shown. */
-  series: 1 | 2
+  /** The categorical colour slot; a net keeps its slot while it is shown. */
+  series: SeriesSlot
+}
+
+export interface Cursors {
+  a?: number
+  b?: number
 }
 
 interface ScopePlotProps {
   /** Seconds, rising; every trace has one value per time. */
   time: number[]
   traces: ScopeTrace[]
+  cursors: Cursors
+  onCursor: (cursor: keyof Cursors, seconds: number) => void
 }
 
-const LANE_GAP = 10
-const TIME_AXIS_HEIGHT = 18
-const LEFT = 44
-const RIGHT_MARGIN = 8
-
-/** The element's width in pixels, kept up to date as it resizes; 0 until it is measured. */
-function useWidth() {
-  const ref = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(0)
-  useEffect(() => {
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
-    observer.observe(ref.current!)
-    return () => observer.disconnect()
-  }, [])
-  return { ref, width }
-}
+const HEIGHT = 300
+const MARGIN = { left: 52, right: 12, top: 10, bottom: 40 }
 
 /** About `count` round tick values (steps of 1, 2 or 5 times a power of ten) covering min..max. */
 function niceTicks(min: number, max: number, count: number): number[] {
@@ -57,104 +51,134 @@ function nearestIndex(time: number[], seconds: number): number {
   return seconds - time[low] < time[high] - seconds ? low : high
 }
 
-/** A trace's lane: where it sits and how its volts map onto it. */
-function laneOf(trace: ScopeTrace, index: number, laneHeight: number) {
-  const top = index * (laneHeight + LANE_GAP)
-  const bottom = top + laneHeight
-  const low = Math.min(...trace.volts)
-  const high = Math.max(...trace.volts)
-  // A flat trace still needs a visible span.
-  const pad = Math.max((high - low) * 0.1, 0.05)
-  const vMin = low - pad
-  const vMax = high + pad
-  return { top, bottom, vMin, vMax, y: (volts: number) => bottom - ((volts - vMin) / (vMax - vMin)) * laneHeight }
+/** The element's width in pixels, kept up to date as it resizes; 0 until it is measured. */
+function useWidth() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
+    observer.observe(ref.current!)
+    return () => observer.disconnect()
+  }, [])
+  return { ref, width }
 }
 
-export function ScopePlot({ time, traces }: ScopePlotProps) {
+export function ScopePlot({ time, traces, cursors, onCursor }: ScopePlotProps) {
   const [hovered, setHovered] = useState<number | null>(null)
   const { ref, width: measured } = useWidth()
   // Drawn in real pixels, so text keeps its size however wide the pane is.
-  const width = Math.max(measured, 240)
-  const right = width - RIGHT_MARGIN
-  const laneHeight = Math.min(Math.max(width * 0.25, 80), 220)
+  const width = Math.max(measured, 280)
+  const right = width - MARGIN.right
+  const bottom = HEIGHT - MARGIN.bottom
   const end = time[time.length - 1]
-  const lanes = traces.map((trace, k) => laneOf(trace, k, laneHeight))
-  const plotBottom = lanes[lanes.length - 1].bottom
-  const height = plotBottom + TIME_AXIS_HEIGHT
-  const x = (seconds: number) => LEFT + (seconds / end) * (right - LEFT)
+  const all = traces.flatMap((t) => t.volts)
+  const low = Math.min(...all)
+  const high = Math.max(...all)
+  // A flat trace still needs a visible span.
+  const pad = Math.max((high - low) * 0.08, 0.05)
+  const vMin = low - pad
+  const vMax = high + pad
+  const x = (seconds: number) => MARGIN.left + (seconds / end) * (right - MARGIN.left)
+  const y = (volts: number) => bottom - ((volts - vMin) / (vMax - vMin)) * (bottom - MARGIN.top)
   const timeUnit = unitFor(end)
 
-  const hover = (event: PointerEvent<SVGSVGElement>) => {
+  /** The time under the pointer, or undefined outside the plot. */
+  const secondsAt = (event: PointerEvent<SVGSVGElement> | MouseEvent<SVGSVGElement>) => {
     const box = event.currentTarget.getBoundingClientRect()
-    const plotX = ((event.clientX - box.left) / box.width) * width
-    const seconds = ((plotX - LEFT) / (right - LEFT)) * end
-    setHovered(seconds < 0 || seconds > end ? null : nearestIndex(time, seconds))
+    const seconds = ((event.clientX - box.left - MARGIN.left) / (right - MARGIN.left)) * end
+    return seconds < 0 || seconds > end ? undefined : seconds
+  }
+  const hover = (event: PointerEvent<SVGSVGElement>) => {
+    const seconds = secondsAt(event)
+    setHovered(seconds === undefined ? null : nearestIndex(time, seconds))
+  }
+  const placeCursor = (event: MouseEvent<SVGSVGElement>) => {
+    const seconds = secondsAt(event)
+    if (seconds !== undefined) onCursor(event.shiftKey ? 'b' : 'a', time[nearestIndex(time, seconds)])
   }
 
   // The tooltip sits beside the crosshair, on the side with room.
   const hoveredX = hovered === null ? 0 : x(time[hovered])
-  const tooltipSide = hoveredX < width / 2 ? { left: `calc(${(hoveredX / width) * 100}% + 6px)` } : { right: `calc(${(1 - hoveredX / width) * 100}% + 6px)` }
+  const tooltipSide = hoveredX < width / 2 ? { left: hoveredX + 10 } : { right: width - hoveredX + 10 }
 
   return (
     <div className="scope">
-      <div className="scope-legend">
-        {traces.map((t) => (
-          <span key={t.net}>
-            <span className={`line-key series-${t.series}`} aria-hidden="true" />
-            {t.net}
-          </span>
-        ))}
-      </div>
       <div className="scope-frame" ref={ref}>
         <svg
-          viewBox={`0 0 ${width} ${height}`}
+          width={width}
+          height={HEIGHT}
           role="img"
-          aria-label={`Voltage of ${traces.map((t) => t.net).join(' and ')} over time`}
+          aria-label={`Voltage of ${traces.map((t) => t.net).join(', ')} over time`}
           onPointerMove={hover}
           onPointerLeave={() => setHovered(null)}
+          onClick={placeCursor}
         >
-          {traces.map((trace, k) => {
-            const lane = lanes[k]
-            const path = trace.volts.map((v, i) => `${i ? 'L' : 'M'}${x(time[i]).toFixed(1)} ${lane.y(v).toFixed(1)}`).join('')
-            return (
-              <g key={trace.net}>
-                {niceTicks(lane.vMin, lane.vMax, Math.max(3, Math.round(laneHeight / 40))).map((v) => (
-                  <g key={v}>
-                    <line className="scope-grid" x1={LEFT} x2={right} y1={lane.y(v)} y2={lane.y(v)} />
-                    <text className="scope-tick" x={LEFT - 3} y={lane.y(v)} textAnchor="end" dominantBaseline="middle">
-                      {Number(v.toPrecision(3))}
-                    </text>
-                  </g>
-                ))}
-                <line className="scope-axis" x1={LEFT} x2={LEFT} y1={lane.top} y2={lane.bottom} />
-                <path className={`scope-trace series-${trace.series}`} d={path} />
-              </g>
-            )
-          })}
-          <line className="scope-axis" x1={LEFT} x2={right} y1={plotBottom} y2={plotBottom} />
-          {niceTicks(0, end, Math.max(4, Math.round(width / 90))).map((t) => (
-            <text key={t} className="scope-tick" x={x(t)} y={height - 3} textAnchor="middle">
-              {Number((t / timeUnit.scale).toPrecision(3))}
-            </text>
+          {niceTicks(vMin, vMax, 8).map((v) => (
+            <g key={`v${v}`}>
+              <line className="scope-grid" x1={MARGIN.left} x2={right} y1={y(v)} y2={y(v)} />
+              <text className="scope-tick" x={MARGIN.left - 6} y={y(v)} textAnchor="end" dominantBaseline="middle">
+                {Number(v.toPrecision(3))}
+              </text>
+            </g>
           ))}
-          <text className="scope-tick" x={LEFT - 8} y={height - 3} textAnchor="end">
-            {timeUnit.prefix}s
+          {niceTicks(0, end, Math.max(4, Math.round(width / 70))).map((t) => (
+            <g key={`t${t}`}>
+              <line className="scope-grid" x1={x(t)} x2={x(t)} y1={MARGIN.top} y2={bottom} />
+              <text className="scope-tick" x={x(t)} y={bottom + 16} textAnchor="middle">
+                {Number((t / timeUnit.scale).toPrecision(3))}
+              </text>
+            </g>
+          ))}
+          <rect className="scope-border" x={MARGIN.left} y={MARGIN.top} width={right - MARGIN.left} height={bottom - MARGIN.top} />
+          <text className="scope-axis-title" x={14} y={(MARGIN.top + bottom) / 2} textAnchor="middle" dominantBaseline="middle">V</text>
+          <text className="scope-axis-title" x={(MARGIN.left + right) / 2} y={HEIGHT - 4} textAnchor="middle">
+            t ({timeUnit.prefix}s)
           </text>
-          <text className="scope-tick" x={4} y={11}>V</text>
-          {hovered !== null && <line className="scope-crosshair" x1={hoveredX} x2={hoveredX} y1={0} y2={plotBottom} />}
+          {traces.map((t) => (
+            <path
+              key={t.net}
+              className={`scope-trace series-${t.series}`}
+              d={t.volts.map((v, k) => `${k ? 'L' : 'M'}${x(time[k]).toFixed(1)} ${y(v).toFixed(1)}`).join('')}
+            />
+          ))}
+          {(['a', 'b'] as const).map((cursor) =>
+            cursors[cursor] === undefined ? null : (
+              <g key={cursor}>
+                <line className="scope-cursor" x1={x(cursors[cursor]!)} x2={x(cursors[cursor]!)} y1={MARGIN.top} y2={bottom} />
+                <text className="scope-cursor-label" x={x(cursors[cursor]!) + 4} y={MARGIN.top + 12}>
+                  {cursor.toUpperCase()}
+                </text>
+              </g>
+            ),
+          )}
+          {hovered !== null && (
+            <g>
+              <line className="scope-crosshair" x1={hoveredX} x2={hoveredX} y1={MARGIN.top} y2={bottom} />
+              {traces.map((t) => (
+                <circle key={t.net} className={`scope-dot series-${t.series}`} cx={hoveredX} cy={y(t.volts[hovered])} r={4} />
+              ))}
+            </g>
+          )}
         </svg>
         {hovered !== null && (
           <div className="scope-tooltip" style={tooltipSide}>
-            <div className="muted">{formatQuantity(time[hovered], 's')}</div>
+            <div className="scope-tooltip-title">t = {formatQuantity(time[hovered], 's')}</div>
             {traces.map((t) => (
               <div key={t.net}>
-                <span className={`line-key series-${t.series}`} aria-hidden="true" />
-                <strong>{formatQuantity(t.volts[hovered], 'V')}</strong> <span className="muted">{t.net}</span>
+                <span className={`dot-key series-${t.series}`} aria-hidden="true" />
+                {t.net} = <strong>{formatQuantity(t.volts[hovered], 'V')}</strong>
               </div>
             ))}
           </div>
         )}
       </div>
+      <ul className="scope-legend">
+        {traces.map((t) => (
+          <li key={t.net}>
+            <span className={`line-key series-${t.series}`} aria-hidden="true" />V({t.net})
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

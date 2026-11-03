@@ -8,12 +8,12 @@ import type { ComponentDefinition, NetComponent, Netlist, Simulation, Source, Wa
 const SCALES: Record<string, number> = { p: 1e-12, n: 1e-9, u: 1e-6, µ: 1e-6, m: 1e-3, '': 1, R: 1, k: 1e3, K: 1e3, M: 1e6, G: 1e9 }
 
 /**
- * A part value as a number: "12k", "4k7", "2.2uF", "80Ω", "100n", "2R2". M is mega, as written on
+ * A part value as a number: "12k", "4k7", "2.2uF", "80Ω", "100n", "2R2"; also a frequency or time, "1MHz", "2.5 µs". M is mega, as written on
  * parts, where SPICE would read milli; that is why values go to ngspice as plain numbers.
  * Undefined for text that is no value.
  */
 export function partValue(text: string): number | undefined {
-  const match = text.trim().match(/^(\d+(?:\.\d+)?)\s*([pnuµmkKMGR]?)(\d*)\s*(Ω|ohms?|F|Hz|H)?$/)
+  const match = text.trim().match(/^(\d+(?:\.\d+)?)\s*([pnuµmkKMGR]?)(\d*)\s*(Ω|ohms?|F|Hz|H|s)?$/)
   if (!match) return undefined
   const [, number, prefix, decimals] = match
   // Digits after the prefix are decimals ("4k7"), so only after a prefix and a whole number.

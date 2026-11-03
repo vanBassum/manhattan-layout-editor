@@ -19,7 +19,8 @@ import {
 import { Icon } from './icons'
 import { NumberField, TextField } from './panels'
 import { formatQuantity } from './quantity'
-import { ScopePlot, type ScopeTrace } from './ScopePlot'
+import { ScopePlot, type Cursors, type ScopeTrace, type SeriesSlot } from './ScopePlot'
+import { measure } from '../simulation/waveform'
 
 const NO_SIMULATION: Simulation = { sources: [], models: {} }
 
@@ -33,10 +34,15 @@ interface SimulationPanelProps {
 
 type Analysis = 'operating point' | 'transient'
 
+const ANALYSES: { analysis: Analysis; label: string }[] = [
+  { analysis: 'operating point', label: 'Operating point (DC)' },
+  { analysis: 'transient', label: 'Transient' },
+]
+
 type Outcome = { point: OperatingPoint; warnings: string[] } | { trace: Transient; sourceNet: string; warnings: string[] } | { error: string }
 
 /** What a run gave, with the netlist it ran, so the panel can tell when the schematic has changed since. */
-type Run = { analysis: Analysis; netlist: string } & Outcome
+type Run = { analysis: Analysis; netlist: string; milliseconds: number } & Outcome
 
 /** The netlist `analysis` runs for the circuit as it is now; undefined for a transient without a wave source. */
 function netlistFor(analysis: Analysis, circuit: SpiceCircuit): string | undefined {
@@ -52,7 +58,8 @@ function withShape(source: Source, shape: Source['shape']): Source {
 
 /** Sets up the sources and SPICE models of the schematic, and shows its operating point or its response over time. */
 export function SimulationPanel({ netlist, definitions, simulation = NO_SIMULATION, onChange }: SimulationPanelProps) {
-  const [run, setRun] = useState<Run | null>(null)
+  const [tab, setTab] = useState<Analysis>('operating point')
+  const [runs, setRuns] = useState<Partial<Record<Analysis, Run>>>({})
   const [running, setRunning] = useState(false)
   const nets = useMemo(
     () => [...new Set(netlist.components.flatMap((c) => c.pins.map((p) => p.net)))].filter((n) => n && !isGroundNet(n)).sort(naturalCompare),
@@ -72,6 +79,7 @@ export function SimulationPanel({ netlist, definitions, simulation = NO_SIMULATI
     const text = netlistFor(analysis, built)
     if (text === undefined) return
     setRunning(true)
+    const started = performance.now()
     let outcome: Outcome
     try {
       const { vectors, warnings } = await runSpice(text)
@@ -82,14 +90,15 @@ export function SimulationPanel({ netlist, definitions, simulation = NO_SIMULATI
     } catch (e) {
       outcome = { error: errorText(e) }
     }
-    setRun({ analysis, netlist: text, ...outcome })
+    setRuns((previous) => ({ ...previous, [analysis]: { analysis, netlist: text, milliseconds: performance.now() - started, ...outcome } }))
     setRunning(false)
   }
 
   const { sources } = simulation
   const changeSources = (next: Source[]) => onChange({ ...simulation, sources: next })
   const undrivenNet = nets.find((n) => !sources.some((s) => s.net === n))
-  const hasWave = waveSources(sources).length > 0
+  const canRun = !('problems' in circuit) && netlistFor(tab, circuit.circuit) !== undefined
+  const run = runs[tab]
 
   return (
     <div className="simulation">
@@ -112,34 +121,31 @@ export function SimulationPanel({ netlist, definitions, simulation = NO_SIMULATI
 
         <Models netlist={netlist} simulation={simulation} onChange={onChange} />
 
-        {'problems' in circuit ? (
+        {'problems' in circuit && (
           <ul className="check-list">
             {circuit.problems.map((problem) => (
               <li key={problem} className="warn">{problem}</li>
             ))}
           </ul>
-        ) : (
-          <div className="run-buttons">
-            <button disabled={running} onClick={() => runAnalysis('operating point', circuit.circuit)} title="DC voltages and currents with the circuit at rest">
-              Operating point
-            </button>
-            <button
-              disabled={running || !hasWave}
-              onClick={() => runAnalysis('transient', circuit.circuit)}
-              title={hasWave ? 'The circuit driven by its square and sine sources, over five periods' : 'Give a source a square or sine wave first'}
-            >
-              Transient
-            </button>
-          </div>
         )}
-        {running && <p className="muted">Running…</p>}
+        {tab === 'transient' && !('problems' in circuit) && !canRun && <p className="warn">Give a source a square or sine wave to run a transient.</p>}
+        <button className="primary run-button" disabled={running || !canRun} onClick={() => !('problems' in circuit) && runAnalysis(tab, circuit.circuit)}>
+          {running ? 'Running…' : `Run ${tab}`}
+        </button>
       </div>
 
       <div className="simulation-results">
+        <div className="analysis-tabs" role="tablist" aria-label="Analysis">
+          {ANALYSES.map(({ analysis, label }) => (
+            <button key={analysis} role="tab" aria-selected={tab === analysis} className={tab === analysis ? 'active' : ''} onClick={() => setTab(analysis)}>
+              {label}
+            </button>
+          ))}
+        </div>
         {run ? (
           <RunResult run={run} outdated={'problems' in circuit || netlistFor(run.analysis, circuit.circuit) !== run.netlist} />
         ) : (
-          <p className="muted">Run the operating point or a transient to see the results here.</p>
+          <p className="muted">Press Run to see the {tab} here.</p>
         )}
       </div>
     </div>
@@ -256,25 +262,48 @@ function RunResult({ run, outdated }: { run: Run; outdated: boolean }) {
   return (
     <div className="simulation-result">
       {outdated && <p className="warn">The circuit changed since this run.</p>}
-      {'error' in run ? (
-        <pre className="error simulation-log">{run.error}</pre>
-      ) : (
-        <>
-          {'point' in run ? <OperatingPointResult point={run.point} /> : <TransientResult trace={run.trace} sourceNet={run.sourceNet} />}
-          {run.warnings.length > 0 && <pre className="warn simulation-log">{run.warnings.join('\n')}</pre>}
-        </>
-      )}
+      {'point' in run && <OperatingPointResult point={run.point} />}
+      {'trace' in run && <TransientResult trace={run.trace} sourceNet={run.sourceNet} />}
+      <SimulationLog run={run} />
+    </div>
+  )
+}
+
+/** What ngspice did: the analysis, its warnings or error, how long it took, and the netlist it ran. */
+function SimulationLog({ run }: { run: Run }) {
+  const analysis =
+    'trace' in run
+      ? `Transient: 0 … ${formatQuantity(run.trace.time[run.trace.time.length - 1], 's')}, ${run.trace.time.length} points`
+      : run.analysis === 'operating point'
+        ? 'DC operating point'
+        : 'Transient'
+  return (
+    <details className="card" open>
+      <summary className="card-title">Simulation log</summary>
+      <ul className="log-list">
+        <li className="ok">ngspice (WebAssembly)</li>
+        <li className={'error' in run ? 'error' : 'ok'}>{analysis}</li>
+        {'warnings' in run && run.warnings.map((warning) => <li key={warning} className="warn">{warning}</li>)}
+        {'error' in run ? (
+          <li>
+            <pre className="error simulation-log">{run.error}</pre>
+          </li>
+        ) : (
+          <li className="ok">Finished in {Math.round(run.milliseconds)} ms</li>
+        )}
+      </ul>
       <details>
         <summary className="muted">SPICE netlist</summary>
         <pre className="simulation-log">{run.netlist}</pre>
       </details>
-    </div>
+    </details>
   )
 }
 
 function OperatingPointResult({ point }: { point: OperatingPoint }) {
   return (
-    <>
+    <section className="card">
+      <h3 className="card-title">Operating point</h3>
       <dl className="properties counts">
         {[...point.volts].filter(([net]) => !isGroundNet(net)).sort(([a], [b]) => naturalCompare(a, b)).map(([net, volts]) => (
           <Quantity key={net} label={net} text={formatQuantity(volts, 'V')} />
@@ -301,23 +330,113 @@ function OperatingPointResult({ point }: { point: OperatingPoint }) {
           </tbody>
         </table>
       )}
-    </>
+    </section>
   )
 }
 
-/** The slowest wave source's net and one net of choice on the scope; the net starts as an output when the schematic names one. */
+/** Up to three nets share one axis: three colours stay distinguishable wherever their lines cross. */
+const MAX_TRACES = 3
+
+/**
+ * The transient: the nets shown (the wave source's net and an output to start with), the plot with
+ * cursors A and B, and measurements of every shown net.
+ */
 function TransientResult({ trace, sourceNet }: { trace: Transient; sourceNet: string }) {
-  const probeNets = [...trace.volts.keys()].filter((net) => net !== sourceNet).sort(naturalCompare)
-  const [probe, setProbe] = useState(() => probeNets.find((net) => /out/i.test(net)) ?? probeNets[0])
-  const traces: ScopeTrace[] = [{ net: sourceNet, volts: trace.volts.get(sourceNet)!, series: 1 }]
-  if (probe && trace.volts.has(probe)) traces.push({ net: probe, volts: trace.volts.get(probe)!, series: 2 })
+  const nets = [...trace.volts.keys()].sort(naturalCompare)
+  // Each shown net keeps the colour slot it got when it was switched on.
+  const [shown, setShown] = useState<Map<string, SeriesSlot>>(() => {
+    const output = nets.find((net) => net !== sourceNet && /out/i.test(net)) ?? nets.find((net) => net !== sourceNet)
+    return new Map<string, SeriesSlot>(output ? [[sourceNet, 1], [output, 2]] : [[sourceNet, 1]])
+  })
+  const [cursors, setCursors] = useState<Cursors>({})
+  const toggle = (net: string) => {
+    const next = new Map(shown)
+    if (next.has(net)) next.delete(net)
+    else {
+      const free = ([1, 2, 3] as const).find((slot) => ![...next.values()].includes(slot))
+      if (free === undefined) return
+      next.set(net, free)
+    }
+    setShown(next)
+  }
+  const traces: ScopeTrace[] = [...shown].map(([net, series]) => ({ net, series, volts: trace.volts.get(net)! }))
+  const end = trace.time[trace.time.length - 1]
+  const setCursor = (cursor: keyof Cursors, text: string) => {
+    const seconds = partValue(text)
+    if (seconds !== undefined && seconds <= end) setCursors({ ...cursors, [cursor]: seconds })
+  }
+  const span = cursors.a !== undefined && cursors.b !== undefined ? Math.abs(cursors.b - cursors.a) : undefined
+  const full = shown.size >= MAX_TRACES
+
   return (
     <>
-      <label className="probe-field">
-        <span className="field-label">Show</span>
-        <NetSelect nets={probeNets} value={probe} label="Net shown with the source" onChange={setProbe} />
-      </label>
-      <ScopePlot time={trace.time} traces={traces} />
+      <section className="card">
+        <h3 className="card-title">Transient — {traces.map((t) => `V(${t.net})`).join(', ') || 'no nets shown'}</h3>
+        <div className="trace-chips" role="group" aria-label="Nets shown">
+          {nets.map((net) => {
+            const slot = shown.get(net)
+            return (
+              <button
+                key={net}
+                className={slot ? 'trace-chip on' : 'trace-chip'}
+                aria-pressed={slot !== undefined}
+                disabled={!slot && full}
+                title={!slot && full ? `At most ${MAX_TRACES} nets at once` : undefined}
+                onClick={() => toggle(net)}
+              >
+                {slot && <span className={`line-key series-${slot}`} aria-hidden="true" />}
+                {net}
+              </button>
+            )
+          })}
+        </div>
+        {traces.length > 0 && (
+          <ScopePlot time={trace.time} traces={traces} cursors={cursors} onCursor={(cursor, seconds) => setCursors({ ...cursors, [cursor]: seconds })} />
+        )}
+        <p className="muted hint">Click the plot to place cursor A, Shift+click for B.</p>
+      </section>
+      <div className="card-row">
+        <section className="card">
+          <h3 className="card-title">Cursors</h3>
+          <div className="cursor-fields">
+            {(['a', 'b'] as const).map((cursor) => (
+              <label key={cursor}>
+                <span className="cursor-badge">{cursor.toUpperCase()}</span>
+                <TextField
+                  value={cursors[cursor] === undefined ? '' : formatQuantity(cursors[cursor]!, 's')}
+                  label={`Cursor ${cursor.toUpperCase()}`}
+                  placeholder="click the plot"
+                  onCommit={(text) => setCursor(cursor, text)}
+                />
+              </label>
+            ))}
+            <span>Δt = {span === undefined ? '–' : formatQuantity(span, 's')}</span>
+            <span>f = {span ? formatQuantity(1 / span, 'Hz') : '–'}</span>
+          </div>
+        </section>
+        <section className="card">
+          <h3 className="card-title">Measurements</h3>
+          <table className="measurement-table">
+            <thead>
+              <tr><th>Net</th><th>max</th><th>min</th><th>pk-pk</th><th>avg</th></tr>
+            </thead>
+            <tbody>
+              {traces.map((t) => {
+                const m = measure(trace.time, t.volts)
+                return (
+                  <tr key={t.net}>
+                    <td><span className={`line-key series-${t.series}`} aria-hidden="true" />{t.net}</td>
+                    <td>{formatQuantity(m.max, 'V')}</td>
+                    <td>{formatQuantity(m.min, 'V')}</td>
+                    <td>{formatQuantity(m.peakToPeak, 'V')}</td>
+                    <td>{formatQuantity(m.average, 'V')}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </section>
+      </div>
     </>
   )
 }

@@ -2,7 +2,8 @@ const PREFIXES: [number, string][] = [[1e9, 'G'], [1e6, 'M'], [1e3, 'k'], [1, ''
 
 /** "3.84 mA", "5.18 V", "-12.0 µA", "1.00 MHz": three significant digits with the prefix that fits. */
 export function formatQuantity(value: number, unit: string): string {
-  if (value === 0) return `0 ${unit}`
+  // Below a femto is rounding noise from the solver, e.g. the average of a symmetric wave.
+  if (Math.abs(value) < 1e-15) return `0 ${unit}`
   const size = Math.abs(value)
   const [scale, prefix] = PREFIXES.find(([scale]) => size >= scale) ?? PREFIXES[PREFIXES.length - 1]
   return `${(value / scale).toPrecision(3)} ${prefix}${unit}`

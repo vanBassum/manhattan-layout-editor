@@ -30,15 +30,17 @@
   --sch-power: #e03131;
   --sch-box: #fbfbf4;
   --sch-wire: #000000;
-  /* Categorical chart series, in fixed order: blue, orange. */
+  /* Categorical chart series, in fixed order: blue, orange, aqua. */
   --series-1: #2a78d6;
   --series-2: #eb6834;
+  --series-3: #1baf7a;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
   --series-1: #3987e5;
   --series-2: #d95926;
+  --series-3: #199e70;
   --bg: #131518;
   --panel: #1c1f24;
   --panel-muted: #252930;
@@ -772,60 +774,164 @@ input:focus-visible {
   margin: 0;
 }
 
-.run-buttons {
+.run-button {
+  height: 34px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.run-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* Operating point / Transient tabs above the results. */
+.analysis-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 3px;
+  background: var(--panel-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.analysis-tabs button {
+  flex: 1;
+  height: 30px;
+  border: none;
+  background: transparent;
+}
+
+.analysis-tabs button.active {
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.card {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.card-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+details.card > summary.card-title {
+  cursor: pointer;
+}
+
+.card-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
 }
 
-.probe-field {
+.hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+}
+
+/* Which nets the plot shows: toggles, each with its colour once on. */
+.trace-chips {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.trace-chip {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.trace-chip.on {
+  border-color: var(--border-strong);
+  background: var(--panel-muted);
+}
+
+/* The plot with its legend to the right; the legend drops below on a narrow pane. */
+.scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 8px;
-}
-
-.scope-legend {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 2px;
-}
-
-.line-key {
-  display: inline-block;
-  width: 12px;
-  height: 2px;
-  margin-right: 4px;
-  vertical-align: middle;
-  border-radius: 1px;
-}
-
-.line-key.series-1 {
-  background: var(--series-1);
-}
-
-.line-key.series-2 {
-  background: var(--series-2);
 }
 
 .scope-frame {
   position: relative;
+  flex: 1 1 320px;
+  min-width: 0;
 }
 
 .scope-frame svg {
   display: block;
-  width: 100%;
-  height: auto;
   touch-action: none;
+  cursor: crosshair;
+  /* Shift+click places cursor B; without this it would also select the tick labels. */
+  user-select: none;
+}
+
+.scope-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.line-key {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-radius: 1px;
+}
+
+.dot-key {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+}
+
+.line-key.series-1,
+.dot-key.series-1 {
+  background: var(--series-1);
+}
+
+.line-key.series-2,
+.dot-key.series-2 {
+  background: var(--series-2);
+}
+
+.line-key.series-3,
+.dot-key.series-3 {
+  background: var(--series-3);
 }
 
 .scope-grid {
   stroke: var(--border);
-  stroke-width: 0.5;
+  stroke-width: 1;
 }
 
-.scope-axis {
+.scope-border {
+  fill: none;
   stroke: var(--axis);
-  stroke-width: 0.75;
+  stroke-width: 1;
 }
 
 .scope-tick {
@@ -834,9 +940,14 @@ input:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+.scope-axis-title {
+  fill: var(--text);
+  font-size: 12px;
+}
+
 .scope-trace {
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: 2;
   stroke-linejoin: round;
 }
 
@@ -848,22 +959,140 @@ input:focus-visible {
   stroke: var(--series-2);
 }
 
+.scope-trace.series-3 {
+  stroke: var(--series-3);
+}
+
+/* A ring in the surface colour keeps a dot readable on top of the lines. */
+.scope-dot {
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.scope-dot.series-1 {
+  fill: var(--series-1);
+}
+
+.scope-dot.series-2 {
+  fill: var(--series-2);
+}
+
+.scope-dot.series-3 {
+  fill: var(--series-3);
+}
+
 .scope-crosshair {
   stroke: var(--text-muted);
-  stroke-width: 0.75;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.scope-cursor {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+.scope-cursor-label {
+  fill: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .scope-tooltip {
   position: absolute;
-  top: 4px;
-  padding: 4px 6px;
+  top: 8px;
+  padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
-  font-size: 11px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
+}
+
+.scope-tooltip-title {
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.cursor-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.cursor-fields label {
+  display: flex;
+  grid-column: span 2;
+  align-items: center;
+  gap: 8px;
+}
+
+.cursor-fields input {
+  flex: 1;
+  min-width: 0;
+}
+
+.cursor-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.measurement-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.measurement-table th {
+  color: var(--text-muted);
+  font-weight: normal;
+  text-align: right;
+}
+
+.measurement-table td {
+  padding: 2px 0 2px 8px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.measurement-table th:first-child,
+.measurement-table td:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.log-list .ok::before {
+  content: '✓ ';
+  color: var(--ok);
+}
+
+.log-list .warn::before {
+  content: '! ';
 }
 
 .transistor-table {
