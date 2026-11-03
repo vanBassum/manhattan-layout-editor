@@ -72,6 +72,7 @@ const PROJECTS_STORE = 'projects'
 const META_STORE = 'meta'
 const TABS_RECORD = 'tabs'
 const RECENT_RECORD = 'recent'
+const WORK_FOLDERS_RECORD = 'work-folders'
 const MAX_RECENT = 8
 const ACTIVE_TAB_KEY = 'manhattan-layout-editor/active-tab'
 
@@ -81,6 +82,8 @@ export const restoreErrors: string[] = []
 const openProjects = new Map<string, OpenProject>()
 let openTabs: ProjectTab[] = []
 let recent: RecentDocument[] = []
+/** Folders on this computer the user picked to keep projects in. */
+let workFolders: FileSystemDirectoryHandle[] = []
 let db: IDBDatabase | null = null
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(DB_NAME)
 const fileListeners = new Set<() => void>()
@@ -260,6 +263,7 @@ export async function openProjectStore() {
       openTabs.push(tab)
     }
     recent = ((await request(db.transaction(META_STORE).objectStore(META_STORE).get(RECENT_RECORD))) as RecentDocument[] | undefined) ?? []
+    workFolders = ((await request(db.transaction(META_STORE).objectStore(META_STORE).get(WORK_FOLDERS_RECORD))) as FileSystemDirectoryHandle[] | undefined) ?? []
   } catch {
     // No IndexedDB (private window, disabled): work from memory for this session.
   }
@@ -392,6 +396,20 @@ export function removeProject(id: string) {
 }
 
 export const recentDocuments = () => recent
+
+export const savedWorkFolders = () => workFolders
+
+export async function addWorkFolder(handle: FileSystemDirectoryHandle) {
+  for (const folder of workFolders) if (await folder.isSameEntry(handle)) return
+  workFolders = [...workFolders, handle]
+  put(META_STORE, WORK_FOLDERS_RECORD, workFolders)
+}
+
+/** Takes the folder off the list; the folder itself stays on disk as it is. */
+export function removeWorkFolder(handle: FileSystemDirectoryHandle) {
+  workFolders = workFolders.filter((folder) => folder !== handle)
+  put(META_STORE, WORK_FOLDERS_RECORD, workFolders)
+}
 
 async function isSameLocation(a: ProjectLocation, b: ProjectLocation): Promise<boolean> {
   if (a.kind === 'drive') return b.kind === 'drive' && a.fileId === b.fileId

@@ -29,16 +29,18 @@ pnpm dev
 
 ## Google Drive (optional)
 
-A project is saved either on this computer or in Google Drive; the tab's icon shows which. Saving a
-new project asks where. Projects in Google Drive go to the editor's own hidden folder there, save
-themselves a moment after each change, and open from any computer through **Open…**. Nothing is
-copied between the two: **Save as…** makes a copy elsewhere. Without Google the editor works as
-before and loads nothing from Google.
+A project is saved either on this computer or in Google Drive; the tab's icon shows which. **Open…**
+and **Save as…** show a file explorer: Google Drive, and the work folders you add from this computer,
+with subfolders, renaming and deleting. Projects in Google Drive live in the folder
+"Manhattan Layout Editor" in your Drive, save themselves a moment after each change, and open from
+any computer. Nothing is copied between the two: **Save as…** makes a copy elsewhere and continues
+there. Without Google the editor works as before and loads nothing from Google.
 
 Google Drive is only offered in builds with a Google OAuth client id:
 
 1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Google Drive API**.
-2. Set up the OAuth consent screen (External) with the scope `.../auth/drive.appdata`, and publish it.
+2. Set up the OAuth consent screen (External) with the scopes `.../auth/drive.file` and `.../auth/drive.appdata`
+   (the latter only to move projects that earlier versions kept in a hidden folder), and publish it.
 3. Create an OAuth client id of type **Web application**. Add the site's origin (`https://vanbassum.github.io`)
    and `http://localhost:5173` as authorized JavaScript origins.
 4. Put the client id in the repository variable `GOOGLE_CLIENT_ID` (Settings → Secrets and variables → Actions → Variables),

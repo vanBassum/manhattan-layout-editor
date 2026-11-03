@@ -1,22 +1,26 @@
-// Google sign-in and the editor's own folder in the user's Google Drive (the hidden app data
-// folder), over plain fetch. Each project saved there is one document. Nothing is loaded from
-// Google until someone chooses Google Drive: the sign-in script is only added on the first sign-in.
+// Google sign-in and Google Drive, over plain fetch. Projects live in a folder the editor makes in the
+// user's Drive, "Manhattan Layout Editor", with whatever subfolders the user makes there. The editor
+// only sees what it made itself (scope drive.file), never the rest of the user's Drive. Nothing is
+// loaded from Google until someone chooses Google Drive: the sign-in script is only added then.
 
 const CLIENT_ID: string | undefined = import.meta.env.VITE_GOOGLE_CLIENT_ID
 /** Google Drive is only offered by builds that have a Google OAuth client id. */
 export const driveConfigured = Boolean(CLIENT_ID)
 
-// Only the app data folder: the editor sees nothing else in the user's Drive.
-const SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
+// drive.file: only files and folders the editor made. drive.appdata: the hidden folder earlier
+// versions saved to, so its projects can be moved into the visible folder.
+const SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive.appdata']
 const SIGN_IN_SCRIPT = 'https://accounts.google.com/gsi/client'
 const API = 'https://www.googleapis.com'
 const TOKEN_KEY = 'manhattan-layout-editor/drive-token'
-const DOCUMENT_SUFFIX = '.manhattan.json'
 const SIGN_IN_CHECK_MS = 30_000
+const FOLDER_TYPE = 'application/vnd.google-apps.folder'
+export const ROOT_FOLDER_NAME = 'Manhattan Layout Editor'
 
 interface TokenResponse {
   access_token?: string
   expires_in?: number
+  scope?: string
   error?: string
   error_description?: string
 }
@@ -39,6 +43,8 @@ declare global {
 interface StoredToken {
   accessToken: string
   expiresAt: number
+  /** The scopes Google granted, space-separated. */
+  scope?: string
 }
 
 // The token is in localStorage so all browser tabs share one sign-in, and a reload keeps it. Google
@@ -51,10 +57,11 @@ function readToken(): StoredToken | null {
   }
 }
 
-/** The access token, or null when signed out or expired. */
+/** The access token, or null when signed out, expired, or granted without all the scopes (as by older versions). */
 function accessToken(): string | null {
   const token = readToken()
-  return token && token.expiresAt > Date.now() ? token.accessToken : null
+  if (!token || token.expiresAt <= Date.now()) return null
+  return SCOPES.every((scope) => token.scope?.includes(scope)) ? token.accessToken : null
 }
 
 export const isSignedIn = () => accessToken() !== null
@@ -80,6 +87,7 @@ function forgetToken() {
   try {
     localStorage.removeItem(TOKEN_KEY)
   } catch {}
+  rootFolder = null
   notifySignIn()
 }
 
@@ -100,7 +108,7 @@ function loadSignInScript(): Promise<GoogleOAuth> {
   return signInScript
 }
 
-/** Asks Google for access to the editor's folder. Call it from a click: it opens Google's sign-in window. */
+/** Asks Google for access. Call it from a click: it opens Google's sign-in window. */
 export async function signIn() {
   if (!CLIENT_ID) throw new Error('this build has no Google client id')
   const oauth = await loadSignInScript()
@@ -108,22 +116,24 @@ export async function signIn() {
     oauth
       .initTokenClient({
         client_id: CLIENT_ID,
-        scope: SCOPE,
+        scope: SCOPES.join(' '),
         callback: resolve,
         error_callback: (error) => reject(new Error(error.message ?? error.type)),
       })
       .requestAccessToken(),
   )
   if (!response.access_token || !response.expires_in) throw new Error(response.error_description ?? response.error ?? 'Google gave no access')
+  const missing = SCOPES.filter((scope) => !response.scope?.includes(scope))
+  if (missing.length > 0) throw new Error('Google Drive access was not granted; allow it in the sign-in window')
   // A minute early, so a save never starts with a token that runs out halfway.
-  const token: StoredToken = { accessToken: response.access_token, expiresAt: Date.now() + (response.expires_in - 60) * 1000 }
+  const token: StoredToken = { accessToken: response.access_token, expiresAt: Date.now() + (response.expires_in - 60) * 1000, scope: response.scope }
   localStorage.setItem(TOKEN_KEY, JSON.stringify(token))
   notifySignIn()
 }
 
 /** Forgets the token here and tells Google to revoke it. */
 export function signOut() {
-  const token = accessToken()
+  const token = readToken()?.accessToken
   forgetToken()
   if (token) fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: 'POST' }).catch(() => {})
 }
@@ -143,80 +153,118 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
     forgetToken()
     throw new SignInNeeded()
   }
-  if (response.status === 404) throw new Error('the document is no longer in Google Drive')
+  if (response.status === 404) throw new Error('it is no longer in Google Drive')
   if (!response.ok) throw new Error(`Google Drive answered ${response.status}: ${(await response.text()).slice(0, 200)}`)
   return response
 }
 
-/** A project document in the editor's folder; `version` goes up with every change to it. */
-export interface DriveDocument {
+const json = async <T,>(response: Promise<Response>) => (await (await response).json()) as T
+
+/** A file or folder in Google Drive; `version` goes up with every change to it. */
+export interface DriveItem {
   id: string
   name: string
+  mimeType: string
   version: string
   modifiedTime: string
+  /** Bytes, for files. */
+  size?: string
 }
 
-/** A file as Drive lists it; a document's file name is its name plus the suffix. */
-type DriveFile = DriveDocument
+export const isFolder = (item: DriveItem) => item.mimeType === FOLDER_TYPE
 
-const FILE_FIELDS = 'id,name,version,modifiedTime'
-const documentName = (fileName: string) => fileName.replace(/\.manhattan\.json$/i, '')
-const asDocument = (file: DriveFile): DriveDocument => ({ ...file, name: documentName(file.name) })
+const ITEM_FIELDS = 'id,name,mimeType,version,modifiedTime,size'
+// Drive queries put names between single quotes.
+const quoted = (text: string) => `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 
-/** Every file in the editor's folder, documents or not. */
-export async function listFiles(): Promise<DriveFile[]> {
-  const files: DriveFile[] = []
+async function search(q: string, spaces = 'drive'): Promise<DriveItem[]> {
+  const items: DriveItem[] = []
   let pageToken = ''
   do {
-    const query = new URLSearchParams({ spaces: 'appDataFolder', fields: `nextPageToken,files(${FILE_FIELDS})`, pageSize: '1000', orderBy: 'modifiedTime desc' })
+    const query = new URLSearchParams({ q, spaces, fields: `nextPageToken,files(${ITEM_FIELDS})`, pageSize: '1000', orderBy: 'folder,name' })
     if (pageToken) query.set('pageToken', pageToken)
-    const page = (await (await call(`/drive/v3/files?${query}`)).json()) as { files: DriveFile[]; nextPageToken?: string }
-    files.push(...page.files)
+    const page = await json<{ files: DriveItem[]; nextPageToken?: string }>(call(`/drive/v3/files?${query}`))
+    items.push(...page.files)
     pageToken = page.nextPageToken ?? ''
   } while (pageToken)
-  return files
+  return items
 }
 
-/** The project documents in the editor's folder, most recently changed first. */
-export async function listDocuments(): Promise<DriveDocument[]> {
-  const files = await listFiles()
-  return files.filter((file) => file.name.endsWith(DOCUMENT_SUFFIX)).map(asDocument)
+/** What is in folder `id`. */
+export const listFolder = (id: string) => search(`${quoted(id)} in parents and trashed = false`)
+
+export async function createFolder(parentId: string, name: string): Promise<DriveItem> {
+  return json<DriveItem>(
+    call(`/drive/v3/files?fields=${ITEM_FIELDS}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, mimeType: FOLDER_TYPE, parents: [parentId] }),
+    }),
+  )
 }
 
-export async function readDocument(id: string): Promise<string> {
+let rootFolder: Promise<string> | null = null
+
+/** The editor's folder in the user's Drive, made on first use. */
+export function editorFolder(): Promise<string> {
+  rootFolder ??= (async () => {
+    const found = await search(`name = ${quoted(ROOT_FOLDER_NAME)} and mimeType = ${quoted(FOLDER_TYPE)} and 'root' in parents and trashed = false`)
+    return found[0]?.id ?? (await createFolder('root', ROOT_FOLDER_NAME)).id
+  })()
+  rootFolder.catch(() => (rootFolder = null))
+  return rootFolder
+}
+
+export async function readFile(id: string): Promise<string> {
   return (await call(`/drive/v3/files/${id}?alt=media`)).text()
 }
 
-/** Drive's current version of document `id`, to tell whether it changed since it was opened or saved here. */
-export async function documentVersion(id: string): Promise<string> {
-  return ((await (await call(`/drive/v3/files/${id}?fields=version`)).json()) as { version: string }).version
+/** Drive's current version of file `id`, to tell whether it changed since it was opened or saved here. */
+export async function fileVersion(id: string): Promise<string> {
+  return (await json<{ version: string }>(call(`/drive/v3/files/${id}?fields=version`))).version
 }
 
-/** Writes project `name` to document `id`, or to a new document without an id. The file name follows the project name. */
-export async function writeDocument(name: string, text: string, id?: string): Promise<DriveDocument> {
+/** Writes `text` to file `id` under `name`, or to a new file `name` in folder `parentId`. */
+export async function writeFile(name: string, text: string, target: { id: string } | { parentId: string }): Promise<DriveItem> {
   // Drive takes the name and the content in one multipart request.
   const boundary = `manhattan-${crypto.randomUUID()}`
-  const metadata = id ? { name: `${name}${DOCUMENT_SUFFIX}` } : { name: `${name}${DOCUMENT_SUFFIX}`, parents: ['appDataFolder'] }
+  const metadata = 'id' in target ? { name } : { name, parents: [target.parentId] }
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
     `--${boundary}\r\nContent-Type: application/json\r\n\r\n${text}\r\n--${boundary}--`
-  const path = id ? `/upload/drive/v3/files/${id}` : '/upload/drive/v3/files'
-  const response = await call(`${path}?uploadType=multipart&fields=${FILE_FIELDS}`, {
-    method: id ? 'PATCH' : 'POST',
-    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-    body,
-  })
-  return asDocument((await response.json()) as DriveFile)
+  const path = 'id' in target ? `/upload/drive/v3/files/${target.id}` : '/upload/drive/v3/files'
+  return json<DriveItem>(
+    call(`${path}?uploadType=multipart&fields=${ITEM_FIELDS}`, {
+      method: 'id' in target ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    }),
+  )
 }
 
-export async function renameDocument(id: string, name: string) {
+export async function renameItem(id: string, name: string): Promise<DriveItem> {
+  return json<DriveItem>(
+    call(`/drive/v3/files/${id}?fields=${ITEM_FIELDS}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }),
+  )
+}
+
+/** Moves the file or folder to Drive's trash, from where the user can still restore it. */
+export async function trashItem(id: string) {
   await call(`/drive/v3/files/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: `${name}${DOCUMENT_SUFFIX}` }),
+    body: JSON.stringify({ trashed: true }),
   })
 }
 
-export async function removeFile(id: string) {
+// --- The hidden app data folder of earlier versions -----------------------------------------------
+
+export const listAppData = () => search('trashed = false', 'appDataFolder')
+
+export async function deleteFile(id: string) {
   await call(`/drive/v3/files/${id}`, { method: 'DELETE' })
 }

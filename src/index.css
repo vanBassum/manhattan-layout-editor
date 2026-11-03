@@ -889,52 +889,280 @@ input:focus-visible {
   font-size: 17px;
 }
 
-.open-dialog {
-  width: min(520px, calc(100vw - 32px));
+/* File explorer for Open and Save as: places on the left, a folder on the right. */
+.explorer {
+  flex-direction: column;
+  gap: 12px;
+  width: min(980px, calc(100vw - 32px));
+  height: min(640px, calc(100vh - 32px));
 }
 
-.open-dialog h3 {
+.explorer[open] {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 18px 0 8px;
-  font-size: 14px;
 }
 
-.open-list {
+.explorer-body {
   display: grid;
-  max-height: 240px;
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  list-style: none;
+  grid-template-columns: 210px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
-.open-list button {
+.explorer-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-right: 1px solid var(--border);
+  background: var(--panel-muted);
+  overflow-y: auto;
+}
+
+.explorer-tree button {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  min-width: 0;
   border-color: transparent;
+  background: none;
   text-align: left;
 }
 
-.open-list button:hover {
+.explorer-tree button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.explorer-heading {
+  margin: 10px 0 2px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.explorer-tree-row {
+  display: flex;
+}
+
+.explorer-tree-row > button:first-child {
+  flex: 1;
+}
+
+.explorer-tree-remove {
+  color: var(--text-muted);
+  font-size: 11px;
+  visibility: hidden;
+}
+
+.explorer-tree-row:hover .explorer-tree-remove {
+  visibility: visible;
+}
+
+.explorer-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+}
+
+.explorer-toolbar,
+.explorer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.explorer-crumbs {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.explorer-crumbs span {
+  display: flex;
+  align-items: center;
+}
+
+.explorer-crumbs button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-color: transparent;
+  background: none;
+}
+
+.explorer-search {
+  width: 160px;
+  height: 30px;
+}
+
+.explorer-problem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: 2px 2px 2px 10px;
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.explorer-list {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-y: auto;
+}
+
+.explorer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px 70px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 2px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  user-select: none;
+}
+
+.explorer-row:hover {
   background: var(--panel-muted);
 }
 
-.open-name {
-  flex: 1;
+.explorer-row.selected {
+  background: var(--accent-soft);
+}
+
+.explorer-row > span:not(.explorer-name) {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.explorer-columns,
+.explorer-columns:hover {
+  position: sticky;
+  top: 0;
+  background: var(--panel-muted);
+  font-weight: 600;
+}
+
+.explorer-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.open-detail,
-.open-empty {
+.explorer-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+
+.explorer-empty {
+  padding: 16px;
   color: var(--text-muted);
-  font-size: 12px;
+}
+
+.explorer-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.explorer-file-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.explorer-file-name input {
+  flex: 1;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+}
+
+.explorer-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.explorer-buttons .primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.explorer-buttons .primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.explorer-path {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .explorer-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .explorer-tree {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .explorer-heading {
+    display: none;
+  }
+
+  .explorer-row {
+    grid-template-columns: minmax(0, 1fr) 70px;
+  }
+
+  .explorer-row > span:nth-child(2) {
+    display: none;
+  }
 }
 
 .ai-dialog ol {
