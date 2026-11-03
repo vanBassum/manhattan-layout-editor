@@ -1,7 +1,7 @@
 import { errorText } from './errorText'
 import { generatedGeometry } from './footprintTemplates'
 import { createLayout, withFootprintChoices } from './layout'
-import { parseNetlist } from './netlist'
+import { isJsonObject, parseNetlist } from './netlist'
 import { symbolTemplate } from './schematicSymbols'
 import type { BuiltNetlist, Geometry, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, Settings, SymbolDefinition } from './types'
 
@@ -211,8 +211,7 @@ export function reimportedProject(text: string, current: Project): Project {
   })
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-const isPinList = (v: unknown) => Array.isArray(v) && v.every((p) => isObject(p) && typeof p.number === 'string')
+const isPinList = (v: unknown) => Array.isArray(v) && v.every((p) => isJsonObject(p) && typeof p.number === 'string')
 
 /**
  * A definition from an agent or a project file, checked for the parts the editor relies on; the rest
@@ -220,14 +219,14 @@ const isPinList = (v: unknown) => Array.isArray(v) && v.every((p) => isObject(p)
  * symbol fits.
  */
 export function checkedDefinition(data: unknown): ComponentDefinition {
-  if (!isObject(data)) throw new Error('"definition" must be an object')
+  if (!isJsonObject(data)) throw new Error('"definition" must be an object')
   const { name, pins, symbol, footprints } = data
   if (typeof name !== 'string' || name === '') throw new Error('definition needs a "name"')
   if (!isPinList(pins)) throw new Error('"pins" must be a list of {number, name?}')
-  if (!isObject(symbol) || !isPinList(symbol.pins) || !Array.isArray(symbol.graphics) || !isObject(symbol.label)) {
+  if (!isJsonObject(symbol) || !isPinList(symbol.pins) || !Array.isArray(symbol.graphics) || !isJsonObject(symbol.label)) {
     throw new Error('"symbol" needs "pins" ({number, x, y, dx, dy}), "graphics" and "label" ({x, y})')
   }
-  if (!isObject(footprints) || !Object.values(footprints).every((f) => isObject(f) && isPinList(f.pins) && isObject(f.body))) {
+  if (!isJsonObject(footprints) || !Object.values(footprints).every((f) => isJsonObject(f) && isPinList(f.pins) && isJsonObject(f.body))) {
     throw new Error('"footprints" must map footprint names to {shape, body, pins, leadLength, maxLeadLength}')
   }
   const numbers = (pins as { number: string }[]).map((p) => p.number)
@@ -245,7 +244,7 @@ export function checkedDefinition(data: unknown): ComponentDefinition {
 /** A project's stored definitions, each checked like an agent's; the error names the definition at fault. */
 export function checkedDefinitions(data: unknown): Definitions | undefined {
   if (data === undefined) return undefined
-  if (!isObject(data)) throw new Error('"definitions" must be an object')
+  if (!isJsonObject(data)) throw new Error('"definitions" must be an object')
   return Object.fromEntries(
     Object.entries(data).map(([id, definition]) => {
       try {

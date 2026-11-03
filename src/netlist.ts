@@ -41,7 +41,8 @@ export const isGroundNet = (net: string) => /^(GND|AGND|DGND|PGND|VSS|0|0V|EARTH
 
 export const naturalCompare = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true })
 
-function buildNetlist(components: NetComponent[]): Netlist {
+/** The parsed parts, with their pins and the nets in natural order. */
+function sortedNetlist(components: NetComponent[]): Netlist {
   if (components.length === 0) throw new Error('Netlist contains no components.')
   for (const c of components) c.pins.sort((a, b) => naturalCompare(a.number, b.number))
   components.sort((a, b) => naturalCompare(a.ref, b.ref))
@@ -50,11 +51,22 @@ function buildNetlist(components: NetComponent[]): Netlist {
   return { components, nets: [...nets].sort(naturalCompare) }
 }
 
-// ---------- EasyEDA JSON ----------
+/** The component `ref`, added without value, footprint or pins when the parser has not met it yet. */
+function componentFor(components: Map<string, NetComponent>, ref: string): NetComponent {
+  let component = components.get(ref)
+  if (!component) {
+    component = { ref, value: '', footprint: '', pins: [] }
+    components.set(ref, component)
+  }
+  return component
+}
 
 type JsonObject = Record<string, unknown>
 
-const isObject = (v: unknown): v is JsonObject => typeof v === 'object' && v !== null
+/** A JSON object with named fields; null and arrays are not. */
+export const isJsonObject = (v: unknown): v is JsonObject => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+// ---------- EasyEDA JSON ----------
 
 function lowerCaseKeys(obj: JsonObject): JsonObject {
   return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k.toLowerCase(), v]))
@@ -62,17 +74,17 @@ function lowerCaseKeys(obj: JsonObject): JsonObject {
 
 function pinNet(value: unknown): string {
   if (typeof value === 'string') return value
-  if (isObject(value)) return String(value.net ?? value.netName ?? value.name ?? '')
+  if (isJsonObject(value)) return String(value.net ?? value.netName ?? value.name ?? '')
   return ''
 }
 
 function parseEasyEdaJson(data: unknown): Netlist {
-  if (!isObject(data)) throw new Error('EasyEDA netlist must be a JSON object.')
-  const entries = isObject(data.components) ? data.components : data
+  if (!isJsonObject(data)) throw new Error('EasyEDA netlist must be a JSON object.')
+  const entries = isJsonObject(data.components) ? data.components : data
   const components: NetComponent[] = []
   for (const [id, entry] of Object.entries(entries)) {
-    if (!isObject(entry) || !isObject(entry.pins)) continue
-    const props = lowerCaseKeys(isObject(entry.props) ? entry.props : {})
+    if (!isJsonObject(entry) || !isJsonObject(entry.pins)) continue
+    const props = lowerCaseKeys(isJsonObject(entry.props) ? entry.props : {})
     components.push({
       ref: String(props.designator ?? id),
       value: String(props.value ?? props.name ?? ''),
@@ -80,7 +92,7 @@ function parseEasyEdaJson(data: unknown): Netlist {
       pins: Object.entries(entry.pins).map(([number, net]) => ({ number, net: pinNet(net) })),
     })
   }
-  return buildNetlist(components)
+  return sortedNetlist(components)
 }
 
 // ---------- Telesis ----------
@@ -106,14 +118,6 @@ const unquote = (s: string) => s.trim().replace(/^'(.*)'$/, '$1')
 
 function parseTelesis(text: string): Netlist {
   const components = new Map<string, NetComponent>()
-  const getComponent = (ref: string) => {
-    let component = components.get(ref)
-    if (!component) {
-      component = { ref, value: '', footprint: '', pins: [] }
-      components.set(ref, component)
-    }
-    return component
-  }
   const sections = new Map<string, string[]>()
   let section = ''
   for (const line of text.split(/\r?\n/)) {
@@ -130,7 +134,7 @@ function parseTelesis(text: string): Netlist {
     const [footprint, , rawValue = ''] = left.split('!').map(unquote)
     const value = rawValue === '{Value}' ? '' : rawValue
     for (const ref of refs.trim().split(/\s+/).filter(Boolean)) {
-      Object.assign(getComponent(ref), { footprint, value })
+      Object.assign(componentFor(components, ref), { footprint, value })
     }
   }
   // net ; REF.PIN REF.PIN ...
@@ -140,10 +144,10 @@ function parseTelesis(text: string): Netlist {
     for (const node of nodes.trim().split(/\s+/).filter(Boolean)) {
       const dot = node.lastIndexOf('.')
       if (dot <= 0) continue
-      getComponent(node.slice(0, dot)).pins.push({ number: node.slice(dot + 1), net })
+      componentFor(components, node.slice(0, dot)).pins.push({ number: node.slice(dot + 1), net })
     }
   }
-  return buildNetlist([...components.values()])
+  return sortedNetlist([...components.values()])
 }
 
 // ---------- KiCad ----------
@@ -209,17 +213,11 @@ function parseKicad(text: string): Netlist {
     for (const net of childLists(section, 'net')) {
       const name = attribute(net, 'name')
       for (const node of childLists(net, 'node')) {
-        const ref = attribute(node, 'ref')
-        let component = components.get(ref)
-        if (!component) {
-          component = { ref, value: '', footprint: '', pins: [] }
-          components.set(ref, component)
-        }
-        component.pins.push({ number: attribute(node, 'pin'), net: name })
+        componentFor(components, attribute(node, 'ref')).pins.push({ number: attribute(node, 'pin'), net: name })
       }
     }
   }
-  return buildNetlist([...components.values()])
+  return sortedNetlist([...components.values()])
 }
 
 // ---------- Protel ----------
@@ -230,29 +228,21 @@ function blockLines(block: string): string[] {
 
 function parseProtel(text: string): Netlist {
   const components = new Map<string, NetComponent>()
-  const getComponent = (ref: string) => {
-    let component = components.get(ref)
-    if (!component) {
-      component = { ref, value: '', footprint: '', pins: [] }
-      components.set(ref, component)
-    }
-    return component
-  }
   // [ ref / footprint / value ]  and  ( net / REF-PIN ... )
   for (const match of text.matchAll(/\[([^\]]*)\]|\(([^)]*)\)/g)) {
     if (match[1] !== undefined) {
       const [ref, footprint = '', value = ''] = blockLines(match[1])
-      if (ref) Object.assign(getComponent(ref), { footprint, value })
+      if (ref) Object.assign(componentFor(components, ref), { footprint, value })
     } else {
       const [net, ...nodes] = blockLines(match[2])
       for (const node of nodes) {
         const dash = node.lastIndexOf('-')
         if (dash <= 0) continue
-        getComponent(node.slice(0, dash)).pins.push({ number: node.slice(dash + 1), net })
+        componentFor(components, node.slice(0, dash)).pins.push({ number: node.slice(dash + 1), net })
       }
     }
   }
-  return buildNetlist([...components.values()])
+  return sortedNetlist([...components.values()])
 }
 
 /** The netlist with values filled in or corrected by ref, e.g. transistor types the export left out. */
