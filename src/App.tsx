@@ -3,6 +3,7 @@ import { connectAgentBridge } from './agentBridge'
 import { buildNetlist, buildProjectNetlist, withDefinitions } from './definitions'
 import { agentTargetId, runAgentCommand } from './agentDispatch'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
+import { connectDrive, disconnectDrive, driveConfigured, driveStatus, onDriveStatus, startDriveSync } from './driveSync'
 import { exportDxf } from './exportDxf'
 import { errorText } from './errorText'
 import { downloadText, exportSvg } from './exportSvg'
@@ -390,13 +391,33 @@ export function App() {
     () =>
       onRemoteChange((change) => {
         if (change.kind === 'tabs') {
-          if (change.tabs.length > 0) setTabs(change.tabs)
+          if (change.tabs.length === 0) return
+          setTabs(change.tabs)
+          // Closed elsewhere: saving it on the way out would bring it back.
+          if (!change.tabs.some((t) => t.id === activeIdRef.current)) {
+            parkedHistory.current.delete(activeIdRef.current)
+            enterTab(change.tabs[0].id, readProject(change.tabs[0].id))
+          }
         } else if (change.id === activeIdRef.current) {
           showProject(change.project)
         }
       }),
     [],
   )
+
+  const [drive, setDrive] = useState(driveStatus)
+  useEffect(() => {
+    startDriveSync({ error: setError, notice: setNotice })
+    return onDriveStatus(() => setDrive(driveStatus()))
+  }, [])
+
+  const turnOnDrive = async () => {
+    try {
+      await connectDrive()
+    } catch (e) {
+      setError(`Could not sign in with Google: ${errorText(e)}`)
+    }
+  }
 
   // Re-render when a tab gets or loses unsaved changes, or its file is checked.
   const [, setFileStatusVersion] = useState(0)
@@ -428,6 +449,11 @@ export function App() {
     const activeId = activeIdRef.current
     writeProject(activeId, projectRef.current)
     parkedHistory.current.set(activeId, history.current)
+    enterTab(id, next)
+  }
+
+  /** Shows `id` with its own undo history; the shown tab is left as it is in storage. */
+  const enterTab = (id: string, next: Project) => {
     history.current = parkedHistory.current.get(id) ?? NO_HISTORY
     parkedHistory.current.delete(id)
     showProject(next)
@@ -983,6 +1009,21 @@ export function App() {
                 <button onClick={copyShareLink} title="Copy a link that holds this whole project; opening it gives a copy in a new tab">
                   <Icon name="link" />Copy share link
                 </button>
+                {driveConfigured && (
+                  <>
+                    <hr />
+                    <span className="menu-heading">Google Drive</span>
+                    {drive === 'off' ? (
+                      <button onClick={turnOnDrive} title="Keep the open tabs in your Google Drive, to continue on another computer">
+                        <Icon name="cloud" />Sync tabs with Google Drive…
+                      </button>
+                    ) : (
+                      <button onClick={disconnectDrive} title="Stop syncing on this computer; the tabs here and in Google Drive stay as they are">
+                        <Icon name="cloud" />Stop syncing with Google Drive
+                      </button>
+                    )}
+                  </>
+                )}
                 <hr />
                 <span className="menu-heading">Import and export</span>
                 <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
@@ -1006,6 +1047,15 @@ export function App() {
               </div>
             )}
           </div>
+          {drive === 'signed-out' && (
+            <button
+              className="header-button"
+              onClick={turnOnDrive}
+              title="The Google sign-in ran out; changes stay here until you sign in again"
+            >
+              <Icon name="cloud" />Sign in to sync
+            </button>
+          )}
           {/* Outside the menu, so they stay mounted while the file dialog is open. */}
           <input
             ref={projectFileInputRef}

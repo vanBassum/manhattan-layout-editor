@@ -7,6 +7,9 @@
 // behind it. Other browser tabs hear about changes over a BroadcastChannel. Each browser tab
 // remembers its own active project in sessionStorage, so two browser tabs can work on different
 // projects without overwriting each other.
+//
+// Drive sync (driveSync.ts) follows every change through onStoreChange, and brings in changes from
+// other computers as if another browser tab made them.
 
 import { checkedDefinitions, withDefinitions } from './definitions'
 import { errorText } from './errorText'
@@ -66,6 +69,7 @@ let openTabs: ProjectTab[] = []
 let db: IDBDatabase | null = null
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(DB_NAME)
 const fileListeners = new Set<() => void>()
+const storeListeners = new Set<() => void>()
 const remoteListeners = new Set<(change: RemoteChange) => void>()
 
 export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
@@ -161,6 +165,7 @@ function persist(id: string) {
   const stored = storedOf(open)
   put(PROJECTS_STORE, id, stored)
   tell({ kind: 'project', id, stored })
+  notifyStore()
 }
 
 function remember(id: string, stored: StoredProject, checked: boolean) {
@@ -174,6 +179,7 @@ function remember(id: string, stored: StoredProject, checked: boolean) {
 }
 
 const notifyFiles = () => fileListeners.forEach((listener) => listener())
+const notifyStore = () => storeListeners.forEach((listener) => listener())
 
 // --- Before IndexedDB: localStorage --------------------------------------------------------------
 
@@ -263,6 +269,7 @@ export async function openProjectStore() {
       remoteListeners.forEach((listener) => listener({ kind: 'project', id: message.id, project: message.stored.project }))
     }
     notifyFiles()
+    notifyStore()
   })
 }
 
@@ -360,12 +367,14 @@ export function writeTabs(tabs: ProjectTab[]) {
   openTabs = tabs
   put(META_STORE, TABS_RECORD, tabs)
   tell({ kind: 'tabs', tabs })
+  notifyStore()
 }
 
 export function removeProject(id: string) {
   openProjects.delete(id)
   remove(PROJECTS_STORE, id)
   tell({ kind: 'removed', id })
+  notifyStore()
 }
 
 export function rememberActiveTab(id: string) {
@@ -384,4 +393,36 @@ export function onFileChange(listener: () => void) {
 export function onRemoteChange(listener: (change: RemoteChange) => void) {
   remoteListeners.add(listener)
   return () => void remoteListeners.delete(listener)
+}
+
+/** Called after any change to the tabs or a project, from this browser tab or another. Returns the unsubscribe. */
+export function onStoreChange(listener: () => void) {
+  storeListeners.add(listener)
+  return () => void storeListeners.delete(listener)
+}
+
+// --- Drive sync ----------------------------------------------------------------------------------
+
+export const currentTabs = () => openTabs
+
+/** Tab `id`'s project as file content; undefined for a tab this browser does not have. */
+export const projectContent = (id: string): string | undefined => openProjects.get(id)?.content
+
+/**
+ * Tab `id`'s project as another device left it, shown as if another browser tab changed it. A file
+ * link stays: it belongs to this device, and so does what was last saved to that file.
+ */
+export function applySyncedProject(id: string, project: Project) {
+  const open = openProjects.get(id)
+  remember(id, { project, savedContent: open?.savedContent ?? projectToFile(project), handle: open?.handle }, open?.checked ?? true)
+  persist(id)
+  remoteListeners.forEach((listener) => listener({ kind: 'project', id, project }))
+  notifyFiles()
+}
+
+/** The tabs as another device left them; projects of tabs that are gone are dropped. */
+export function applySyncedTabs(tabs: ProjectTab[]) {
+  for (const tab of openTabs) if (!tabs.some((t) => t.id === tab.id)) removeProject(tab.id)
+  writeTabs(tabs)
+  remoteListeners.forEach((listener) => listener({ kind: 'tabs', tabs }))
 }

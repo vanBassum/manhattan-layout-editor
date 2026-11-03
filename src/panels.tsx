@@ -29,6 +29,7 @@ const ICON_PATHS = {
   search: 'M10 4a6 6 0 1 1 0 12a6 6 0 1 1 0-12 M15 15l5 5',
   convert: 'M4 8h14l-3-3 M20 16H6l3 3',
   plus: 'M12 5v14 M5 12h14',
+  cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z',
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   schematic: 'M2 12h4 M6 9h8v6H6z M14 12h4 M18 7v10 M20 9v6',
   split: 'M3 5h18v14H3z M12 5v14',
