@@ -11,7 +11,6 @@ import {
   movePart,
   moveRects,
   replaceIslandRects,
-  replaceRect,
 } from './layout'
 import type { Island, Layout, NetComponent, Netlist, Placement } from './types'
 
@@ -137,12 +136,6 @@ describe('moving islands', () => {
     const rects = [{ x: 1, y: 1, w: 2, h: 2 }]
 
     expect(replaceIslandRects(layout, 'GND', rects).islands).toEqual([layout.islands[0], { net: 'GND', plane: true, rects }])
-  })
-
-  it('replaces one rectangle of an island', () => {
-    const rect = { x: 0, y: 5, w: 6, h: 5 }
-
-    expect(replaceRect(layout, 'A', 1, rect).islands[0].rects).toEqual([layout.islands[0].rects[0], rect])
   })
 
   it('moves rectangles without floating point fuzz', () => {

@@ -2,9 +2,9 @@ import { useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from '../../model/geometry'
 import { analyzeLeads, bodyBounds, toWorld as toWorldPoint, type LeadInfo, type MovingPart, type PinStatus } from '../../model/layout'
-import { cutNeighbours, findCuts, type Cut, type Side } from '../../model/cuts'
+import { moveBoundary, type Boundary, type Side } from '../../model/boundary'
+import { findCuts, islandEdges, type IslandEdge } from '../../model/cuts'
 import { draggedLayout, type LayoutDrag } from '../../model/layoutDrag'
-import { islandEdges, moveIslandEdge, type IslandEdge } from '../../model/raster'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from '../../model/selection'
 import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, Placement, Point, Rect, Selection } from '../../model/types'
 import { layerClasses, layerOpacities, type Layers } from '../layers'
@@ -374,33 +374,25 @@ export function Canvas(props: Props) {
     if (e.button !== 0) return
     e.stopPropagation()
     onSelect({ kind: 'island', net: island.net, rectIndex })
-    const rect = island.rects[rectIndex]
-    const sides = handleSides(handle)
-    const neighbours = cutNeighbours(layout.islands, island, rect, sides)
-    beginEditDrag(e, { kind: 'resize', net: island.net, rectIndex, sides, rect, neighbours })
+    beginEditDrag(e, { kind: 'resize', net: island.net, rectIndex, sides: handleSides(handle), islands: layout.islands })
   }
 
-  const onCutPointerDown = (e: ReactPointerEvent, cut: Cut) => {
+  /** A cut or an outline edge: either way the copper on both sides follows. */
+  const onBoundaryPointerDown = (e: ReactPointerEvent, boundary: Boundary) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    beginEditDrag(e, { kind: 'cut', cut, islands: layout.islands })
-  }
-
-  const onEdgePointerDown = (e: ReactPointerEvent, net: string, edge: IslandEdge) => {
-    if (e.button !== 0) return
-    e.stopPropagation()
-    beginEditDrag(e, { kind: 'edge', net, edge, islands: layout.islands })
+    beginEditDrag(e, { kind: 'boundary', boundary, islands: layout.islands })
   }
 
   /** Pulls a tab out of the middle of `edge`; dragging the edge itself moves all of it. */
-  const onGrowPointerDown = (e: ReactPointerEvent, net: string, edge: IslandEdge) => {
+  const onGrowPointerDown = (e: ReactPointerEvent, edge: IslandEdge) => {
     if (e.button !== 0) return
     e.stopPropagation()
     const from = Math.max(edge.from, snapToGrid((edge.from + edge.to - TAB_WIDTH_MM) / 2, snap))
     const tab = { ...edge, from, to: Math.min(edge.to, from + TAB_WIDTH_MM) }
     const target = edge.inside === 'low' ? edge.at + TAB_DEPTH_MM : edge.at - TAB_DEPTH_MM
     onBeginEdit()
-    onLayoutChange((l) => ({ ...l, islands: moveIslandEdge(l.islands, net, tab, target) }))
+    onLayoutChange((l) => ({ ...l, islands: moveBoundary(l.islands, tab, target) }))
     setHoveredEdge(null)
   }
 
@@ -533,7 +525,7 @@ export function Canvas(props: Props) {
                   x2={x2}
                   y2={y2}
                   strokeWidth={6 * px}
-                  onPointerDown={(e) => onCutPointerDown(e, cut)}
+                  onPointerDown={(e) => onBoundaryPointerDown(e, cut)}
                 />
               )
             })}
@@ -592,8 +584,8 @@ export function Canvas(props: Props) {
                 hovered={hoveredEdge === hoverKey}
                 onPointerEnter={() => setHoveredEdge(hoverKey)}
                 onPointerLeave={() => setHoveredEdge((key) => (key === hoverKey ? null : key))}
-                onEdgePointerDown={(e) => onEdgePointerDown(e, net, edge)}
-                onGrowPointerDown={(e) => onGrowPointerDown(e, net, edge)}
+                onEdgePointerDown={(e) => onBoundaryPointerDown(e, edge)}
+                onGrowPointerDown={(e) => onGrowPointerDown(e, edge)}
               />
             )
           })}

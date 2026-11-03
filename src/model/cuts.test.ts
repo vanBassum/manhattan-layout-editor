@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cutNeighbours, findCuts, followResize, moveCut, resizeRect } from './cuts'
+import { findCuts, islandEdges } from './cuts'
 import type { Island } from './types'
 
 describe('findCuts', () => {
@@ -23,68 +23,33 @@ describe('findCuts', () => {
     expect(findCuts([bias, split]).filter((cut) => cut.axis === 'y')).toEqual([{ axis: 'y', at: 5, from: 0, to: 10, nets: ['BIAS', 'Q2_B'] }])
   })
 
-  it('moves only the islands on both sides of the dragged cut', () => {
-    const cut = findCuts(islands).find((c) => c.axis === 'y' && c.nets[0] === 'BIAS')!
-    const moved = moveCut(islands, cut, 7)
-    expect(moved.find((i) => i.net === 'BIAS')!.rects).toEqual([{ x: 0, y: 0, w: 10, h: 7 }])
-    expect(moved.find((i) => i.net === 'Q2_B')!.rects).toEqual([{ x: 0, y: 7, w: 10, h: 3 }])
-    expect(moved.find((i) => i.net === 'Q2_C')).toEqual(collector)
-    expect(moved.find((i) => i.net === 'Q2_E')).toEqual(emitter)
-  })
-
-  it('splits a rectangle that reaches past the cut, so only the part along it moves', () => {
-    // VCC runs over both BIAS and OUT; the cut between VCC and BIAS covers only x = 0..10.
-    const vcc: Island = { net: 'VCC', rects: [{ x: 0, y: 0, w: 20, h: 5 }] }
-    const low: Island = { net: 'BIAS', rects: [{ x: 0, y: 5, w: 10, h: 5 }] }
-    const out: Island = { net: 'OUT', rects: [{ x: 10, y: 5, w: 10, h: 5 }] }
-    const cut = findCuts([vcc, low, out]).find((c) => c.axis === 'y' && c.nets.includes('BIAS'))!
-    const moved = moveCut([vcc, low, out], cut, 7)
-    expect(moved.find((i) => i.net === 'VCC')!.rects).toEqual([{ x: 0, y: 0, w: 10, h: 7 }, { x: 10, y: 0, w: 10, h: 5 }])
-    expect(moved.find((i) => i.net === 'BIAS')!.rects).toEqual([{ x: 0, y: 7, w: 10, h: 3 }])
-    expect(moved.find((i) => i.net === 'OUT')).toEqual(out)
-  })
-
-  it('leaves the islands as they are when the cut does not move', () => {
-    const cut = findCuts(islands).find((c) => c.axis === 'y' && c.nets[0] === 'BIAS')!
-    expect(moveCut(islands, cut, 5)).toBe(islands)
+  it('finds none along a plane', () => {
+    const plane: Island = { net: 'GND', plane: true, rects: [{ x: 0, y: 10, w: 10, h: 5 }] }
+    expect(findCuts([base, plane])).toEqual([])
   })
 })
 
-describe('resizeRect', () => {
-  const rect = { x: 0, y: 0, w: 10, h: 5 }
-
-  it('moves the dragged sides by the delta onto the snap grid and keeps the others', () => {
-    expect(resizeRect(rect, ['right', 'bottom'], 2.3, 1.2, 1)).toEqual({ x: 0, y: 0, w: 12, h: 6 })
-    expect(resizeRect(rect, ['left'], -1.6, 9, 0.5)).toEqual({ x: -1.5, y: 0, w: 11.5, h: 5 })
-  })
-
-  it('keeps at least the minimum size, holding the opposite side in place', () => {
-    expect(resizeRect(rect, ['left'], 20, 0, 1)).toEqual({ x: 9, y: 0, w: 1, h: 5 })
-    expect(resizeRect(rect, ['bottom'], 0, -20, 1)).toEqual({ x: 0, y: 0, w: 10, h: 1 })
-  })
-})
-
-describe('cutNeighbours', () => {
-  const a: Island = { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 5 }] }
-  const b: Island = { net: 'B', rects: [{ x: 10, y: 2, w: 5, h: 5 }, { x: 0, y: 5, w: 4, h: 5 }] }
-  const plane: Island = { net: 'GND', plane: true, rects: [{ x: 10, y: -10, w: 20, h: 20 }] }
-
-  it('finds the rectangles of other nets on the dragged sides, with their side facing it', () => {
-    expect(cutNeighbours([a, b, plane], a, a.rects[0], ['right', 'bottom'])).toEqual([
-      { net: 'B', rectIndex: 0, rect: b.rects[0], side: 'left' },
-      { net: 'B', rectIndex: 1, rect: b.rects[1], side: 'top' },
+describe('islandEdges', () => {
+  it('outlines an island built from several rectangles as one shape', () => {
+    // An L: a bar on top and a leg below its left end.
+    const l: Island = { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 5 }, { x: 0, y: 5, w: 4, h: 5 }] }
+    expect(islandEdges([l], 'A')).toEqual([
+      { axis: 'x', at: 0, from: 0, to: 10, inside: 'high' },
+      { axis: 'x', at: 4, from: 5, to: 10, inside: 'low' },
+      { axis: 'x', at: 10, from: 0, to: 5, inside: 'low' },
+      { axis: 'y', at: 0, from: 0, to: 10, inside: 'high' },
+      { axis: 'y', at: 5, from: 4, to: 10, inside: 'low' },
+      { axis: 'y', at: 10, from: 0, to: 4, inside: 'low' },
     ])
   })
 
-  it('finds none for a plane: its rectangles are not cut from their neighbours', () => {
-    expect(cutNeighbours([a, b, plane], plane, plane.rects[0], ['left'])).toEqual([])
+  it('runs along the neighbours of other nets as well as along free space', () => {
+    const a: Island = { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 5 }] }
+    const b: Island = { net: 'B', rects: [{ x: 0, y: 5, w: 4, h: 5 }] }
+    expect(islandEdges([a, b], 'A').filter((e) => e.axis === 'y' && e.at === 5)).toEqual([{ axis: 'y', at: 5, from: 0, to: 10, inside: 'low' }])
   })
-})
 
-describe('followResize', () => {
-  it("moves the neighbour's shared side to the resized rectangle's side", () => {
-    const neighbour = { net: 'B', rectIndex: 0, rect: { x: 10, y: 0, w: 5, h: 5 }, side: 'left' as const }
-
-    expect(followResize(neighbour, { x: 0, y: 0, w: 12, h: 5 })).toEqual({ x: 12, y: 0, w: 3, h: 5 })
+  it('finds none for a plane', () => {
+    expect(islandEdges([{ net: 'GND', plane: true, rects: [{ x: 0, y: 0, w: 10, h: 5 }] }], 'GND')).toEqual([])
   })
 })

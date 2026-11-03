@@ -46,13 +46,6 @@ export function replaceIslandRects(layout: Layout, net: string, rects: Rect[]): 
   return { ...layout, islands: layout.islands.map((i) => (i.net === net ? { ...i, rects } : i)) }
 }
 
-export function replaceRect(layout: Layout, net: string, rectIndex: number, rect: Rect): Layout {
-  return {
-    ...layout,
-    islands: layout.islands.map((i) => (i.net === net ? { ...i, rects: i.rects.map((r, k) => (k === rectIndex ? rect : r)) } : i)),
-  }
-}
-
 export const moveRects = (rects: Rect[], dx: number, dy: number) =>
   rects.map((r) => ({ ...r, x: withoutFloatNoise(r.x + dx), y: withoutFloatNoise(r.y + dy) }))
 

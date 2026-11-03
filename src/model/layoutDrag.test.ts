@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { cutNeighbours, findCuts } from './cuts'
+import { findCuts, islandEdges } from './cuts'
 import { draggedLayout } from './layoutDrag'
-import { islandEdges } from './raster'
 import type { Island, Layout, Placement } from './types'
 
 const a: Island = { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 5 }] }
@@ -13,9 +12,9 @@ const layout: Layout = { islands: [a, b], placements: [r1, r2] }
 const area = (island: Island) => island.rects.reduce((sum, r) => sum + r.w * r.h, 0)
 
 describe('draggedLayout', () => {
-  it('edge: moves the outline edge onto the snap grid, taking copper from the neighbour', () => {
+  it('boundary: moves an outline edge onto the snap grid, taking copper from the neighbour', () => {
     const bottomOfA = islandEdges(layout.islands, 'A').find((e) => e.axis === 'y' && e.at === 5)!
-    const drag = { kind: 'edge' as const, net: 'A', edge: bottomOfA, islands: layout.islands }
+    const drag = { kind: 'boundary' as const, boundary: bottomOfA, islands: layout.islands }
 
     const [movedA, movedB] = draggedLayout(layout, drag, { x: 0, y: 2.3 }, 1).islands
 
@@ -31,8 +30,8 @@ describe('draggedLayout', () => {
     ])
   })
 
-  it('cut: moves the cut onto the snap grid, with the islands on both sides', () => {
-    const drag = { kind: 'cut' as const, cut: findCuts(layout.islands)[0], islands: layout.islands }
+  it('boundary: moves a cut onto the snap grid, with the islands on both sides', () => {
+    const drag = { kind: 'boundary' as const, boundary: findCuts(layout.islands)[0], islands: layout.islands }
 
     expect(draggedLayout(layout, drag, { x: 0, y: -1.6 }, 0.5).islands).toEqual([
       { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 3.5 }] },
@@ -41,9 +40,7 @@ describe('draggedLayout', () => {
   })
 
   it('resize: moves the dragged side, and the side of the neighbour that shares it', () => {
-    const rect = a.rects[0]
-    const neighbours = cutNeighbours(layout.islands, a, rect, ['bottom'])
-    const drag = { kind: 'resize' as const, net: 'A', rectIndex: 0, sides: ['bottom' as const], rect, neighbours }
+    const drag = { kind: 'resize' as const, net: 'A', rectIndex: 0, sides: ['bottom' as const], islands: layout.islands }
 
     expect(draggedLayout(layout, drag, { x: 0, y: 2.2 }, 1).islands).toEqual([
       { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 7 }] },

@@ -1,20 +1,18 @@
-import { followResize, moveCut, resizeRect, type Cut, type CutNeighbour, type Side } from './cuts'
+import { draggedTarget, moveBoundary, resizeRect, type Boundary, type Side } from './boundary'
 import { snapToGrid } from './geometry'
-import { gridDelta, moveGroup, movePart, moveRects, replaceIslandRects, replaceRect, toLocal, type MovingPart } from './layout'
-import { moveIslandEdge, type IslandEdge } from './raster'
+import { gridDelta, moveGroup, movePart, moveRects, replaceIslandRects, toLocal, type MovingPart } from './layout'
 import type { Island, Layout, Point, Rect } from './types'
 
 /**
  * A drag that edits the PCB layout, holding what it moves as it was when the drag started.
- * edge: an island's outline edge. cut: the cut between islands, moving both sides. resize: one
- * rectangle of an island, with the rectangles of other nets on its dragged sides. lead: a lead's
- * end. part: one part. group: the parts and islands of a multi-selection.
+ * boundary: a cut between islands or an island's outline edge, moving the copper on both sides.
+ * resize: one rectangle of an island, whose dragged sides move as boundaries. lead: a lead's end.
+ * part: one part. group: the parts and islands of a multi-selection.
  */
 export type LayoutDrag =
-  | { kind: 'edge'; net: string; edge: IslandEdge; islands: Island[] }
+  | { kind: 'boundary'; boundary: Boundary; islands: Island[] }
   | { kind: 'island'; net: string; rects: Rect[] }
-  | { kind: 'cut'; cut: Cut; islands: Island[] }
-  | { kind: 'resize'; net: string; rectIndex: number; sides: Side[]; rect: Rect; neighbours: CutNeighbour[] }
+  | { kind: 'resize'; net: string; rectIndex: number; sides: Side[]; islands: Island[] }
   | { kind: 'lead'; ref: string; pin: string; origin: Point }
   | { kind: 'part'; part: MovingPart }
   | { kind: 'group'; parts: MovingPart[]; islands: Island[] }
@@ -24,25 +22,14 @@ export function draggedLayout(layout: Layout, drag: LayoutDrag, delta: Point, sn
   const dx = snapToGrid(delta.x, snap)
   const dy = snapToGrid(delta.y, snap)
   switch (drag.kind) {
-    case 'edge': {
-      const target = snapToGrid(drag.edge.at + (drag.edge.axis === 'x' ? delta.x : delta.y), snap)
-      return { ...layout, islands: moveIslandEdge(drag.islands, drag.net, drag.edge, target) }
-    }
+    case 'boundary':
+      return { ...layout, islands: moveBoundary(drag.islands, drag.boundary, draggedTarget(drag.boundary, delta, snap)) }
     case 'island': {
       const onGrid = gridDelta(drag.rects, delta.x, delta.y, snap)
       return replaceIslandRects(layout, drag.net, moveRects(drag.rects, onGrid.x, onGrid.y))
     }
-    case 'cut': {
-      const target = snapToGrid(drag.cut.at + (drag.cut.axis === 'x' ? delta.x : delta.y), snap)
-      return { ...layout, islands: moveCut(drag.islands, drag.cut, target) }
-    }
-    case 'resize': {
-      const resized = resizeRect(drag.rect, drag.sides, delta.x, delta.y, snap)
-      return drag.neighbours.reduce(
-        (next, n) => replaceRect(next, n.net, n.rectIndex, followResize(n, resized)),
-        replaceRect(layout, drag.net, drag.rectIndex, resized),
-      )
-    }
+    case 'resize':
+      return { ...layout, islands: resizeRect(drag.islands, drag.net, drag.rectIndex, drag.sides, delta, snap) }
     case 'lead': {
       // Stored relative to the body as it is now (it may have rotated mid-drag), so the bent lead follows the component.
       const end = { x: drag.origin.x + dx, y: drag.origin.y + dy }
