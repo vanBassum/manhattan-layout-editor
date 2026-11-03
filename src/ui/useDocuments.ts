@@ -131,8 +131,9 @@ export function useDocuments(
         if (!choice) return false
         if (choice.place === 'local' && !canUseFiles) {
           downloadText(projectFileName(choice.name), projectToFile(current), 'application/json')
-          setSavedProject(id, current)
+          // Named first, so the tab never shows without a document or a name.
           setTabName(id, choice.name)
+          setSavedProject(id, current)
           return true
         }
         saved = choice.place === 'drive' ? await saveToNewDriveDocument(current, choice.name, choice.folderId) : await saveToNewLocalFile(current, choice.name)
