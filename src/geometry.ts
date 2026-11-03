@@ -124,7 +124,7 @@ export function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
  * Works on the grid formed by all rectangle edges: every covered grid cell contributes
  * the sides that border an uncovered cell, and those sides are chained into loops.
  */
-export function unionOutline(rects: Rect[]): Point[][] {
+function unionOutline(rects: Rect[]): Point[][] {
   const xs = [...new Set(rects.flatMap((r) => [r.x, r.x + r.w].map(roundMm)))].sort((a, b) => a - b)
   const ys = [...new Set(rects.flatMap((r) => [r.y, r.y + r.h].map(roundMm)))].sort((a, b) => a - b)
   const columns = xs.length - 1

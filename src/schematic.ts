@@ -39,7 +39,7 @@ export interface FullSchematic {
 /** Map key of a point; coordinates are on the grid, so rounding only removes float noise. */
 export const pointKey = (p: Point) => `${Math.round(p.x * 1000) / 1000},${Math.round(p.y * 1000) / 1000}`
 
-export const wireEnds = (w: Wire): [Point, Point] => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]
+const wireEnds =(w: Wire): [Point, Point] => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]
 const isHorizontal = (w: Wire) => w.y1 === w.y2 && w.x1 !== w.x2
 const isVertical = (w: Wire) => w.x1 === w.x2 && w.y1 !== w.y2
 
@@ -137,7 +137,7 @@ export function labelSymbol(label: NetLabel): LabelSymbol {
 }
 
 /** True when `p` lies on the wire, ends excluded. Only straight horizontal and vertical wires take T-joins. */
-export function onWireInterior(p: Point, w: Wire): boolean {
+function onWireInterior(p: Point, w: Wire): boolean {
   const eps = 1e-6
   if (Math.abs(w.x1 - w.x2) < eps && Math.abs(p.x - w.x1) < eps) {
     return p.y > Math.min(w.y1, w.y2) + eps && p.y < Math.max(w.y1, w.y2) - eps

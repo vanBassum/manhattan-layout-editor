@@ -28,7 +28,7 @@ function knifeLayout(netlist: BuiltNetlist, settings: Settings) {
   // at the board edges, so rails joined by e.g. decoupling capacitors end up next to each other.
   const busiest = [...netlist.nets].sort((a, b) => pins(b) - pins(a) || naturalCompare(a, b))
   const rails = new Set(busiest.filter((net) => pins(net) >= RAIL_MIN_PINS).slice(0, MAX_RAILS))
-  const chain = chainNets(netlist, busiest, [])
+  const chain = chainNets(netlist, busiest)
 
   const cellWidth = (net: string) => Math.max(MIN_CELL_WIDTH, pins(net) * WIDTH_PER_PIN)
   const cells = chain.filter((net) => !rails.has(net))
@@ -78,28 +78,23 @@ function knifeLayout(netlist: BuiltNetlist, settings: Settings) {
   return { islands, placements: placeOnIslands(netlist, islands, settings) }
 }
 
-/**
- * Orders nets so that each next net shares the most parts with the ones just before it.
- * `context` nets count as already placed but are not part of the result.
- */
-function chainNets(netlist: Netlist, nets: string[], context: string[]): string[] {
+/** Orders nets so that each next net shares the most parts with the ones just before it. */
+function chainNets(netlist: Netlist, nets: string[]): string[] {
   const shared = (a: string, b: string) =>
     netlist.components.filter((c) => {
       const cn = componentNets(c)
       return cn.includes(a) && cn.includes(b)
     }).length
   const remaining = [...nets].sort(naturalCompare)
-  const chain = [...context]
-  const result: string[] = []
+  const chain: string[] = []
   while (remaining.length > 0) {
     const score = (net: string) => chain.reduce((sum, p, k) => sum + shared(net, p) * (k === chain.length - 1 ? 3 : 1), 0)
     let best = 0
     for (let k = 1; k < remaining.length; k++) if (score(remaining[k]) > score(remaining[best])) best = k
     const [next] = remaining.splice(best, 1)
     chain.push(next)
-    result.push(next)
   }
-  return result
+  return chain
 }
 
 export const knifeStrategy: Strategy = {

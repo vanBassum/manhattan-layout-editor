@@ -3,7 +3,7 @@ import type { Island, Rect } from './types'
 
 const EPS = 1e-6
 /** No rectangle may shrink below this (mm) while a cut is dragged. */
-export const MIN_RECT_SIZE = 1
+const MIN_RECT_SIZE = 1
 
 /**
  * A straight isolation cut between islands of different nets: a vertical line at x = at

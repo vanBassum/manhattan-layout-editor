@@ -89,7 +89,7 @@ function diode([cathode, anode]: Numbers, led: boolean): SymbolDefinition {
   }
 }
 
-export type TransistorPin = 'B' | 'C' | 'E'
+type TransistorPin ='B' | 'C' | 'E'
 
 /** The emitter goes to the more positive side: down for NPN, up for PNP; its arrow points out for NPN, in for PNP. */
 function transistor(numbers: Numbers, roles: TransistorPin[], pnp: boolean): SymbolDefinition {
@@ -149,7 +149,7 @@ function transistorRoles(component: NetComponent): TransistorPin[] {
   return ['E', 'B', 'C']
 }
 
-export interface SymbolTemplate {
+interface SymbolTemplate {
   /** Short, readable id shared by every part that fits the same template, e.g. "resistor" or "pnp-ecb". */
   kind: string
   name: string

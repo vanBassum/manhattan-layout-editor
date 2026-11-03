@@ -87,19 +87,13 @@ function placementOrder(netlist: BuiltNetlist): BuiltComponent[] {
   return order
 }
 
-export interface PlacementOptions {
-  step?: number
-  rotations?: number[]
-}
-
 /**
  * Places components before any copper exists. Each part goes where its leads end up closest to
  * already placed leads of the same nets (those will share an island), with a penalty for every
  * crossing of those connections. Bodies plus leads never overlap and keep `settings.clearance`
  * apart; the search radius grows until a free spot is found, so that always holds.
  */
-export function placeComponents(netlist: BuiltNetlist, settings: Settings, options: PlacementOptions = {}): PlacedPart[] {
-  const { step = 1, rotations = ROTATIONS } = options
+export function placeComponents(netlist: BuiltNetlist, settings: Settings): PlacedPart[] {
   const placed: PlacedPart[] = []
   const netEnds = new Map<string, Point[]>()
   const connections: [Point, Point][] = []
@@ -108,12 +102,12 @@ export function placeComponents(netlist: BuiltNetlist, settings: Settings, optio
     const { geometry } = component
     const localEnds = defaultLeadEnds(geometry)
     const nets = component.pins.map((p) => (isRealNet(p.net) ? p.net : null))
-    const target = placementTarget(nets, netEnds, placed, step)
+    const target = placementTarget(nets, netEnds, placed)
 
     let best: Candidate | undefined
     for (const radius of SEARCH_RADII) {
-      for (const offset of spiralOffsets(radius, step)) {
-        for (const rotation of rotations) {
+      for (const offset of spiralOffsets(radius, 1)) {
+        for (const rotation of ROTATIONS) {
           const placement = { ref: component.ref, x: target.x + offset.x, y: target.y + offset.y, rotation }
           const keepOut = inflate(bodyBounds(geometry, placement, localEnds), settings.clearance / 2)
           if (placed.some((p) => rectsOverlap(p.keepOut, keepOut))) continue
@@ -252,17 +246,16 @@ function nearestPoint(points: Point[], p: Point): Point {
 }
 
 /** Centroid of already placed leads on the same nets; unconnected parts go to the right of the rest. */
-function placementTarget(nets: (string | null)[], netEnds: Map<string, Point[]>, placed: PlacedPart[], step: number): Point {
-  const snap = (v: number) => Math.round(v / step) * step
+function placementTarget(nets: (string | null)[], netEnds: Map<string, Point[]>, placed: PlacedPart[]): Point {
   const related = nets.flatMap((net) => (net === null ? [] : (netEnds.get(net) ?? [])))
   if (related.length > 0) {
     return {
-      x: snap(related.reduce((s, p) => s + p.x, 0) / related.length),
-      y: snap(related.reduce((s, p) => s + p.y, 0) / related.length),
+      x: Math.round(related.reduce((s, p) => s + p.x, 0) / related.length),
+      y: Math.round(related.reduce((s, p) => s + p.y, 0) / related.length),
     }
   }
   const bounds = boundsOf(placed.map((p) => p.keepOut))
-  return bounds ? { x: snap(bounds.x + bounds.w + 10), y: snap(bounds.y) } : { x: 0, y: 0 }
+  return bounds ? { x: Math.round(bounds.x + bounds.w + 10), y: Math.round(bounds.y) } : { x: 0, y: 0 }
 }
 
 function endsTooClose(ends: Point[], nets: (string | null)[], placed: PlacedPart[]): boolean {
