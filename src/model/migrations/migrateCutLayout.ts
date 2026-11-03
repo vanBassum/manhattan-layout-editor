@@ -6,7 +6,7 @@
 import { buildNetlist } from '../definitions'
 import { defaultLeadEnds, toWorld } from '../layout'
 import { isRealNet } from '../netlist'
-import { cellsToRects, columns, indexOf, oriented, rows, uniqueSorted, type Axis, type Grid } from '../raster'
+import type { Axis } from '../boundary'
 import type { Island, Layout, Point, Project, Rect, Settings } from '../types'
 
 const CUT_LINES_STRATEGY = 'knife-cuts'
@@ -47,6 +47,62 @@ export function withoutCutLines(project: Project): Project {
   return { ...project, settings, layout: { ...layout, islands: islandsFromCuts(knife, leadEnds) } }
 }
 
+/** The board cut into cells along every x and y coordinate a cut line starts or ends at. */
+interface Grid {
+  xs: number[]
+  ys: number[]
+}
+
+const uniqueSorted = (values: number[]) => [...values].sort((a, b) => a - b).filter((v, k, all) => k === 0 || v - all[k - 1] > EPS)
+
+const indexOf = (values: number[], v: number) => values.findIndex((u) => Math.abs(u - v) < EPS)
+
+const columns = (grid: Grid) => grid.xs.length - 1
+const rows = (grid: Grid) => grid.ys.length - 1
+const cell = (grid: Grid, i: number, j: number) => j * columns(grid) + i
+
+/**
+ * Index helpers for code that works across or along a line: for a vertical line (axis 'x') the
+ * cross direction is x and the along direction is y; for a horizontal line it is the other way.
+ */
+function oriented(grid: Grid, axis: Axis) {
+  return {
+    across: axis === 'x' ? grid.xs : grid.ys,
+    along: axis === 'x' ? grid.ys : grid.xs,
+    cell: (a: number, b: number) => (axis === 'x' ? cell(grid, a, b) : cell(grid, b, a)),
+  }
+}
+
+/** The cells for which `isCell` holds, as few rectangles: runs per row, stacked where they line up. */
+function cellsToRects(grid: Grid, isCell: (index: number) => boolean): Rect[] {
+  const { xs, ys } = grid
+  const rects: Rect[] = []
+  let growing = new Map<string, Rect>()
+  for (let j = 0; j < rows(grid); j++) {
+    const next = new Map<string, Rect>()
+    for (let i = 0; i < columns(grid); ) {
+      if (!isCell(cell(grid, i, j))) {
+        i++
+        continue
+      }
+      const start = i
+      while (i < columns(grid) && isCell(cell(grid, i, j))) i++
+      const key = `${start}:${i}`
+      const above = growing.get(key)
+      if (above) {
+        above.h = ys[j + 1] - above.y
+        next.set(key, above)
+      } else {
+        const rect = { x: xs[start], y: ys[j], w: xs[i] - xs[start], h: ys[j + 1] - ys[j] }
+        rects.push(rect)
+        next.set(key, rect)
+      }
+    }
+    growing = next
+  }
+  return rects
+}
+
 /** The copper areas a set of cut lines splits the board into, each as rectangles. */
 function cutRegions({ board, cuts }: CutBoard): Rect[][] {
   const clampX = (v: number) => Math.min(Math.max(v, board.x), board.x + board.w)
@@ -54,7 +110,6 @@ function cutRegions({ board, cuts }: CutBoard): Rect[][] {
   const grid: Grid = {
     xs: uniqueSorted([board.x, board.x + board.w, ...cuts.flatMap((c) => [clampX(c.x1), clampX(c.x2)])]),
     ys: uniqueSorted([board.y, board.y + board.h, ...cuts.flatMap((c) => [clampY(c.y1), clampY(c.y2)])]),
-    owner: new Int32Array(0),
   }
   const count = columns(grid) * rows(grid)
 
