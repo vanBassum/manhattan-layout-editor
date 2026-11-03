@@ -17,10 +17,16 @@ Safari is not supported for this connection.
 
 ## Tools
 
-get_layout, screenshot, move_component, set_lead_end, reset_leads, set_island, move_island,
-batch (several edits as one undo step), set_resistor_footprint, set_footprint (any footprint
-for chosen parts, or null for the netlist footprint), run_optimizer, add_component (a new part,
-optionally with the nets its pins join), undo, redo, list_projects.
+- Projects: list_projects.
+- PCB layout: get_layout, screenshot, move_component, set_lead_end, reset_leads, set_island,
+  move_island, batch (several edits as one undo step), set_resistor_footprint, set_footprint (any
+  footprint for chosen parts, or null for the netlist footprint), run_optimizer.
+- Schematic, which decides the nets: get_schematic, set_schematic (place symbols), set_wires,
+  set_labels, update_pcb (give the PCB the schematic's nets).
+- Parts: add_component (a new part, optionally with the nets its pins join), set_values,
+  get_definitions, set_definition, assign_definition (symbol and footprints of a part).
+- History: undo, redo.
+
 The editor has project tabs. Every tool takes an optional "project" (tab name or id from
 list_projects); without it, tools work on the tab shown on screen.
 All coordinates are millimetres, y points down. Layout tools only change geometry; parts and nets

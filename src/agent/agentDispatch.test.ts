@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import server from '../../mcp/server.mjs?raw'
+import llms from '../../public/llms.txt?raw'
 import { AGENT_COMMANDS, agentTargetId, runAgentCommand, type AgentEditor, type AgentTab } from './agentDispatch'
 import example from '../examples/Astable multivibrator.manhattan.json?raw'
 import { STRATEGIES } from '../optimize'
@@ -8,10 +9,16 @@ import { emptyProject, projectFromFile } from '../documents/projectFormat'
 /** An editor with `tab` as its only, shown tab. */
 const editorWith = (tab: AgentTab): AgentEditor => ({ tabs: [{ id: 't1', name: 'Test' }], shownId: 't1', tab: () => tab })
 
+const serverTools = [...server.matchAll(/(?:forward|registerTool)\(\s*'([a-z_]+)'/g)].map((m) => m[1])
+
 describe('agent commands', () => {
   it('are the tools the MCP server offers', () => {
-    const tools = [...server.matchAll(/(?:forward|registerTool)\(\s*'([a-z_]+)'/g)].map((m) => m[1])
-    expect(tools.sort()).toEqual([...AGENT_COMMANDS].sort())
+    expect([...serverTools].sort()).toEqual([...AGENT_COMMANDS].sort())
+  })
+
+  it('are all named in the instructions for agents (public/llms.txt)', () => {
+    const named = new Set(llms.match(/[a-z]+(?:_[a-z]+)*/g))
+    expect(serverTools.filter((tool) => !named.has(tool))).toEqual([])
   })
 
   it('list the open tabs and which one is shown', () => {
