@@ -816,21 +816,21 @@ details.card > summary.card-title {
   background: var(--panel-muted);
 }
 
-/* The plot with its legend to the right; the legend drops below on a narrow pane. */
-.scope {
+/* A chart with its legend to the right; the legend drops below on a narrow pane. */
+.chart {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 8px;
 }
 
-.scope-frame {
+.chart-frame {
   position: relative;
   flex: 1 1 320px;
   min-width: 0;
 }
 
-.scope-frame svg {
+.chart-frame svg {
   display: block;
   touch-action: none;
   cursor: crosshair;
@@ -838,7 +838,7 @@ details.card > summary.card-title {
   user-select: none;
 }
 
-.scope-legend {
+.chart-legend {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -880,83 +880,83 @@ details.card > summary.card-title {
   background: var(--series-3);
 }
 
-.scope-grid {
+.chart-grid {
   stroke: var(--border);
   stroke-width: 1;
 }
 
-.scope-border {
+.chart-border {
   fill: none;
   stroke: var(--axis);
   stroke-width: 1;
 }
 
-.scope-tick {
+.chart-tick {
   fill: var(--text-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
-.scope-axis-title {
+.chart-axis-title {
   fill: var(--text);
   font-size: 12px;
 }
 
-.scope-trace {
+.chart-line {
   fill: none;
   stroke-width: 2;
   stroke-linejoin: round;
 }
 
-.scope-trace.series-1 {
+.chart-line.series-1 {
   stroke: var(--series-1);
 }
 
-.scope-trace.series-2 {
+.chart-line.series-2 {
   stroke: var(--series-2);
 }
 
-.scope-trace.series-3 {
+.chart-line.series-3 {
   stroke: var(--series-3);
 }
 
 /* A ring in the surface colour keeps a dot readable on top of the lines. */
-.scope-dot {
+.chart-dot {
   stroke: var(--panel);
   stroke-width: 2;
 }
 
-.scope-dot.series-1 {
+.chart-dot.series-1 {
   fill: var(--series-1);
 }
 
-.scope-dot.series-2 {
+.chart-dot.series-2 {
   fill: var(--series-2);
 }
 
-.scope-dot.series-3 {
+.chart-dot.series-3 {
   fill: var(--series-3);
 }
 
-.scope-crosshair {
+.chart-crosshair {
   stroke: var(--text-muted);
   stroke-width: 1;
   stroke-dasharray: 4 3;
 }
 
-.scope-cursor {
+.chart-cursor {
   stroke: var(--accent);
   stroke-width: 1;
   stroke-dasharray: 2 2;
 }
 
-.scope-cursor-label {
+.chart-cursor-label {
   fill: var(--accent);
   font-size: 11px;
   font-weight: 600;
 }
 
-.scope-tooltip {
+.chart-tooltip {
   position: absolute;
   top: 8px;
   padding: 6px 8px;
@@ -970,9 +970,18 @@ details.card > summary.card-title {
   pointer-events: none;
 }
 
-.scope-tooltip-title {
+.chart-tooltip-title {
   margin-bottom: 2px;
   font-weight: 600;
+}
+
+.chart-reset {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
 }
 
 .cursor-fields {

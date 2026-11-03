@@ -19,7 +19,7 @@ import {
 import { Icon } from './icons'
 import { NumberField, Section, TextField } from './panels'
 import { formatQuantity } from './quantity'
-import { ScopePlot, type Cursors, type ScopeTrace, type SeriesSlot } from './ScopePlot'
+import { LineChart, type Cursors, type SeriesSlot } from './chart/LineChart'
 import { measure } from '../simulation/waveform'
 
 type Analysis = 'operating point' | 'transient'
@@ -398,7 +398,7 @@ function TransientResult({ trace, sourceNet }: { trace: Transient; sourceNet: st
     }
     setShown(next)
   }
-  const traces: ScopeTrace[] = [...shown].map(([net, series]) => ({ net, series, volts: trace.volts.get(net)! }))
+  const traces = [...shown].map(([net, series]) => ({ net, series, volts: trace.volts.get(net)! }))
   const end = trace.time[trace.time.length - 1]
   const setCursor = (cursor: keyof Cursors, text: string) => {
     const seconds = partValue(text)
@@ -430,9 +430,16 @@ function TransientResult({ trace, sourceNet }: { trace: Transient; sourceNet: st
           })}
         </div>
         {traces.length > 0 && (
-          <ScopePlot time={trace.time} traces={traces} cursors={cursors} onCursor={(cursor, seconds) => setCursors({ ...cursors, [cursor]: seconds })} />
+          <LineChart
+            x={trace.time}
+            xUnit="s"
+            xLabel="t"
+            yUnit="V"
+            series={traces.map((t) => ({ name: `V(${t.net})`, values: t.volts, slot: t.series }))}
+            cursors={{ values: cursors, onChange: (cursor, seconds) => setCursors({ ...cursors, [cursor]: seconds }) }}
+          />
         )}
-        <p className="muted hint">Click the plot to place cursor A, Shift+click for B.</p>
+        <p className="muted hint">Scroll to zoom in time, drag to pan, double-click to show all. Click places cursor A, Shift+click B.</p>
       </section>
       <div className="card-row">
         <section className="card">
