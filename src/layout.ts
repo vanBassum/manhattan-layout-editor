@@ -444,3 +444,29 @@ export function findSpacingViolations(islands: Island[]): Set<string> {
   }
   return violating
 }
+
+/** Nets drawn as a problem: overlapping another net's island, or split into separate pieces. */
+export const findProblemNets = (islands: Island[]): Set<string> => new Set([...findSpacingViolations(islands), ...findSplitNets(islands)])
+
+export interface PinIssues {
+  open: number
+  short: number
+  /** Parts with at least one open or shorted lead. */
+  refsWithIssues: Set<string>
+}
+
+/** How many placed leads are open or shorted, and on which parts. */
+export function findPinIssues(netlist: BuiltNetlist, layout: Layout, isolation: number): PinIssues {
+  const issues: PinIssues = { open: 0, short: 0, refsWithIssues: new Set() }
+  const components = new Map(netlist.components.map((c) => [c.ref, c]))
+  for (const placement of layout.placements) {
+    const component = components.get(placement.ref)
+    if (!component) continue
+    for (const lead of analyzeLeads(component, placement, layout.islands, isolation)) {
+      if (lead.status === 'open') issues.open++
+      if (lead.status === 'short') issues.short++
+      if (lead.status === 'open' || lead.status === 'short') issues.refsWithIssues.add(component.ref)
+    }
+  }
+  return issues
+}

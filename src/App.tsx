@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
-import { buildNetlist, buildProjectNetlist, withDefinitions, withoutUnfitDefinitions } from './definitions'
+import { buildNetlist, buildProjectNetlist, importedProject, reimportedProject } from './definitions'
 import { runAgentCommand, type AgentTab } from './agentDispatch'
-import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
+import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { exportDxf } from './exportDxf'
 import { driveConfigured, signOut } from './documents/googleDrive'
 import { FileDialog } from './FileDialogs'
@@ -10,15 +10,8 @@ import { errorText } from './errorText'
 import { downloadText, exportSvg } from './exportSvg'
 import { FootprintDialog } from './FootprintDialog'
 import { boundsOf } from './geometry'
-import {
-  analyzeLeads,
-  changeFootprints,
-  createLayout,
-  findSpacingViolations,
-  findSplitNets,
-  keepFootprintChoices,
-} from './layout'
-import { parseNetlist, withValues } from './netlist'
+import { changeFootprints, createLayout, findPinIssues, findProblemNets, findSpacingViolations, findSplitNets, keepFootprintChoices } from './layout'
+import { withValues } from './netlist'
 import { findStrategy, STRATEGIES } from './optimize'
 import {
   AiHelpDialog,
@@ -50,14 +43,16 @@ import { screenshotHidden } from './hiddenScreenshot'
 import {
   completeSchematic,
   deriveNets,
-  flipped,
+  flippedSelection,
   pinsWithOtherNet,
-  withPlacementChanges,
+  rotatedSelection,
+  unconnectedPins,
+  withLabelChanged,
   withSchematicNets,
   type FullSchematic,
 } from './schematic'
 import { SchematicView, type SchematicLayers, type SchematicTool } from './SchematicView'
-import type { Layout, NetLabel, Placement, Project, SchematicPlacement, Selection, Settings } from './types'
+import type { Layout, NetLabel, Placement, Project, Selection, Settings } from './types'
 import type { IconName } from './panels'
 import { ProjectTabs } from './ProjectTabs'
 import { useDocuments } from './ui/useDocuments'
@@ -172,38 +167,6 @@ const DEFAULT_SCHEMATIC_LAYERS: SchematicLayers = {
   netNames: { visible: false, opacity: 1 },
 }
 
-/** The tab's project with a new netlist; it stays the same project, so it keeps its guid. */
-function projectFromNetlist(text: string, current: Project, keepLayout: boolean): Project {
-  const imported = parseNetlist(text)
-  // A value typed in the editor survives a re-import that still has none (EasyEDA exports "{Value}"
-  // as empty), and so does the part's definition, unless its pins changed and it no longer fits.
-  const previous = new Map(current.netlist.components.map((c) => [c.ref, c]))
-  const definitions = keepLayout ? current.definitions : undefined
-  const netlist = keepLayout
-    ? withoutUnfitDefinitions(
-        {
-          ...imported,
-          components: imported.components.map((c) => ({
-            ...c,
-            value: c.value || previous.get(c.ref)?.value || '',
-            definition: previous.get(c.ref)?.definition,
-          })),
-        },
-        definitions,
-      )
-    : imported
-  const previousLayout = keepLayout ? current.layout : undefined
-  return withDefinitions({
-    guid: current.guid,
-    netlist,
-    layout: createLayout(buildNetlist(netlist, previousLayout?.placements ?? [], definitions), previousLayout),
-    // Symbols stay where they were; wires and labels start over from the imported nets.
-    schematic: keepLayout && current.schematic ? { placements: current.schematic.placements } : undefined,
-    definitions,
-    settings: keepLayout ? current.settings : DEFAULT_SETTINGS,
-  })
-}
-
 /** A project update that changes the layout with `update`. */
 const layoutUpdate =
   (update: (layout: Layout) => Layout) =>
@@ -304,10 +267,7 @@ export function App() {
     [schematicNets, layout.placements, project.definitions],
   )
   const pinsNotInPcb = useMemo(() => pinsWithOtherNet(netlist, schematicNets.netlist), [netlist, schematicNets])
-  const schematicOpenPins = useMemo(
-    () => schematicNets.netlist.components.flatMap((c) => c.pins.filter((p) => !p.net).map((p) => `${c.ref}.${p.number}`)),
-    [schematicNets],
-  )
+  const schematicOpenPins = useMemo(() => unconnectedPins(schematicNets.netlist), [schematicNets])
 
   const stepShownTab = (direction: UndoDirection) => {
     if (tabSession.stepShownTab(direction)) setSelection(null)
@@ -460,28 +420,15 @@ export function App() {
     [layout.islands],
   )
   const splitNets = useMemo(() => findSplitNets(layout.islands), [layout.islands])
-  const problemNets = useMemo(() => new Set([...spacingViolations, ...splitNets]), [spacingViolations, splitNets])
-
-  const pinCounts = useMemo(() => {
-    const counts = { open: 0, short: 0, refsWithIssues: new Set<string>() }
-    const components = new Map(builtNetlist.components.map((c) => [c.ref, c]))
-    for (const placement of layout.placements) {
-      const component = components.get(placement.ref)
-      if (!component) continue
-      for (const lead of analyzeLeads(component, placement, layout.islands, settings.isolation)) {
-        if (lead.status === 'open') counts.open++
-        if (lead.status === 'short') counts.short++
-        if (lead.status === 'open' || lead.status === 'short') counts.refsWithIssues.add(component.ref)
-      }
-    }
-    return counts
-  }, [builtNetlist, layout, settings.isolation])
+  const problemNets = useMemo(() => findProblemNets(layout.islands), [layout.islands])
+  const pinIssues = useMemo(() => findPinIssues(builtNetlist, layout, settings.isolation), [builtNetlist, layout, settings.isolation])
 
   const boardSize = useMemo(() => boundsOf(layout.islands.flatMap((i) => i.rects)), [layout.islands])
 
   const loadNetlist = (name: string, text: string, keepLayout: boolean) => {
     try {
-      updateProject((p) => projectFromNetlist(text, p, keepLayout))
+      // The tab's project with a new netlist; it stays the same project, so it keeps its guid.
+      updateProject((p) => (keepLayout ? reimportedProject(text, p) : importedProject(text, p.guid, DEFAULT_SETTINGS)))
       // A project not saved yet takes the netlist's name; a saved one keeps its file's.
       if (!projectFile(activeIdRef.current).location) renameTab(activeIdRef.current, name)
       // Old layouts belong to the old netlist.
@@ -522,24 +469,10 @@ export function App() {
   const labelsToTurn = selectedWiring(selection).labels
   const canTurnSchematic = refsToEdit.length > 0 || labelsToTurn.length > 0
 
-  /** The schematic with the selected parts changed by `turnPart` and the selected labels' rotation by `turnLabel`. */
-  const turnedSchematic = (turnPart: (p: SchematicPlacement) => SchematicPlacement, turnLabel: (rotation: number) => number) => {
-    const turnedParts = fullSchematic.placements.filter((p) => refsToEdit.includes(p.ref)).map(turnPart)
-    const next = withPlacementChanges(fullSchematic, builtNetlist, turnedParts)
-    const labels = next.labels.map((l, i) => (labelsToTurn.includes(i) ? { ...l, rotation: turnLabel(l.rotation ?? 0) } : l))
-    return { ...next, labels }
-  }
-
   const rotateSelected = (degrees: number, pane: Pane) => {
     if (pane === 'schematic') {
       if (!canTurnSchematic) return
-      // Symbols only turn in quarter turns, so their pins stay on the grid.
-      const quarterTurns = Math.max(1, Math.round(degrees / 90)) * 90
-      const turned = turnedSchematic(
-        (p) => ({ ...p, rotation: (p.rotation + quarterTurns) % 360 }),
-        (rotation) => (rotation + quarterTurns) % 360,
-      )
-      commitEdit(schematicUpdate(turned))
+      commitEdit(schematicUpdate(rotatedSelection(fullSchematic, builtNetlist, refsToEdit, labelsToTurn, degrees)))
       return
     }
     editPlacements(refsToEdit, (p) => ({ ...p, rotation: (p.rotation + degrees) % 360 }))
@@ -548,15 +481,10 @@ export function App() {
   /** Mirrors each selected symbol in place; wires and labels on its pins go along. */
   const flipSelected = (axis: 'horizontal' | 'vertical') => {
     if (!canTurnSchematic) return
-    // A ground or power symbol is symmetric, so mirroring it only changes which way it points.
-    const turn = axis === 'horizontal' ? 360 : 540
-    commitEdit(schematicUpdate(turnedSchematic((p) => flipped(p, axis), (rotation) => (turn - rotation) % 360)))
+    commitEdit(schematicUpdate(flippedSelection(fullSchematic, builtNetlist, refsToEdit, labelsToTurn, axis)))
   }
 
-  const changeLabel = (index: number, changes: Partial<NetLabel>) => {
-    const labels = fullSchematic.labels.map((l, i) => (i === index ? { ...l, ...changes } : l))
-    commitEdit(schematicUpdate({ ...fullSchematic, labels }))
-  }
+  const changeLabel = (index: number, changes: Partial<NetLabel>) => commitEdit(schematicUpdate(withLabelChanged(fullSchematic, index, changes)))
 
   const resetLeads = () => editPlacements(refsToEdit, (p) => ({ ...p, leads: undefined }))
 
@@ -602,8 +530,6 @@ export function App() {
 
   const applyFootprint = (refs: ReadonlySet<string>, footprint: string | undefined) =>
     commitEdit(layoutUpdate((l) => changeFootprints(netlist, l, refs, footprint)))
-
-  const editMode: EditMode = settings.strategy === 'knife' ? 'polygons' : 'rects'
 
   const optimize = async () => {
     const strategy = findStrategy(settings.strategy)
@@ -849,7 +775,7 @@ export function App() {
                 netlist={schematicNetlist}
                 selection={selection}
                 onSelect={setSelection}
-                pcb={view === 'split' ? { refsWithIssues: pinCounts.refsWithIssues, onChangeFootprint: openFootprintDialog } : undefined}
+                pcb={view === 'split' ? { refsWithIssues: pinIssues.refsWithIssues, onChangeFootprint: openFootprintDialog } : undefined}
               />
             </Section>
             <Section title="Properties">
@@ -1060,7 +986,7 @@ export function App() {
                     layers={layers}
                     tool={tool}
                     moveMode={moveMode}
-                    editMode={editMode}
+                    rectHandles={findStrategy(settings.strategy).rectHandles}
                     gridLinesPerMajor={pcbGrid}
                   />
                 </div>
@@ -1154,8 +1080,8 @@ export function App() {
               <Validation
                 components={netlist.components.length}
                 nets={netlist.nets.length}
-                openPins={pinCounts.open}
-                shortedPins={pinCounts.short}
+                openPins={pinIssues.open}
+                shortedPins={pinIssues.short}
                 netsTooClose={spacingViolations.size}
                 netsSplit={splitNets.size}
               />
@@ -1167,7 +1093,7 @@ export function App() {
                   netlist={builtNetlist}
                   selection={selection}
                   onSelect={setSelection}
-                  pcb={{ refsWithIssues: pinCounts.refsWithIssues, onChangeFootprint: openFootprintDialog }}
+                  pcb={{ refsWithIssues: pinIssues.refsWithIssues, onChangeFootprint: openFootprintDialog }}
                 />
               </Section>
             )}

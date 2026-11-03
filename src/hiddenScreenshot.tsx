@@ -1,7 +1,7 @@
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type Layers } from './Canvas'
-import { findSpacingViolations, findSplitNets } from './layout'
+import { findProblemNets } from './layout'
 import { canvasToPng } from './screenshot'
 import type { BuiltNetlist, Layout, Rect } from './types'
 
@@ -20,7 +20,6 @@ export async function screenshotHidden(netlist: BuiltNetlist, layout: Layout, is
   document.body.append(host)
   const root = createRoot(host)
   try {
-    const problemNets = new Set([...findSpacingViolations(layout.islands), ...findSplitNets(layout.islands)])
     flushSync(() =>
       root.render(
         <Canvas
@@ -32,12 +31,12 @@ export async function screenshotHidden(netlist: BuiltNetlist, layout: Layout, is
           onSelect={ignore}
           snap={0}
           isolation={isolation}
-          problemNets={problemNets}
+          problemNets={findProblemNets(layout.islands)}
           fitRequest={0}
           layers={ALL_LAYERS}
           tool="select"
           moveMode="part"
-          editMode="rects"
+          rectHandles={false}
           gridLinesPerMajor={DEFAULT_PCB_GRID_LINES_PER_MAJOR}
         />,
       ),

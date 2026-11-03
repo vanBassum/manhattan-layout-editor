@@ -2,7 +2,19 @@ import { describe, expect, it } from 'vitest'
 import example from './examples/Astable multivibrator.manhattan.json?raw'
 import { buildProjectNetlist } from './definitions'
 import { projectFromFile } from './documents/projectFormat'
-import { pinEnds, pinsWithOtherNet, projectSchematic, withPlacementChanges, withTidyWires, type FullSchematic } from './schematic'
+import {
+  flipped,
+  flippedSelection,
+  pinEnds,
+  pinsWithOtherNet,
+  projectSchematic,
+  rotatedSelection,
+  unconnectedPins,
+  withLabelChanged,
+  withPlacementChanges,
+  withTidyWires,
+  type FullSchematic,
+} from './schematic'
 import type { BuiltNetlist, Netlist } from './types'
 
 describe('pinsWithOtherNet', () => {
@@ -105,6 +117,78 @@ describe('withTidyWires', () => {
     expect(tidy.wires).toEqual([
       { x1: 0, y1: 22.86, x2: 5.08, y2: 22.86 },
       { x1: 5.08, y1: 22.86, x2: 10.16, y2: 22.86 },
+    ])
+  })
+})
+
+describe('unconnectedPins', () => {
+  it('lists the pins on no net', () => {
+    const netlist: Netlist = {
+      components: [{ ref: 'R1', value: '1k', footprint: '', pins: [{ number: '1', net: 'A' }, { number: '2', net: '' }] }],
+      nets: ['A'],
+    }
+
+    expect(unconnectedPins(netlist)).toEqual(['R1.2'])
+  })
+})
+
+describe('turning the selection', () => {
+  const project = projectFromFile(example)
+  const built = buildProjectNetlist(project)
+  const exampleSchematic = projectSchematic(project)
+  const r1 = built.components.findIndex((c) => c.ref === 'R1')
+  // Two ground symbols away from every pin, one of them already turned.
+  const schematic: FullSchematic = {
+    ...exampleSchematic,
+    labels: [
+      ...exampleSchematic.labels,
+      { x: -100, y: -100, name: 'GND', symbol: 'ground' },
+      { x: -200, y: -100, name: 'GND', symbol: 'ground', rotation: 90 },
+    ],
+  }
+  const [straight, turned] = [schematic.labels.length - 2, schematic.labels.length - 1]
+  const rotations = (s: FullSchematic) => [s.labels[straight].rotation, s.labels[turned].rotation]
+
+  it('rotates a part and labels by quarter turns, rounding to at least one', () => {
+    const after = rotatedSelection(schematic, built, ['R1'], [straight, turned], 15)
+
+    expect(after.placements[r1].rotation).toBe((schematic.placements[r1].rotation + 90) % 360)
+    expect(rotations(after)).toEqual([90, 180])
+    expect(after.placements.filter((_, i) => i !== r1)).toEqual(schematic.placements.filter((_, i) => i !== r1))
+  })
+
+  it('takes a label past a full turn back to 0', () => {
+    const after = rotatedSelection(schematic, built, [], [turned], 270)
+
+    expect(after.labels[turned].rotation).toBe(0)
+    expect(after.labels[straight]).toEqual(schematic.labels[straight])
+  })
+
+  it('mirrors a part, and points a label the mirrored way', () => {
+    const horizontal = flippedSelection(schematic, built, ['R1'], [straight, turned], 'horizontal')
+    const vertical = flippedSelection(schematic, built, ['R1'], [straight, turned], 'vertical')
+
+    expect(horizontal.placements[r1]).toEqual(flipped(schematic.placements[r1], 'horizontal'))
+    expect(vertical.placements[r1]).toEqual(flipped(schematic.placements[r1], 'vertical'))
+    expect(rotations(horizontal)).toEqual([0, 270])
+    expect(rotations(vertical)).toEqual([180, 90])
+  })
+})
+
+describe('withLabelChanged', () => {
+  it('changes only the given label', () => {
+    const schematic: FullSchematic = {
+      placements: [],
+      wires: [],
+      labels: [
+        { x: 0, y: 0, name: 'A' },
+        { x: 5.08, y: 0, name: 'B' },
+      ],
+    }
+
+    expect(withLabelChanged(schematic, 1, { name: 'C' }).labels).toEqual([
+      { x: 0, y: 0, name: 'A' },
+      { x: 5.08, y: 0, name: 'C' },
     ])
   })
 })

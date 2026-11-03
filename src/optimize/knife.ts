@@ -106,5 +106,7 @@ export const knifeStrategy: Strategy = {
   id: 'knife',
   label: 'Knife – polygons',
   description: 'Rectangular strips with straight edge-to-edge cuts, parts placed collision-free on top',
+  // An island is a polygon of many strips; handles on its strips would only get in the way.
+  rectHandles: false,
   run: knifeLayout,
 }

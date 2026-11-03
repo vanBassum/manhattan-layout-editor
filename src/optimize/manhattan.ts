@@ -147,5 +147,6 @@ export const manhattanStrategy: Strategy = {
   id: 'manhattan',
   label: 'Manhattan (glued pads)',
   description: 'Parts first, then one standard pad per net glued onto the board; the board itself is ground',
+  rectHandles: true,
   run: manhattanLayout,
 }

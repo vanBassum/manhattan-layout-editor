@@ -22,12 +22,6 @@ interface CutNeighbour {
 /** Select: dragging empty space draws a selection rectangle. Pan: it moves the view. */
 export type Tool = 'select' | 'pan'
 
-/**
- * How copper is edited. rects: islands of rectangles with resize handles. polygons: an island is
- * one shape whose outline edges are dragged. In both, the + on a hovered outline edge grows the island.
- */
-export type EditMode = 'rects' | 'polygons'
-
 /** The tab the + on an island edge pulls out: how far it sticks out, and how wide it is along the edge. */
 const TAB_DEPTH_MM = 2.5
 const TAB_WIDTH_MM = 2.5
@@ -114,7 +108,8 @@ interface Props {
   layers: Layers
   tool: Tool
   moveMode: MoveMode
-  editMode: EditMode
+  /** Resize handles on the clicked rectangle of the selected island. */
+  rectHandles: boolean
   /** Fine grid steps (1 mm) between two solid grid lines. */
   gridLinesPerMajor: number
 }
@@ -334,7 +329,7 @@ function moveGroup(layout: Layout, drag: GroupDrag, dx: number, dy: number): Lay
 }
 
 export function Canvas(props: Props) {
-  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode, editMode, gridLinesPerMajor } = props
+  const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode, rectHandles, gridLinesPerMajor } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const dragChangedRef = useRef(false)
@@ -779,7 +774,7 @@ export function Canvas(props: Props) {
         })}
 
         {/* Handles only on the clicked rectangle: optimized islands can consist of hundreds. */}
-        {editMode === 'rects' && selectedIsland?.rects.map((r, k) => k === selectedRectIndex && (
+        {rectHandles && selectedIsland?.rects.map((r, k) => k === selectedRectIndex && (
           <g key={k}>
             {selectedIsland.rects.length > 1 && (
               <rect

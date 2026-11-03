@@ -383,6 +383,56 @@ export function withPlacementChanges(schematic: FullSchematic, built: BuiltNetli
   return withSchematicMoved(schematic, built, { placements: changed, wiring: NO_WIRING, delta: { x: 0, y: 0 }, keepConnections: true })
 }
 
+/**
+ * The schematic with parts `refs` changed by `turnPart` and the rotation of labels `labelIndexes`
+ * by `turnLabel`; wires and labels on the parts' pins go along.
+ */
+function withTurned(
+  schematic: FullSchematic,
+  built: BuiltNetlist,
+  refs: string[],
+  labelIndexes: number[],
+  turnPart: (p: SchematicPlacement) => SchematicPlacement,
+  turnLabel: (rotation: number) => number,
+): FullSchematic {
+  const turnedParts = schematic.placements.filter((p) => refs.includes(p.ref)).map(turnPart)
+  const next = withPlacementChanges(schematic, built, turnedParts)
+  const labels = next.labels.map((l, i) => (labelIndexes.includes(i) ? { ...l, rotation: turnLabel(l.rotation ?? 0) } : l))
+  return { ...next, labels }
+}
+
+/** Parts `refs` and labels `labelIndexes` each turned in place, clockwise by `degrees`. */
+export function rotatedSelection(schematic: FullSchematic, built: BuiltNetlist, refs: string[], labelIndexes: number[], degrees: number): FullSchematic {
+  // Symbols only turn in quarter turns, so their pins stay on the grid.
+  const quarterTurns = Math.max(1, Math.round(degrees / 90)) * 90
+  return withTurned(
+    schematic,
+    built,
+    refs,
+    labelIndexes,
+    (p) => ({ ...p, rotation: (p.rotation + quarterTurns) % 360 }),
+    (rotation) => (rotation + quarterTurns) % 360,
+  )
+}
+
+/** Parts `refs` and labels `labelIndexes` each mirrored in place. */
+export function flippedSelection(
+  schematic: FullSchematic,
+  built: BuiltNetlist,
+  refs: string[],
+  labelIndexes: number[],
+  axis: 'horizontal' | 'vertical',
+): FullSchematic {
+  // A ground or power symbol is symmetric, so mirroring it only changes which way it points.
+  const turn = axis === 'horizontal' ? 360 : 540
+  return withTurned(schematic, built, refs, labelIndexes, (p) => flipped(p, axis), (rotation) => (turn - rotation) % 360)
+}
+
+/** The schematic with label `index` changed. */
+export function withLabelChanged(schematic: FullSchematic, index: number, changes: Partial<NetLabel>): FullSchematic {
+  return { ...schematic, labels: schematic.labels.map((l, i) => (i === index ? { ...l, ...changes } : l)) }
+}
+
 /** A wire after tidying, with the indices of the wires it came from. */
 interface TidyWire {
   wire: Wire
@@ -594,6 +644,10 @@ export function pinsWithOtherNet(a: Netlist, b: Netlist): string[] {
     }),
   )
 }
+
+/** Pins ("R1.2") on no net at all. */
+export const unconnectedPins = (netlist: Netlist): string[] =>
+  netlist.components.flatMap((c) => c.pins.filter((p) => !p.net).map((p) => `${c.ref}.${p.number}`))
 
 // ---------- Wire editing ----------
 // Every way of drawing or changing wires goes through these few functions, so they all behave alike.

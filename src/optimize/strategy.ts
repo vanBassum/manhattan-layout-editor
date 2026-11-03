@@ -8,5 +8,7 @@ export interface Strategy {
   id: StrategyId
   label: string
   description: string
+  /** Whether a clicked rectangle of an island gets resize handles, or the island is only edited by its outline. */
+  rectHandles: boolean
   run: (netlist: BuiltNetlist, settings: Settings) => Layout
 }
