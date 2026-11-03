@@ -199,9 +199,12 @@ export interface Schematic {
 /**
  * A voltage source from a net to ground: a fixed DC voltage such as a supply, or a square or sine
  * wave that drives the circuit. A wave swings between -volts and +volts and is 0 V for the
- * DC operating point.
+ * DC operating point. A square wave's edges each take `edgeSeconds`, its rise and fall time.
  */
-export type Source = { net: string; shape: 'dc'; volts: number } | { net: string; shape: 'square' | 'sine'; volts: number; hertz: number }
+export type Source =
+  | { net: string; shape: 'dc'; volts: number }
+  | { net: string; shape: 'sine'; volts: number; hertz: number }
+  | { net: string; shape: 'square'; volts: number; hertz: number; edgeSeconds: number }
 
 export type WaveSource = Extract<Source, { hertz: number }>
 

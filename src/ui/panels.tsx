@@ -11,17 +11,22 @@ interface SectionProps {
   title: ReactNode
   /** Grow to fill the remaining sidebar height (for long lists). */
   fill?: boolean
+  /** A control beside the title, e.g. an Add button; not inside it, as the title is a button itself. */
+  action?: ReactNode
   children: ReactNode
 }
 
 // Not <details>: it cannot reliably act as a flex container, which a filling section needs.
-export function Section({ title, fill = false, children }: SectionProps) {
+export function Section({ title, fill = false, action, children }: SectionProps) {
   const [open, setOpen] = useState(true)
   return (
     <section className={['section', open && 'open', fill && 'fill'].filter(Boolean).join(' ')}>
-      <button className="section-title" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {title}
-      </button>
+      <div className="section-head">
+        <button className="section-title" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {title}
+        </button>
+        {action}
+      </div>
       {open && <div className="section-body">{children}</div>}
     </section>
   )

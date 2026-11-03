@@ -107,7 +107,7 @@ describe('wave sources', () => {
   }
 
   it('holds its net at 0 V for the operating point, so an input behind a capacitor no longer floats', async () => {
-    const circuit = sziklaiWith({ net: 'VIN', shape: 'square', volts: 0.5, hertz: 1e6 })
+    const circuit = sziklaiWith({ net: 'VIN', shape: 'square', volts: 0.5, hertz: 1e6, edgeSeconds: 1e-8 })
     const run = await runInEngine(operatingPointNetlist(circuit))
     expect(readOperatingPoint(circuit, run.vectors).volts.get('VIN')).toBeCloseTo(0, 9)
     expect(run.warnings).toEqual([])
@@ -117,8 +117,14 @@ describe('wave sources', () => {
     expect(() => sziklaiWith({ net: 'VCC', shape: 'sine', volts: 1, hertz: 1e3 })).toThrow('Source on VCC: another source already drives that net')
   })
 
+  it('refuses square edges that would take up half the period', () => {
+    expect(() => sziklaiWith({ net: 'VIN', shape: 'square', volts: 1, hertz: 1e6, edgeSeconds: 0.5e-6 })).toThrow(
+      'Source on VIN: its rise/fall time must be shorter than half its period',
+    )
+  })
+
   it('shows a square wave through the follower for five periods', async () => {
-    const circuit = sziklaiWith({ net: 'VIN', shape: 'square', volts: 0.5, hertz: 1e6 })
+    const circuit = sziklaiWith({ net: 'VIN', shape: 'square', volts: 0.5, hertz: 1e6, edgeSeconds: 1e-8 })
     const trace = readTransient(circuit, (await runInEngine(transientNetlist(circuit))).vectors)
     expect(trace.time.at(-1)).toBeCloseTo(5e-6, 12)
     const at = (net: string, seconds: number) => trace.volts.get(net)![trace.time.findIndex((t) => t >= seconds)]

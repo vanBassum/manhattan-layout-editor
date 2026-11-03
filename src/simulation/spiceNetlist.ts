@@ -46,15 +46,16 @@ export const waveSources = (sources: Source[]): WaveSource[] =>
 
 /**
  * The source's voltage for ngspice. A wave starts at 0 V, like a generator that was off, so the
- * operating point ngspice finds before a run is the circuit at rest. A square wave's edges take 1%
- * of its period; it is a repeating piecewise-linear wave because a PULSE would start at its low level.
+ * operating point ngspice finds before a run is the circuit at rest. A square wave is a repeating
+ * piecewise-linear wave because a PULSE would start at its low level; its first edge, from 0 V,
+ * swings half as far and so takes half the edge time.
  */
 function sourceVoltage(source: Source): string {
   if (source.shape === 'dc') return `DC ${source.volts}`
-  const { shape, volts, hertz } = source
-  if (shape === 'sine') return `DC 0 SIN(0 ${volts} ${hertz})`
+  if (source.shape === 'sine') return `DC 0 SIN(0 ${source.volts} ${source.hertz})`
+  const { volts, hertz, edgeSeconds } = source
   const period = 1 / hertz
-  const halfEdge = period / 200
+  const halfEdge = edgeSeconds / 2
   const points = [
     [0, 0],
     [halfEdge, volts],
@@ -142,6 +143,9 @@ export function spiceCircuit(netlist: Netlist, definitions: Record<string, Compo
     if (node === undefined) problems.push(`Source on ${source.net}: no part is on that net`)
     else if (node === '0') problems.push(`Source on ${source.net}: that is ground`)
     else if (simulation.sources.findIndex((s) => s.net === source.net) < k) problems.push(`Source on ${source.net}: another source already drives that net`)
+    else if (source.shape === 'square' && source.edgeSeconds >= 1 / source.hertz / 2) {
+      problems.push(`Source on ${source.net}: its rise/fall time must be shorter than half its period`)
+    }
     const element = `V_${node}`
     lines.push(`${element} ${node} 0 ${sourceVoltage(source)}`)
     return { ...source, element }

@@ -1559,7 +1559,8 @@
           "net": "VIN",
           "shape": "square",
           "volts": 0.5,
-          "hertz": 1000000
+          "hertz": 1000000,
+          "edgeSeconds": 1e-8
         }
       ],
       "models": {

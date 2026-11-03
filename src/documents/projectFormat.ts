@@ -37,9 +37,13 @@ function checkedSimulation(data: unknown): Simulation | undefined {
     isJsonObject(s) &&
     typeof s.net === 'string' &&
     isNumber(s.volts) &&
-    (s.shape === 'dc' || ((s.shape === 'square' || s.shape === 'sine') && isNumber(s.hertz) && s.hertz > 0))
+    (s.shape === 'dc' ||
+      (s.shape === 'sine' && isNumber(s.hertz) && s.hertz > 0) ||
+      (s.shape === 'square' && isNumber(s.hertz) && s.hertz > 0 && isNumber(s.edgeSeconds) && s.edgeSeconds > 0))
   if (!Array.isArray(sources) || !sources.every(isSource)) {
-    throw new Error('simulation "sources" must be a list of {net, shape: "dc", volts} or {net, shape: "square" or "sine", volts, hertz above 0}')
+    throw new Error(
+      'simulation "sources" must be a list of {net, shape: "dc", volts}, {net, shape: "sine", volts, hertz above 0} or {net, shape: "square", volts, hertz above 0, edgeSeconds above 0}',
+    )
   }
   if (!isJsonObject(models) || !Object.values(models).every((m) => typeof m === 'string')) {
     throw new Error('simulation "models" must map part values to SPICE model text')

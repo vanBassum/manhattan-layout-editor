@@ -33,6 +33,7 @@ const ICON_PATHS = {
   schematic: 'M2 12h4 M6 9h8v6H6z M14 12h4 M18 7v10 M20 9v6',
   split: 'M3 5h18v14H3z M12 5v14',
   wave: 'M2 12h3l2-6 4 12 3-9 2 3h6',
+  bolt: 'M13 2L4 14h7l-1 8 9-12h-7z',
   wire: 'M4 18h6V6h10 M4 18a1.5 1.5 0 1 0 0.01 0 M20 6a1.5 1.5 0 1 0 0.01 0',
   label: 'M4 7h11l5 5-5 5H4z M8 12h.01',
   sun: 'M12 8a4 4 0 1 1 0 8a4 4 0 1 1 0-8 M12 2v2 M12 20v2 M4.9 4.9l1.4 1.4 M17.7 17.7l1.4 1.4 M2 12h2 M20 12h2 M4.9 19.1l1.4-1.4 M17.7 6.3l1.4-1.4',

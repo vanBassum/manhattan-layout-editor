@@ -40,10 +40,13 @@ function netlistFor(analysis: Analysis, circuit: SpiceCircuit): string | undefin
   return waveSources(circuit.sources).length ? transientNetlist(circuit) : undefined
 }
 
-/** The source as `shape`; a new wave starts at 1 kHz. */
+/** The source as `shape`; a new wave starts at 1 kHz, a new square's edges at 1% of its period. */
 function withShape(source: Source, shape: Source['shape']): Source {
-  if (shape === 'dc') return { net: source.net, shape, volts: source.volts }
-  return { net: source.net, shape, volts: source.volts, hertz: source.shape === 'dc' ? 1e3 : source.hertz }
+  const { net, volts } = source
+  if (shape === 'dc') return { net, shape, volts }
+  const hertz = source.shape === 'dc' ? 1e3 : source.hertz
+  if (shape === 'sine') return { net, shape, volts, hertz }
+  return { net, shape, volts, hertz, edgeSeconds: source.shape === 'square' ? source.edgeSeconds : 1 / hertz / 100 }
 }
 
 /** The simulation's state, shared by its sidebar (set-up and Run) and its pane (results). */
@@ -149,10 +152,22 @@ export function SimulationSidebar({ session, netlist, simulation, onChange }: Si
           </button>
         </div>
       </Section>
-      <Section title={`Sources (${sources.length})`}>
+      <Section
+        title={`Sources (${sources.length})`}
+        action={
+          <button
+            className="section-action"
+            disabled={!undrivenNet}
+            title={undrivenNet ? 'Add a 12 V DC source' : 'Every net already has a source'}
+            onClick={() => undrivenNet && changeSources([...sources, { net: undrivenNet, shape: 'dc', volts: 12 }])}
+          >
+            <Icon name="plus" />Add
+          </button>
+        }
+      >
         <div className="source-list">
           {sources.map((source, k) => (
-            <SourceFields
+            <SourceCard
               key={k}
               nets={nets}
               source={source}
@@ -160,9 +175,7 @@ export function SimulationSidebar({ session, netlist, simulation, onChange }: Si
               onRemove={() => changeSources(sources.filter((_, i) => i !== k))}
             />
           ))}
-          <button disabled={!undrivenNet} onClick={() => undrivenNet && changeSources([...sources, { net: undrivenNet, shape: 'dc', volts: 12 }])}>
-            <Icon name="plus" />Add source
-          </button>
+          {sources.length === 0 && <p className="muted">No sources yet: add one to power the circuit.</p>}
         </div>
       </Section>
       <Models netlist={netlist} simulation={simulation} onChange={onChange} />
@@ -204,44 +217,73 @@ function NetSelect({ nets, value, label, onChange }: { nets: string[]; value: st
   )
 }
 
-interface SourceFieldsProps {
+interface SourceCardProps {
   nets: string[]
   source: Source
   onChange: (source: Source) => void
   onRemove: () => void
 }
 
-/** One source: its net and shape, its voltage (peak for a wave) and a wave's frequency. */
-function SourceFields({ nets, source, onChange, onRemove }: SourceFieldsProps) {
+/** A value with a prefix, typed as e.g. "1M", "1 MHz" or "10n"; text that is no positive value is ignored. */
+function QuantityField({ value, unit, label, onCommit }: { value: number; unit: string; label: string; onCommit: (value: number) => void }) {
   return (
-    <div className="source-fields">
-      <NetSelect nets={nets} value={source.net} label="Source net" onChange={(net) => onChange({ ...source, net })} />
-      <select value={source.shape} aria-label="Shape" onChange={(e) => onChange(withShape(source, e.target.value as Source['shape']))}>
-        <option value="dc">DC</option>
-        <option value="square">Square</option>
-        <option value="sine">Sine</option>
-      </select>
-      <button className="icon-button" title="Remove source" aria-label="Remove source" onClick={onRemove}>
-        ×
-      </button>
-      <NumberField
-        label={source.shape === 'dc' ? 'Voltage' : 'Peak voltage'}
-        value={source.volts}
-        unit={source.shape === 'dc' ? 'V' : 'Vpk'}
-        step={source.shape === 'dc' ? 0.5 : 0.1}
-        onCommit={(volts) => onChange({ ...source, volts })}
-      />
-      {source.shape !== 'dc' && (
-        <TextField
-          value={formatQuantity(source.hertz, 'Hz')}
-          label="Frequency"
-          placeholder="e.g. 1k or 1MHz"
-          onCommit={(text) => {
-            const hertz = partValue(text)
-            if (hertz !== undefined && hertz > 0) onChange({ ...source, hertz })
-          }}
-        />
-      )}
+    <TextField
+      value={formatQuantity(value, unit)}
+      label={label}
+      placeholder={`e.g. 1k${unit}`}
+      onCommit={(text) => {
+        const parsed = partValue(text)
+        if (parsed !== undefined && parsed > 0) onCommit(parsed)
+      }}
+    />
+  )
+}
+
+/** One source as a card: its net and shape on top, then its voltage and, for a wave, its frequency and edges. */
+function SourceCard({ nets, source, onChange, onRemove }: SourceCardProps) {
+  return (
+    <div className="source-card">
+      <div className="source-card-head">
+        <Icon name={source.shape === 'dc' ? 'bolt' : 'wave'} />
+        <NetSelect nets={nets} value={source.net} label="Source net" onChange={(net) => onChange({ ...source, net })} />
+        <select
+          className="shape-chip"
+          value={source.shape}
+          aria-label="Shape"
+          onChange={(e) => onChange(withShape(source, e.target.value as Source['shape']))}
+        >
+          <option value="dc">DC</option>
+          <option value="square">Square</option>
+          <option value="sine">Sine</option>
+        </select>
+        <button className="icon-button" title="Remove source" aria-label="Remove source" onClick={onRemove}>
+          ×
+        </button>
+      </div>
+      <div className="source-card-fields">
+        <label>
+          <span className="field-label">{source.shape === 'dc' ? 'Voltage' : 'Amplitude'}</span>
+          <NumberField
+            label={source.shape === 'dc' ? 'Voltage' : 'Amplitude'}
+            value={source.volts}
+            unit={source.shape === 'dc' ? 'V' : 'Vpk'}
+            step={source.shape === 'dc' ? 0.5 : 0.1}
+            onCommit={(volts) => onChange({ ...source, volts })}
+          />
+        </label>
+        {source.shape !== 'dc' && (
+          <label>
+            <span className="field-label">Frequency</span>
+            <QuantityField value={source.hertz} unit="Hz" label="Frequency" onCommit={(hertz) => onChange({ ...source, hertz })} />
+          </label>
+        )}
+        {source.shape === 'square' && (
+          <label>
+            <span className="field-label">Rise/fall time</span>
+            <QuantityField value={source.edgeSeconds} unit="s" label="Rise/fall time" onCommit={(edgeSeconds) => onChange({ ...source, edgeSeconds })} />
+          </label>
+        )}
+      </div>
     </div>
   )
 }

@@ -432,9 +432,21 @@ input:focus-visible {
   border-radius: var(--radius);
 }
 
+/* The title, which folds the section, with an optional control beside it. */
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-head > :not(.section-title) {
+  margin-right: 8px;
+}
+
 .section-title {
   display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 8px 10px;
   border: none;
   border-radius: var(--radius);
@@ -452,12 +464,15 @@ input:focus-visible {
   color: var(--text-muted);
 }
 
-.section.open > .section-title {
+.section.open > .section-head {
   border-bottom: 1px solid var(--border);
+}
+
+.section.open > .section-head > .section-title {
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
-.section.open > .section-title::before {
+.section.open > .section-head > .section-title::before {
   content: '▾';
 }
 
@@ -659,22 +674,77 @@ input:focus-visible {
 .source-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
-.source-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+/* A small button beside a section's title, e.g. "+ Add". */
+.section-action {
+  display: flex;
   align-items: center;
-  gap: 4px 6px;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
 }
 
-.source-fields input[type='number'] {
-  width: 4.5em;
+/* One source: net and shape on top, its values below. */
+.source-card {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
-.source-fields input[type='text'] {
-  grid-column: span 2;
+.source-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+
+.source-card-head > select:first-of-type {
+  min-width: 0;
+  flex: 1;
+  border-color: transparent;
+  background: transparent;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.shape-chip {
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--panel-muted);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.source-card-head .icon-button {
+  width: 24px;
+  height: 24px;
+  color: var(--text-muted);
+}
+
+.source-card-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 8px;
+}
+
+.source-card-fields label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.source-card-fields input {
+  width: 100%;
+  min-width: 0;
+}
+
+.source-card-fields .unit-input {
   min-width: 0;
 }
 
