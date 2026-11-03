@@ -38,7 +38,7 @@ Rules that follow from the table:
 | `agentBridge`, `agentCommands`, `agentDispatch` | agent |
 | `App`, `AppMenu`, `ProjectTabs`, `CanvasBanners`, `PcbToolRail`, `SchematicToolRail`, `PcbSettings`, `panels`, `icons`, `dialogs`, `FileDialog`, `FootprintDialog`, `layers`, `viewport`, `preferences`, `shortcuts`, `useDocuments`, `useTabs`, `useDropdown` | ui (in place) |
 | `Canvas`, `partDrawing`, `screenshot`, `hiddenScreenshot` | ui (in place in `ui/pcb/`): they render or read the drawn board |
-| `SchematicView` | ui (`ui/schematic/`) |
+| `SchematicView`, `SchematicDrawing` | ui (in place in `ui/schematic/`): the schematic's state and pointer input, and how its symbols, labels and parts are drawn |
 
 ## Data flow
 
