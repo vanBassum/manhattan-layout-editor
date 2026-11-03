@@ -12,6 +12,8 @@ const PAD_SIZES: [side: number, leads: number][] = [
   [7, 6],
 ]
 const LONG_PAD_WIDTH = 7
+/** Width of a strip pad that runs along a row or column of lead ends. */
+const STRIP_WIDTH = 4
 const LEAD_SPACING = 3.5
 /** Bare ground plane between neighboring pads. */
 const PAD_SPACING = 1.5
@@ -41,9 +43,40 @@ const median = (values: number[]) => {
   return sorted[Math.floor(sorted.length / 2)]
 }
 
+interface PadShape {
+  w: number
+  h: number
+  /** Where the search for a free spot starts, on the search grid so the pad edges (whole millimeters apart) land on it too. */
+  center: Point
+}
+
+/**
+ * The standard pad for the net's leads, centered on them. A net whose lead ends lie further apart
+ * than a lead may reach, such as a supply rail drawn across the schematic, may also get a strip
+ * along that row or column of lead ends, so no lead has to reach across to one square pad.
+ */
+function padShapes(own: Lead[], settings: Settings): PadShape[] {
+  const xs = own.map((l) => l.end.x)
+  const ys = own.map((l) => l.end.y)
+  const center = { x: snapToGrid(median(xs), PAD_SEARCH_STEP), y: snapToGrid(median(ys), PAD_SEARCH_STEP) }
+  const shapes: PadShape[] = [{ ...padSize(own.length), center }]
+  const row = extent(xs)
+  const column = extent(ys)
+  if (row.length > settings.maxLead) shapes.push({ w: row.length, h: STRIP_WIDTH, center: { x: row.middle, y: center.y } })
+  if (column.length > settings.maxLead) shapes.push({ w: STRIP_WIDTH, h: column.length, center: { x: center.x, y: column.middle } })
+  return shapes
+}
+
+/** How far apart the values lie, rounded up to whole millimeters, and the middle between them on the search grid. */
+function extent(values: number[]): { length: number; middle: number } {
+  const low = Math.min(...values)
+  const high = Math.max(...values)
+  return { length: Math.ceil(high - low), middle: snapToGrid((low + high) / 2, PAD_SEARCH_STEP) }
+}
+
 /**
  * Glued-pad Manhattan: the copper-clad board is the ground net, every other net gets exactly one
- * standard pad glued on top, shared by all its leads. The copper follows the parts: each pad goes
+ * pad glued on top, a standard square or a strip, shared by all its leads. The copper follows the parts: each pad goes
  * where its leads reach it most easily without touching other leads or pads, and leads are bent
  * onto their pad. Ground leads solder straight to the board, which reaches a margin beyond every
  * part and pad.
@@ -63,26 +96,22 @@ export function manhattanCopper(netlist: BuiltNetlist, parts: PlacedPart[], sett
   for (const net of padNets) {
     const own = leads.filter((l) => l.net === net)
     const foreign = leads.filter((l) => l.net !== net)
-    const size = padSize(own.length)
-    // On the search grid, so the pad edges (whole millimeters apart) land on it too.
-    const center = {
-      x: snapToGrid(median(own.map((l) => l.end.x)), PAD_SEARCH_STEP),
-      y: snapToGrid(median(own.map((l) => l.end.y)), PAD_SEARCH_STEP),
-    }
 
     let best: { rect: Rect; cost: number } | null = null
-    for (const offset of spiralOffsets(PAD_SEARCH_RADIUS, PAD_SEARCH_STEP)) {
-      const rect = { x: center.x + offset.x - size.w / 2, y: center.y + offset.y - size.h / 2, w: size.w, h: size.h }
-      if (pads.some((p) => rectsOverlap(inflate(p.rects[0], PAD_SPACING), rect))) continue
-      if (foreign.some((l) => rectContains(inflate(rect, foreignClearance(l)), l.end))) continue
-      const pad = { net, rects: [rect] }
-      const cost =
-        own.reduce((sum, l) => {
-          const target = solderPoint(pad, l.anchor, l.part.component.geometry, settings.isolation)
-          return sum + leadCost(Math.hypot(target.x - l.anchor.x, target.y - l.anchor.y), l.limit)
-        }, 0) +
-        PAD_COMPACTNESS * Math.hypot(offset.x, offset.y)
-      if (!best || cost < best.cost) best = { rect, cost }
+    for (const shape of padShapes(own, settings)) {
+      for (const offset of spiralOffsets(PAD_SEARCH_RADIUS, PAD_SEARCH_STEP)) {
+        const rect = { x: shape.center.x + offset.x - shape.w / 2, y: shape.center.y + offset.y - shape.h / 2, w: shape.w, h: shape.h }
+        if (pads.some((p) => rectsOverlap(inflate(p.rects[0], PAD_SPACING), rect))) continue
+        if (foreign.some((l) => rectContains(inflate(rect, foreignClearance(l)), l.end))) continue
+        const pad = { net, rects: [rect] }
+        const cost =
+          own.reduce((sum, l) => {
+            const target = solderPoint(pad, l.anchor, l.part.component.geometry, settings.isolation)
+            return sum + leadCost(Math.hypot(target.x - l.anchor.x, target.y - l.anchor.y), l.limit)
+          }, 0) +
+          PAD_COMPACTNESS * Math.hypot(offset.x, offset.y)
+        if (!best || cost < best.cost) best = { rect, cost }
+      }
     }
     if (!best) throw new Error(`No free spot found for the pad of net ${net}`)
     pads.push({ net, rects: [best.rect] })
