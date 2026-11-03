@@ -1,7 +1,7 @@
 import { buildNetlist, buildProjectNetlist } from './definitions'
 import { boundsOf, inflate, rectContains, rectsOverlap, rotatePoint, samePoint, snapToGrid, withoutFloatNoise } from './geometry'
 import { followNetlist } from './layout'
-import { isGroundNet, isRealNet, naturalCompare } from './netlist'
+import { isGroundNet, isRealNet, naturalCompare, pinsByNet } from './netlist'
 import { NO_WIRING, selectedRefs, selectedWiring } from './selection'
 import type {
   BuiltComponent,
@@ -658,14 +658,8 @@ export function withSchematicNets(project: Project): Project {
 
 /** For every pin ("R1.2") that shares a net with other pins, all pins on that net as one key. */
 function netMatesByPin(netlist: Netlist): Map<string, string> {
-  const pinsByNet = new Map<string, string[]>()
-  for (const c of netlist.components) {
-    for (const p of c.pins) {
-      if (isRealNet(p.net)) pinsByNet.set(p.net, [...(pinsByNet.get(p.net) ?? []), `${c.ref}.${p.number}`])
-    }
-  }
   const mates = new Map<string, string>()
-  for (const pins of pinsByNet.values()) {
+  for (const pins of pinsByNet(netlist).values()) {
     // A net with one pin connects that pin to nothing, the same as no net.
     if (pins.length < 2) continue
     const key = [...pins].sort(naturalCompare).join(' ')

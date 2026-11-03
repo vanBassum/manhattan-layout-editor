@@ -6,7 +6,7 @@ import { errorText } from './errorText'
 import { footprintPinCount } from './footprints'
 import { boundsOf } from './geometry'
 import { analyzeLeads, bodyBounds, changeFootprints, createLayout, findSpacingViolations, findSplitNets, replaceIslandRects, toLocal, toWorld } from './layout'
-import { isRealNet, naturalCompare } from './netlist'
+import { isRealNet, naturalCompare, pinsByNet } from './netlist'
 import { agentPlacements, completeSchematic, placedParts } from './schematic'
 import type { BuiltComponent, BuiltProject, Island, Layout, NetLabel, Netlist, Pin, Placement, Point, Project, Rect, Schematic } from './types'
 
@@ -59,6 +59,7 @@ export function layoutBounds(project: BuiltProject): Rect | null {
 
 export function describeProject(project: BuiltProject) {
   const { netlist, layout, settings } = project
+  const pinsOnNet = pinsByNet(netlist)
   return {
     project: { guid: project.guid },
     units: 'mm; x to the right, y down; rotation in degrees clockwise',
@@ -72,7 +73,7 @@ export function describeProject(project: BuiltProject) {
       const island = layout.islands.find((i) => i.net === net)
       return {
         net,
-        pins: netlist.components.flatMap((c) => c.pins.filter((p) => p.net === net).map((p) => `${c.ref}.${p.number}`)),
+        pins: pinsOnNet.get(net) ?? [],
         island: island ? { plane: island.plane ?? false, rects: island.rects.map(roundRect) } : null,
       }
     }),

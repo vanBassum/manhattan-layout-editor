@@ -1,8 +1,8 @@
 import { snapToGrid, withoutFloatNoise } from '../geometry'
-import { naturalCompare } from '../netlist'
+import { naturalCompare, pinsByNet } from '../netlist'
 import type { BuiltNetlist, Island, Netlist, Settings } from '../types'
 import type { Strategy } from './strategy'
-import { componentNets, netPinCounts, placeOnIslands } from './common'
+import { componentNets, placeOnIslands } from './common'
 
 /** Generous strips: room for parts, their clearance and a soldering iron. */
 const ROW_HEIGHT = 14
@@ -21,8 +21,8 @@ const MAX_RAILS = 3
  * placed onto the strips with the shared collision-free placer.
  */
 function knifeLayout(netlist: BuiltNetlist, settings: Settings) {
-  const pinCounts = netPinCounts(netlist)
-  const pins = (net: string) => pinCounts.get(net) ?? 1
+  const pinsOnNet = pinsByNet(netlist)
+  const pins = (net: string) => pinsOnNet.get(net)?.length ?? 1
 
   // Busy nets (supply, ground) become full-width rails, but at their place in the chain rather than
   // at the board edges, so rails joined by e.g. decoupling capacitors end up next to each other.

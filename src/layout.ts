@@ -1,6 +1,6 @@
 import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint, snapToGrid, withoutFloatNoise } from './geometry'
 import { footprintPinCount } from './footprints'
-import { isRealNet } from './netlist'
+import { isRealNet, pinsByNet } from './netlist'
 import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
 
 const ISLAND_WIDTH = 12
@@ -206,27 +206,20 @@ export function createLayout(netlist: BuiltNetlist, previous?: Layout): Layout {
  * two keeps the copper; parts and nets that are new get a spot on the grid.
  */
 export function followNetlist(layout: Layout, before: Netlist, after: BuiltNetlist): Layout {
-  const pinsOf = (netlist: Netlist) => {
-    const pins = new Map<string, Set<string>>()
-    for (const c of netlist.components) {
-      for (const p of c.pins) if (isRealNet(p.net)) pins.set(p.net, (pins.get(p.net) ?? new Set()).add(`${c.ref}.${p.number}`))
-    }
-    return pins
-  }
   const sameNets = after.components.every((c, i) => c.pins.every((p, k) => p.net === before.components[i]?.pins[k]?.net))
   if (sameNets && after.components.length === before.components.length) return layout
-  const oldPins = pinsOf(before)
-  const newPins = pinsOf(after)
+  const oldPins = pinsByNet(before)
+  const newPins = pinsByNet(after)
   const kept = new Set(layout.islands.map((i) => i.net).filter((net) => newPins.has(net)))
   const renamed = new Map<string, string>()
   for (const island of layout.islands) {
     if (kept.has(island.net)) continue
-    const pins = oldPins.get(island.net) ?? new Set<string>()
+    const pins = new Set(oldPins.get(island.net))
     let best: string | undefined
     let bestShared = 0
     for (const [net, netPins] of newPins) {
       if (kept.has(net) || [...renamed.values()].includes(net)) continue
-      const shared = [...netPins].filter((p) => pins.has(p)).length
+      const shared = netPins.filter((p) => pins.has(p)).length
       if (shared > bestShared) [best, bestShared] = [net, shared]
     }
     if (best) renamed.set(island.net, best)

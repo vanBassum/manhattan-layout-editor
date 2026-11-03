@@ -22,6 +22,20 @@ export function isRealNet(net: string): boolean {
   return net !== '' && !net.startsWith('unconnected-')
 }
 
+/** The pins on each net, as "R1.2", in netlist order. Pins on no net are left out. */
+export function pinsByNet(netlist: Netlist): Map<string, string[]> {
+  const pins = new Map<string, string[]>()
+  for (const c of netlist.components) {
+    for (const p of c.pins) {
+      if (!isRealNet(p.net)) continue
+      const onNet = pins.get(p.net) ?? []
+      onNet.push(`${c.ref}.${p.number}`)
+      pins.set(p.net, onNet)
+    }
+  }
+  return pins
+}
+
 /** Names a ground net goes by; "0" is SPICE's. */
 export const isGroundNet = (net: string) => /^(GND|AGND|DGND|PGND|VSS|0|0V|EARTH|GROUND)$/i.test(net)
 

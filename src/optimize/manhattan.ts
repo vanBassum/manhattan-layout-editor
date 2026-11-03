@@ -1,9 +1,9 @@
 import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid, withoutFloatNoise } from '../geometry'
 import { onCopper, solderPoint, toLocal, toWorld } from '../layout'
-import { isGroundNet, isRealNet, naturalCompare } from '../netlist'
+import { isGroundNet, isRealNet, naturalCompare, pinsByNet } from '../netlist'
 import type { BuiltNetlist, Island, Point, Rect, Settings } from '../types'
 import type { Strategy } from './strategy'
-import { leadCost, leadLimit, netPinCounts, placeComponents, spiralOffsets, type PlacedPart } from './common'
+import { leadCost, leadLimit, placeComponents, spiralOffsets, type PlacedPart } from './common'
 
 /** Standard square pad sizes (mm) and how many leads each takes with room to solder and probe. */
 const PAD_SIZES: [side: number, leads: number][] = [
@@ -52,8 +52,9 @@ const median = (values: number[]) => {
  * bent onto their pad. Ground leads solder straight to the board.
  */
 function manhattanLayout(netlist: BuiltNetlist, settings: Settings) {
-  const pinCounts = netPinCounts(netlist)
-  const busiest = [...netlist.nets].sort((a, b) => (pinCounts.get(b) ?? 0) - (pinCounts.get(a) ?? 0))[0]
+  const pinsOnNet = pinsByNet(netlist)
+  const pinCount = (net: string) => pinsOnNet.get(net)?.length ?? 0
+  const busiest = [...netlist.nets].sort((a, b) => pinCount(b) - pinCount(a))[0]
   const ground = netlist.nets.find(isGroundNet) ?? busiest
 
   const parts = placeComponents(netlist, settings)
@@ -67,7 +68,7 @@ function manhattanLayout(netlist: BuiltNetlist, settings: Settings) {
 
   const padNets = netlist.nets
     .filter((net) => net !== ground)
-    .sort((a, b) => (pinCounts.get(b) ?? 0) - (pinCounts.get(a) ?? 0) || naturalCompare(a, b))
+    .sort((a, b) => pinCount(b) - pinCount(a) || naturalCompare(a, b))
   const pads: Island[] = []
   for (const net of padNets) {
     const own = leads.filter((l) => l.net === net)

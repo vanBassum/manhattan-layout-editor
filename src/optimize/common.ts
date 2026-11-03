@@ -1,16 +1,10 @@
 import { boundsOf, inflate, rectsOverlap, segmentsCross } from '../geometry'
 import { bodyBounds, defaultLeadEnds, onCopper, solderPoint, toLocal, toWorld } from '../layout'
-import { isRealNet, naturalCompare } from '../netlist'
-import type { BuiltComponent, BuiltNetlist, Geometry, Island, NetComponent, Netlist, Placement, Point, Rect, Settings } from '../types'
+import { isRealNet, naturalCompare, pinsByNet } from '../netlist'
+import type { BuiltComponent, BuiltNetlist, Geometry, Island, NetComponent, Placement, Point, Rect, Settings } from '../types'
 
 export function componentNets(component: NetComponent): string[] {
   return [...new Set(component.pins.map((p) => p.net).filter(isRealNet))].sort(naturalCompare)
-}
-
-export function netPinCounts(netlist: Netlist): Map<string, number> {
-  const counts = new Map<string, number>()
-  for (const c of netlist.components) for (const p of c.pins) counts.set(p.net, (counts.get(p.net) ?? 0) + 1)
-  return counts
 }
 
 /** Lead cost that rises gently up to the limit and sharply beyond it. */
@@ -67,8 +61,8 @@ const SEARCH_RADII = [15, 30, 60, 120, 240]
  * pins it has. Two parts sharing a private two-pin net are the most closely related.
  */
 function placementOrder(netlist: BuiltNetlist): BuiltComponent[] {
-  const pinCounts = netPinCounts(netlist)
-  const netWeight = (net: string) => 1 / Math.max(1, (pinCounts.get(net) ?? 2) - 1)
+  const pinsOnNet = pinsByNet(netlist)
+  const netWeight = (net: string) => 1 / Math.max(1, (pinsOnNet.get(net)?.length ?? 2) - 1)
   const link = (a: BuiltComponent, b: BuiltComponent) => {
     const nets = new Set(componentNets(b))
     return componentNets(a).reduce((sum, net) => sum + (nets.has(net) ? netWeight(net) : 0), 0)
