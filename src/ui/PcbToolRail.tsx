@@ -1,4 +1,4 @@
-import type { MoveMode, Tool } from '../Canvas'
+import type { MoveMode, Tool } from './pcb/Canvas'
 import { Icon } from './icons'
 import { PCB_LAYERS, type Layers } from './layers'
 import { GridSettings, LayerToggles, RailMenu } from './panels'

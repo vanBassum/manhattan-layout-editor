@@ -1,10 +1,10 @@
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR } from './Canvas'
-import { findProblemNets } from './layout'
+import { findProblemNets } from '../../layout'
+import type { BuiltNetlist, Layout, Rect } from '../../types'
+import { ALL_LAYERS } from '../layers'
 import { canvasToPng } from './screenshot'
-import type { BuiltNetlist, Layout, Rect } from './types'
-import { ALL_LAYERS } from './ui/layers'
 
 const ignore = () => {}
 
