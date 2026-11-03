@@ -1,3 +1,4 @@
+import { snapToGrid } from './geometry'
 import type { Island, Rect } from './types'
 
 const EPS = 1e-6
@@ -95,4 +96,78 @@ function withEdgeAt(r: Rect, axis: Cut['axis'], at: number, value: number): Rect
   const high = highEdge(r, axis)
   const [newLow, newHigh] = Math.abs(low - at) < EPS ? [value, high] : [low, value]
   return axis === 'x' ? { ...r, x: newLow, w: newHigh - newLow } : { ...r, y: newLow, h: newHigh - newLow }
+}
+
+export type Side = 'left' | 'right' | 'top' | 'bottom'
+
+/** A rectangle of another net with its `side` on an edge being dragged: the two share that cut. */
+export interface CutNeighbour {
+  net: string
+  rectIndex: number
+  rect: Rect
+  side: Side
+}
+
+const OPPOSITE: Record<Side, Side> = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' }
+
+function sideValue(r: Rect, side: Side): number {
+  switch (side) {
+    case 'left':
+      return r.x
+    case 'right':
+      return r.x + r.w
+    case 'top':
+      return r.y
+    case 'bottom':
+      return r.y + r.h
+  }
+}
+
+/** Moves one edge of the rectangle, keeping the opposite edge and a minimum size. */
+function withSide(r: Rect, side: Side, value: number): Rect {
+  switch (side) {
+    case 'left': {
+      const x = Math.min(value, r.x + r.w - MIN_RECT_SIZE)
+      return { ...r, x, w: r.x + r.w - x }
+    }
+    case 'right':
+      return { ...r, w: Math.max(value - r.x, MIN_RECT_SIZE) }
+    case 'top': {
+      const y = Math.min(value, r.y + r.h - MIN_RECT_SIZE)
+      return { ...r, y, h: r.y + r.h - y }
+    }
+    case 'bottom':
+      return { ...r, h: Math.max(value - r.y, MIN_RECT_SIZE) }
+  }
+}
+
+/** The dragged `sides` move by the pointer delta and land on the snap grid. */
+export function resizeRect(r: Rect, sides: Side[], dx: number, dy: number, snap: number): Rect {
+  return sides.reduce((resized, side) => {
+    const delta = side === 'left' || side === 'right' ? dx : dy
+    return withSide(resized, side, snapToGrid(sideValue(r, side) + delta, snap))
+  }, r)
+}
+
+/** Rectangles of other nets that share a dragged side of `r`; dragging that cut moves both sides. */
+export function cutNeighbours(islands: Island[], dragged: Island, r: Rect, sides: Side[]): CutNeighbour[] {
+  if (dragged.plane) return []
+  const others = islands.filter((island) => island.net !== dragged.net && !island.plane)
+  return sides.flatMap((side) =>
+    others.flatMap((island) =>
+      island.rects.flatMap((other, rectIndex) => {
+        const onEdge = Math.abs(sideValue(other, OPPOSITE[side]) - sideValue(r, side)) < EPS
+        const alongEdge =
+          side === 'top' || side === 'bottom'
+            ? Math.min(r.x + r.w, other.x + other.w) - Math.max(r.x, other.x)
+            : Math.min(r.y + r.h, other.y + other.h) - Math.max(r.y, other.y)
+        return onEdge && alongEdge > EPS ? [{ net: island.net, rectIndex, rect: other, side: OPPOSITE[side] }] : []
+      }),
+    ),
+  )
+}
+
+/** The neighbour's rectangle with its shared side moved to where the resized rectangle's side now is. */
+export function followResize(neighbour: CutNeighbour, resized: Rect): Rect {
+  return withSide(neighbour.rect, neighbour.side, sideValue(resized, OPPOSITE[neighbour.side]))
 }

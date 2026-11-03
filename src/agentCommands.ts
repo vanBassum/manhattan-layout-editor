@@ -5,7 +5,7 @@ import { buildNetlist, withAssignedDefinition } from './definitions'
 import { errorText } from './errorText'
 import { footprintPinCount } from './footprints'
 import { boundsOf } from './geometry'
-import { analyzeLeads, bodyBounds, changeFootprints, createLayout, findSpacingViolations, findSplitNets, toLocal, toWorld } from './layout'
+import { analyzeLeads, bodyBounds, changeFootprints, createLayout, findSpacingViolations, findSplitNets, replaceIslandRects, toLocal, toWorld } from './layout'
 import { isRealNet, naturalCompare } from './netlist'
 import { agentPlacements, completeSchematic, pinEnds } from './schematic'
 import type { BuiltComponent, BuiltProject, Island, Layout, NetLabel, Netlist, Pin, Placement, Point, Project, Rect, Schematic } from './types'
@@ -140,11 +140,6 @@ const replacePlacement = (layout: Layout, placement: Placement): Layout => ({
   placements: layout.placements.map((p) => (p.ref === placement.ref ? placement : p)),
 })
 
-const replaceIsland = (layout: Layout, island: Island): Layout => ({
-  ...layout,
-  islands: layout.islands.map((i) => (i.net === island.net ? island : i)),
-})
-
 export function moveComponent(project: BuiltProject, args: Args): Layout {
   const { placement } = requireComponent(project, stringArg(args, 'ref'))
   return replacePlacement(project.layout, {
@@ -179,14 +174,14 @@ export function setIsland(project: BuiltProject, args: Args): Layout {
     if (rect.w <= 0 || rect.h <= 0) throw new Error('rectangles need a positive width and height')
     return rect
   })
-  return replaceIsland(project.layout, { ...island, rects: parsed })
+  return replaceIslandRects(project.layout, island.net, parsed)
 }
 
 export function moveIsland(project: BuiltProject, args: Args): Layout {
   const island = requireIsland(project, stringArg(args, 'net'))
   const dx = numberArg(args, 'dx')
   const dy = numberArg(args, 'dy')
-  return replaceIsland(project.layout, { ...island, rects: island.rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy })) })
+  return replaceIslandRects(project.layout, island.net, island.rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy })))
 }
 
 /**

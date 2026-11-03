@@ -1,4 +1,4 @@
-import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint } from './geometry'
+import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint, snapToGrid } from './geometry'
 import { footprintPinCount } from './footprints'
 import { isRealNet } from './netlist'
 import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, NetComponent, Netlist, Placement, Point, Rect, Shape } from './types'
@@ -219,6 +219,59 @@ export function bodyBounds(geometry: Geometry, placement: Placement, extraLocalP
   const { x, y, w, h } = geometry.body
   const corners = [{ x, y }, { x: x + w, y }, { x, y: y + h }, { x: x + w, y: y + h }, ...extraLocalPoints]
   return boundsOf(corners.map((p) => ({ ...toWorld(p, placement), w: 0, h: 0 })))!
+}
+
+// ---------- Moving parts and islands ----------
+
+export function replaceIslandRects(layout: Layout, net: string, rects: Rect[]): Layout {
+  return { ...layout, islands: layout.islands.map((i) => (i.net === net ? { ...i, rects } : i)) }
+}
+
+export function replaceRect(layout: Layout, net: string, rectIndex: number, rect: Rect): Layout {
+  return {
+    ...layout,
+    islands: layout.islands.map((i) => (i.net === net ? { ...i, rects: i.rects.map((r, k) => (k === rectIndex ? rect : r)) } : i)),
+  }
+}
+
+export const moveRects = (rects: Rect[], dx: number, dy: number) =>
+  rects.map((r) => ({ ...r, x: snapToGrid(r.x + dx, 0), y: snapToGrid(r.y + dy, 0) }))
+
+/** The delta that puts the first rectangle's top-left corner on the snap grid; the rest follow it. */
+export function gridDelta(rects: Rect[], dx: number, dy: number, snap: number): Point {
+  const first = rects[0]
+  return { x: snapToGrid(first.x + dx, snap) - first.x, y: snapToGrid(first.y + dy, snap) - first.y }
+}
+
+/** A part as it was when a move started. With worldLeadEnds set, only the body moves. */
+export interface MovingPart {
+  placement: Placement
+  worldLeadEnds?: Record<string, Point>
+}
+
+/** `current` moved to where `moving` started plus the delta. */
+export function movePart(current: Placement, moving: MovingPart, dx: number, dy: number): Placement {
+  const moved = { ...current, x: moving.placement.x + dx, y: moving.placement.y + dy }
+  if (!moving.worldLeadEnds) return moved
+  // Leads are stored relative to the body, so keeping their ends in place means re-bending them.
+  const leads = Object.fromEntries(Object.entries(moving.worldLeadEnds).map(([pin, end]) => [pin, toLocal(end, moved)]))
+  return { ...moved, leads }
+}
+
+/** Moves the parts and islands, as they were when the move started, by the same delta. */
+export function moveGroup(layout: Layout, parts: MovingPart[], islands: Island[], dx: number, dy: number): Layout {
+  const partsByRef = new Map(parts.map((part) => [part.placement.ref, part]))
+  const islandsByNet = new Map(islands.map((island) => [island.net, island]))
+  return {
+    placements: layout.placements.map((pl) => {
+      const moving = partsByRef.get(pl.ref)
+      return moving ? movePart(pl, moving, dx, dy) : pl
+    }),
+    islands: layout.islands.map((island) => {
+      const original = islandsByNet.get(island.net)
+      return original ? { ...island, rects: moveRects(original.rects, dx, dy) } : island
+    }),
+  }
 }
 
 // ---------- Leads and checks ----------

@@ -1,8 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from './geometry'
-import { analyzeLeads, bodyBounds, toLocal, toWorld as toWorldPoint, type PinStatus } from './layout'
-import { findCuts, MIN_RECT_SIZE, moveCut, type Cut } from './cuts'
+import {
+  analyzeLeads,
+  bodyBounds,
+  gridDelta,
+  moveGroup,
+  movePart,
+  moveRects,
+  replaceIslandRects,
+  replaceRect,
+  toLocal,
+  toWorld as toWorldPoint,
+  type MovingPart,
+  type PinStatus,
+} from './layout'
+import { cutNeighbours, findCuts, followResize, moveCut, resizeRect, type Cut, type CutNeighbour, type Side } from './cuts'
 import { islandEdges, moveIslandEdge, type IslandEdge } from './raster'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
 import type { BuiltNetlist, Geometry, Island, Layout, Placement, Point, Rect, Selection } from './types'
@@ -10,15 +23,6 @@ import { layerClasses, layerOpacities, type Layers } from './ui/layers'
 import { gridPitch, gridPitches, Rulers, useViewport, ViewportGrid, type View } from './ui/viewport'
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
-type Side = 'left' | 'right' | 'top' | 'bottom'
-
-/** A rectangle of another net with its `side` on an edge being dragged: the two share that cut. */
-interface CutNeighbour {
-  net: string
-  rectIndex: number
-  rect: Rect
-  side: Side
-}
 
 /** Select: dragging empty space draws a selection rectangle. Pan: it moves the view. */
 export type Tool = 'select' | 'pan'
@@ -30,25 +34,18 @@ const TAB_WIDTH_MM = 2.5
 /** Part: the part moves with its bent leads. Body: lead ends stay soldered where they are. */
 export type MoveMode = 'part' | 'body'
 
-/** A part as it was when the drag started. With worldLeadEnds set, only the body moves. */
-interface MovingPart {
-  placement: Placement
-  worldLeadEnds?: Record<string, Point>
-}
-
 type Drag =
   | { kind: 'pan'; startX: number; startY: number; view: View }
   | { kind: 'marquee'; start: Point; startX: number; startY: number; additive: boolean }
   | { kind: 'island'; net: string; start: Point; rects: Rect[] }
   | { kind: 'cut'; cut: Cut; start: Point; islands: Island[] }
   | { kind: 'edge'; net: string; edge: IslandEdge; start: Point; islands: Island[] }
-  | { kind: 'resize'; net: string; rectIndex: number; handle: Handle; start: Point; rect: Rect; neighbours: CutNeighbour[] }
+  | { kind: 'resize'; net: string; rectIndex: number; sides: Side[]; start: Point; rect: Rect; neighbours: CutNeighbour[] }
   | { kind: 'part'; start: Point; part: MovingPart }
   | { kind: 'group'; start: Point; parts: MovingPart[]; islands: Island[]; pressed: SingleSelection }
   | { kind: 'lead'; ref: string; pin: string; start: Point; origin: Point }
 
 type MarqueeDrag = Extract<Drag, { kind: 'marquee' }>
-type GroupDrag = Extract<Drag, { kind: 'group' }>
 
 /** A press that moves less than this (screen pixels) is a click, not a selection rectangle. */
 const CLICK_TOLERANCE_PX = 3
@@ -88,8 +85,6 @@ interface Props {
   gridLinesPerMajor: number
 }
 
-const OPPOSITE: Record<Side, Side> = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' }
-
 function handleSides(handle: Handle): Side[] {
   const sides: Side[] = []
   if (handle.includes('w')) sides.push('left')
@@ -97,64 +92,6 @@ function handleSides(handle: Handle): Side[] {
   if (handle.includes('n')) sides.push('top')
   if (handle.includes('s')) sides.push('bottom')
   return sides
-}
-
-function sideValue(r: Rect, side: Side): number {
-  switch (side) {
-    case 'left':
-      return r.x
-    case 'right':
-      return r.x + r.w
-    case 'top':
-      return r.y
-    case 'bottom':
-      return r.y + r.h
-  }
-}
-
-/** Moves one edge of the rectangle, keeping the opposite edge and a minimum size. */
-function withSide(r: Rect, side: Side, value: number): Rect {
-  switch (side) {
-    case 'left': {
-      const x = Math.min(value, r.x + r.w - MIN_RECT_SIZE)
-      return { ...r, x, w: r.x + r.w - x }
-    }
-    case 'right':
-      return { ...r, w: Math.max(value - r.x, MIN_RECT_SIZE) }
-    case 'top': {
-      const y = Math.min(value, r.y + r.h - MIN_RECT_SIZE)
-      return { ...r, y, h: r.y + r.h - y }
-    }
-    case 'bottom':
-      return { ...r, h: Math.max(value - r.y, MIN_RECT_SIZE) }
-  }
-}
-
-/** The dragged edges move by the pointer delta and land on the snap grid. */
-function resizeRect(r: Rect, handle: Handle, dx: number, dy: number, snap: number): Rect {
-  return handleSides(handle).reduce((resized, side) => {
-    const delta = side === 'left' || side === 'right' ? dx : dy
-    return withSide(resized, side, snapToGrid(sideValue(r, side) + delta, snap))
-  }, r)
-}
-
-/** Rectangles of other nets that share a dragged edge of `r`; dragging that cut moves both sides. */
-function cutNeighbours(islands: Island[], dragged: Island, r: Rect, handle: Handle): CutNeighbour[] {
-  if (dragged.plane) return []
-  const eps = 1e-6
-  const others = islands.filter((island) => island.net !== dragged.net && !island.plane)
-  return handleSides(handle).flatMap((side) =>
-    others.flatMap((island) =>
-      island.rects.flatMap((other, rectIndex) => {
-        const onEdge = Math.abs(sideValue(other, OPPOSITE[side]) - sideValue(r, side)) < eps
-        const alongEdge =
-          side === 'top' || side === 'bottom'
-            ? Math.min(r.x + r.w, other.x + other.w) - Math.max(r.x, other.x)
-            : Math.min(r.y + r.h, other.y + other.h) - Math.max(r.y, other.y)
-        return onEdge && alongEdge > eps ? [{ net: island.net, rectIndex, rect: other, side: OPPOSITE[side] }] : []
-      }),
-    ),
-  )
 }
 
 function handlePosition(r: Rect, handle: Handle): Point {
@@ -260,47 +197,6 @@ function CathodeBand({ geometry }: { geometry: Geometry }) {
 
 /** The ground plane goes underneath the pads glued onto it. */
 const planesFirst = (islands: Island[]) => [...islands.filter((i) => i.plane), ...islands.filter((i) => !i.plane)]
-
-function updateIsland(layout: Layout, net: string, rects: Rect[]): Layout {
-  return { ...layout, islands: layout.islands.map((i) => (i.net === net ? { ...i, rects } : i)) }
-}
-
-function replaceRect(layout: Layout, net: string, rectIndex: number, rect: Rect): Layout {
-  const island = layout.islands.find((i) => i.net === net)!
-  return updateIsland(layout, net, island.rects.map((r, k) => (k === rectIndex ? rect : r)))
-}
-
-const moveRects = (rects: Rect[], dx: number, dy: number) =>
-  rects.map((r) => ({ ...r, x: snapToGrid(r.x + dx, 0), y: snapToGrid(r.y + dy, 0) }))
-
-/** The delta that puts the first rectangle's top-left corner on the snap grid; the rest follow it. */
-function gridDelta(rects: Rect[], dx: number, dy: number, snap: number): Point {
-  const first = rects[0]
-  return { x: snapToGrid(first.x + dx, snap) - first.x, y: snapToGrid(first.y + dy, snap) - first.y }
-}
-
-function movePart(current: Placement, moving: MovingPart, dx: number, dy: number): Placement {
-  const moved = { ...current, x: moving.placement.x + dx, y: moving.placement.y + dy }
-  if (!moving.worldLeadEnds) return moved
-  // Leads are stored relative to the body, so keeping their ends in place means re-bending them.
-  const leads = Object.fromEntries(Object.entries(moving.worldLeadEnds).map(([pin, end]) => [pin, toLocal(end, moved)]))
-  return { ...moved, leads }
-}
-
-function moveGroup(layout: Layout, drag: GroupDrag, dx: number, dy: number): Layout {
-  const parts = new Map(drag.parts.map((part) => [part.placement.ref, part]))
-  const islands = new Map(drag.islands.map((island) => [island.net, island]))
-  return {
-    placements: layout.placements.map((pl) => {
-      const moving = parts.get(pl.ref)
-      return moving ? movePart(pl, moving, dx, dy) : pl
-    }),
-    islands: layout.islands.map((island) => {
-      const original = islands.get(island.net)
-      return original ? { ...island, rects: moveRects(original.rects, dx, dy) } : island
-    }),
-  }
-}
 
 export function Canvas(props: Props) {
   const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode, rectHandles, gridLinesPerMajor } = props
@@ -422,8 +318,9 @@ export function Canvas(props: Props) {
     e.stopPropagation()
     onSelect({ kind: 'island', net: island.net, rectIndex })
     const rect = island.rects[rectIndex]
-    const neighbours = cutNeighbours(layout.islands, island, rect, handle)
-    beginDrag(e, { kind: 'resize', net: island.net, rectIndex, handle, start: toWorld(e), rect, neighbours })
+    const sides = handleSides(handle)
+    const neighbours = cutNeighbours(layout.islands, island, rect, sides)
+    beginDrag(e, { kind: 'resize', net: island.net, rectIndex, sides, start: toWorld(e), rect, neighbours })
   }
 
   const onCutPointerDown = (e: ReactPointerEvent, cut: Cut) => {
@@ -490,15 +387,15 @@ export function Canvas(props: Props) {
     } else if (drag.kind === 'island') {
       const delta = gridDelta(drag.rects, rawDx, rawDy, snap)
       const moved = moveRects(drag.rects, delta.x, delta.y)
-      onLayoutChange((l) => updateIsland(l, drag.net, moved))
+      onLayoutChange((l) => replaceIslandRects(l, drag.net, moved))
     } else if (drag.kind === 'cut') {
       const target = snapValue(drag.cut.at + (drag.cut.axis === 'x' ? rawDx : rawDy))
       onLayoutChange((l) => ({ ...l, islands: moveCut(drag.islands, drag.cut, target) }))
     } else if (drag.kind === 'resize') {
-      const resized = resizeRect(drag.rect, drag.handle, rawDx, rawDy, snap)
+      const resized = resizeRect(drag.rect, drag.sides, rawDx, rawDy, snap)
       onLayoutChange((l) =>
         drag.neighbours.reduce(
-          (next, n) => replaceRect(next, n.net, n.rectIndex, withSide(n.rect, n.side, sideValue(resized, OPPOSITE[n.side]))),
+          (next, n) => replaceRect(next, n.net, n.rectIndex, followResize(n, resized)),
           replaceRect(l, drag.net, drag.rectIndex, resized),
         ),
       )
@@ -519,7 +416,7 @@ export function Canvas(props: Props) {
     } else {
       // Parts move by the same delta as the islands, so they stay where they sit on the copper.
       const delta = drag.islands.length > 0 ? gridDelta(drag.islands[0].rects, rawDx, rawDy, snap) : { x: dx, y: dy }
-      onLayoutChange((l) => moveGroup(l, drag, delta.x, delta.y))
+      onLayoutChange((l) => moveGroup(l, drag.parts, drag.islands, delta.x, delta.y))
     }
   }
 
