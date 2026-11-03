@@ -648,6 +648,107 @@ input:focus-visible {
   color: var(--ok);
 }
 
+/* Simulation panel: supplies, models, the run button and the operating point. */
+.simulation {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.supply-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.supply-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.supply-row input[type='number'] {
+  width: 4.5em;
+}
+
+.model-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.model-row .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-row .ok {
+  color: var(--ok);
+}
+
+.model-text,
+.simulation-log {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+}
+
+.simulation-log {
+  margin: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 16em;
+  overflow: auto;
+}
+
+.simulation-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.simulation-result p {
+  margin: 0;
+}
+
+.transistor-table {
+  border-collapse: collapse;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.transistor-table th {
+  color: var(--text-muted);
+  font-weight: normal;
+  text-align: right;
+}
+
+.transistor-table td {
+  text-align: right;
+  padding: 1px 0 1px 8px;
+}
+
+.transistor-table td:first-child,
+.transistor-table th:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+
 /* Layer rows: visibility toggle, colour swatch, name and opacity slider. */
 .layer-row {
   display: grid;

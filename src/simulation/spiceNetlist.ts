@@ -65,6 +65,19 @@ const elementName = (letter: string, ref: string) => (ref.toUpperCase().startsWi
 
 const PASSIVES: Record<string, string> = { R: 'R', RL: 'R', C: 'C', L: 'L' }
 
+const isTransistor = (component: NetComponent) => refPrefix(component.ref) === 'Q'
+const isDiode = (component: NetComponent) => ['D', 'LED'].includes(refPrefix(component.ref))
+
+/** The part values that need a SPICE model, each with the refs of its parts, in netlist order. */
+export function valuesNeedingModels(netlist: Netlist): Map<string, string[]> {
+  const values = new Map<string, string[]>()
+  for (const c of netlist.components) {
+    if (!isTransistor(c) && !isDiode(c)) continue
+    values.set(c.value, [...(values.get(c.value) ?? []), c.ref])
+  }
+  return values
+}
+
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const definesModel = (text: string, name: string) => new RegExp(`^\\s*\\.model\\s+${escapeRegExp(name)}\\s`, 'im').test(text)
@@ -135,8 +148,7 @@ function partLine(
     return { text: `${elementName(passive, ref)} ${nodeOfPin(a.number)} ${nodeOfPin(b.number)} ${number}` }
   }
 
-  const isTransistor = prefix === 'Q'
-  if (!isTransistor && prefix !== 'D' && prefix !== 'LED') throw new Error(`${ref}: parts like this cannot be simulated yet`)
+  if (!isTransistor(component) && !isDiode(component)) throw new Error(`${ref}: parts like this cannot be simulated yet`)
   const model = simulation.models[value]
   if (model === undefined) throw new Error(`${ref}: no SPICE model for "${value}"`)
   if (!definesModel(model, value)) throw new Error(`${ref}: the model for "${value}" does not start with ".model ${value}"`)
@@ -145,7 +157,7 @@ function partLine(
     if (number === undefined) throw new Error(`${ref}: its definition "${definition.name}" names no pin ${name}`)
     return nodeOfPin(number)
   }
-  if (!isTransistor) return { text: `${elementName('D', ref)} ${pinCalled('A')} ${pinCalled('K')} ${value}`, model: value }
+  if (isDiode(component)) return { text: `${elementName('D', ref)} ${pinCalled('A')} ${pinCalled('K')} ${value}`, model: value }
   const element = elementName('Q', ref)
   const [collector, base, emitter] = [pinCalled('C'), pinCalled('B'), pinCalled('E')]
   return {

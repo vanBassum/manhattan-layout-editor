@@ -34,7 +34,7 @@ import {
   withSchematicNets,
 } from '../model/schematic'
 import { SchematicView, type SchematicTool } from './schematic/SchematicView'
-import type { Layout, NetLabel, Placement, Project, Schematic, Selection, Settings } from '../model/types'
+import type { Layout, NetLabel, Placement, Project, Schematic, Selection, Settings, Simulation } from '../model/types'
 import { ProjectTabs } from './ProjectTabs'
 import { AppMenu } from './AppMenu'
 import { CanvasBanners } from './CanvasBanners'
@@ -57,6 +57,7 @@ import {
   type ViewMode,
 } from './preferences'
 import { SchematicToolRail } from './SchematicToolRail'
+import { SimulationPanel } from './SimulationPanel'
 import { useShortcuts } from './shortcuts'
 import { useDocuments } from './useDocuments'
 import { useTabs, type UndoDirection } from './useTabs'
@@ -361,6 +362,8 @@ export function App() {
   const changeValue = (ref: string, value: string) =>
     commitEdit((p) => ({ ...p, netlist: withValues(p.netlist, [{ ref, value }]) }))
 
+  const changeSimulation = (simulation: Simulation) => commitEdit((p) => ({ ...p, simulation }))
+
   const selectAll = () => {
     const wiring = { wires: schematic.wires.map((_, i) => i), labels: schematic.labels.map((_, i) => i), points: [] }
     setSelection(selectionOf(layout.placements.map((p) => p.ref), layout.islands.map((i) => i.net), wiring))
@@ -523,6 +526,16 @@ export function App() {
                 openPins={schematicOpenPins}
                 pinsNotInPcb={pinsNotInPcb}
                 onUpdatePcb={updatePcb}
+              />
+            </Section>
+            <Section title="Simulation">
+              {/* Keyed by tab: a run belongs to the project it ran. */}
+              <SimulationPanel
+                key={activeId}
+                netlist={schematicNets.netlist}
+                definitions={project.definitions}
+                simulation={project.simulation}
+                onChange={changeSimulation}
               />
             </Section>
           </aside>

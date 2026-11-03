@@ -224,7 +224,7 @@ interface NumberFieldProps {
 }
 
 /** Number input that commits on Enter or blur, so typing a value is one undo step, not one per keystroke. */
-function NumberField({ value, unit, step, label, onCommit }: NumberFieldProps) {
+export function NumberField({ value, unit, step, label, onCommit }: NumberFieldProps) {
   const shown = String(Number(value.toFixed(2)))
   const [draft, setDraft] = useState(shown)
   useEffect(() => setDraft(shown), [shown])
