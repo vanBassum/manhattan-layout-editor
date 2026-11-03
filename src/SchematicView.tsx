@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { boundsOf, inflate, rectBetween, rectsOverlap, rotatePoint, snapToGrid } from './geometry'
+import { boundsOf, inflate, rectBetween, rectContains, rectsOverlap, rotatePoint, snapToGrid } from './geometry'
 import {
   CELL_HEIGHT,
   CELL_WIDTH,
@@ -10,6 +10,7 @@ import {
   polylineWires,
   route,
   SCHEMATIC_GRID,
+  wireEnds,
   labelSymbol,
   withSchematicMoved,
   looseWireEnds,
@@ -91,18 +92,19 @@ type Drag =
   /** A part's reference and value text, dragged on its own; the part stays where it is. */
   | { kind: 'part-text'; ref: string; start: Point; origin: Point; moved: boolean }
 
+type SelectionDrag = Extract<Drag, { kind: 'selection' }>
+type MarqueeDrag = Extract<Drag, { kind: 'marquee' }>
+
 /** A pin end or wire end under the pointer. */
 interface Grab {
   point: Point
   onPin: boolean
-  wireEnd?: { index: number; end: 1 | 2 }
 }
 
 const snapPoint = (p: Point): Point => ({ x: snapToGrid(p.x, SCHEMATIC_GRID), y: snapToGrid(p.y, SCHEMATIC_GRID) })
 
-const pointInside = (p: Point, r: Rect) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
 const rectInside = (inner: Rect, outer: Rect) =>
-  pointInside(inner, outer) && pointInside({ x: inner.x + inner.w, y: inner.y + inner.h }, outer)
+  rectContains(outer, inner) && rectContains(outer, { x: inner.x + inner.w, y: inner.y + inner.h })
 /** True when the wire touches the rectangle; wires are horizontal or vertical, so their bounding box will do. */
 const wireTouches = (w: Wire, r: Rect) =>
   Math.max(w.x1, w.x2) >= r.x && Math.min(w.x1, w.x2) <= r.x + r.w && Math.max(w.y1, w.y2) >= r.y && Math.min(w.y1, w.y2) <= r.y + r.h
@@ -374,10 +376,7 @@ export function SchematicView({
     const radius = Math.min(GRAB_RADIUS_PX / view.scale, MAX_GRAB_RADIUS_MM)
     const candidates: Grab[] = [
       ...parts.flatMap(({ pins }) => pins.map((pin) => ({ point: { x: pin.x, y: pin.y }, onPin: true }))),
-      ...schematic.wires.flatMap((w, index) => [
-        { point: { x: w.x1, y: w.y1 }, onPin: pinKeys.has(pointKey({ x: w.x1, y: w.y1 })), wireEnd: { index, end: 1 as const } },
-        { point: { x: w.x2, y: w.y2 }, onPin: pinKeys.has(pointKey({ x: w.x2, y: w.y2 })), wireEnd: { index, end: 2 as const } },
-      ]),
+      ...schematic.wires.flatMap(wireEnds).map((end) => ({ point: end, onPin: pinKeys.has(pointKey(end)) })),
     ]
     let best: Grab | null = null
     let bestDistance = radius
@@ -448,7 +447,7 @@ export function SchematicView({
     if (!grab) return
     // From a pin, or with Shift from a wire end: a new wire. A loose wire end, corner or junction
     // is an item of its own: pressing it selects it, dragging it takes every wire end there along.
-    if (grab.onPin || e.shiftKey || !grab.wireEnd) {
+    if (grab.onPin || e.shiftKey) {
       e.stopPropagation()
       startDraft(grab.point)
       beginDrag(e, { kind: 'draw', ...press })
@@ -509,7 +508,7 @@ export function SchematicView({
    * Dragging one wire on its own shifts it sideways only: sliding it along itself would just bend
    * the wires at its ends. Everything else follows the pointer.
    */
-  const alongDragAxis = (drag: Extract<Drag, { kind: 'selection' }>, d: Point): Point => {
+  const alongDragAxis = (drag: SelectionDrag, d: Point): Point => {
     const moving = selectedWiring(drag.moving)
     const loneWire = drag.keepConnections && selectedRefs(drag.moving).length === 0 && moving.wires.length === 1 && moving.labels.length === 0
     const w = loneWire ? drag.base.wires[moving.wires[0]] : undefined
@@ -528,7 +527,7 @@ export function SchematicView({
   }
 
   /** The schematic with `moving` shifted by `delta` from `base`. Parts keep a rotation or flip made mid-drag. */
-  const movedSchematic = (drag: Extract<Drag, { kind: 'selection' }>) => {
+  const movedSchematic = (drag: SelectionDrag) => {
     const refs = selectedRefs(drag.moving)
     const current = new Map(schematic.placements.map((p) => [p.ref, p]))
     const placements = drag.base.placements
@@ -543,7 +542,7 @@ export function SchematicView({
   }
 
   /** After a drag: folded-up wires go, and the selection follows the wires and points that moved. */
-  const finishMove = (drag: Extract<Drag, { kind: 'selection' }>) => {
+  const finishMove = (drag: SelectionDrag) => {
     const moving = selectedWiring(drag.moving)
     // Where the drag kept every connection, it should leave no loose end that was not there before.
     const baseLoose = looseWireEnds(drag.base, netlist)
@@ -607,7 +606,7 @@ export function SchematicView({
    * left (crossing), whatever it touches. Either way, wire ends inside it go along with a drag, so
    * a wire reaching out of the window stretches; ends on a pin follow that pin instead.
    */
-  const finishMarquee = (drag: Extract<Drag, { kind: 'marquee' }>, e: ReactPointerEvent) => {
+  const finishMarquee = (drag: MarqueeDrag, e: ReactPointerEvent) => {
     setMarquee(null)
     if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) <= CLICK_TOLERANCE_PX) {
       if (!drag.additive) onSelect(null)
@@ -624,16 +623,16 @@ export function SchematicView({
       .map(({ placement }) => placement.ref)
     const ends = new Map(
       schematic.wires
-        .flatMap((w) => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }])
-        .filter((p) => pointInside(p, area) && !pinKeys.has(pointKey(p)))
+        .flatMap(wireEnds)
+        .filter((p) => rectContains(area, p) && !pinKeys.has(pointKey(p)))
         .map((p) => [pointKey(p), p]),
     )
     const found: WiringSelection = {
       wires: schematic.wires.flatMap((w, i) => {
-        const inside = pointInside({ x: w.x1, y: w.y1 }, area) && pointInside({ x: w.x2, y: w.y2 }, area)
+        const inside = wireEnds(w).every((end) => rectContains(area, end))
         return inside || (crossing && wireTouches(w, area)) ? [i] : []
       }),
-      labels: schematic.labels.flatMap((l, i) => (pointInside(l, area) ? [i] : [])),
+      labels: schematic.labels.flatMap((l, i) => (rectContains(area, l) ? [i] : [])),
       points: [...ends.values()],
     }
     onSelect(drag.additive ? addToSelection(selection, refs, [], found) : selectionOf(refs, [], found))

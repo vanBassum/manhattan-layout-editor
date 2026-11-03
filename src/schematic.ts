@@ -37,7 +37,7 @@ export const pointKey = (p: Point) => `${Math.round(p.x * 1000) / 1000},${Math.r
 const withoutFloatNoise = (v: number) => Math.round(v * 1e6) / 1e6
 
 const samePoint = (a: Point, b: Point) => pointKey(a) === pointKey(b)
-const wireEnds = (w: Wire): [Point, Point] => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]
+export const wireEnds = (w: Wire): [Point, Point] => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]
 const isHorizontal = (w: Wire) => w.y1 === w.y2 && w.x1 !== w.x2
 const isVertical = (w: Wire) => w.x1 === w.x2 && w.y1 !== w.y2
 
@@ -168,7 +168,7 @@ export function deriveNets(netlist: Netlist, built: BuiltNetlist, schematic: Ful
   const points = [
     ...pins.map((p) => p.end),
     ...labels,
-    ...wires.flatMap((w) => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]),
+    ...wires.flatMap(wireEnds),
   ]
 
   // How many connections meet at each point, for the junction dots.
@@ -176,15 +176,16 @@ export function deriveNets(netlist: Netlist, built: BuiltNetlist, schematic: Ful
   const bump = (p: Point) => degree.set(pointKey(p), (degree.get(pointKey(p)) ?? 0) + 1)
   for (const p of pins) bump(p.end)
   for (const w of wires) {
-    union(pointKey({ x: w.x1, y: w.y1 }), pointKey({ x: w.x2, y: w.y2 }))
-    bump({ x: w.x1, y: w.y1 })
-    bump({ x: w.x2, y: w.y2 })
+    const [a, b] = wireEnds(w)
+    union(pointKey(a), pointKey(b))
+    bump(a)
+    bump(b)
   }
   const distinctPoints = new Map(points.map((p) => [pointKey(p), p]))
   for (const p of distinctPoints.values()) {
     for (const w of wires) {
       if (!onWireInterior(p, w)) continue
-      union(pointKey(p), pointKey({ x: w.x1, y: w.y1 }))
+      union(pointKey(p), pointKey(wireEnds(w)[0]))
       // A T-join: the wire passing through counts as two connections.
       degree.set(pointKey(p), (degree.get(pointKey(p)) ?? 0) + 2)
     }
@@ -355,7 +356,7 @@ export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist
     )
     const staysPut = (p: Point) =>
       fixedPins.has(pointKey(p)) ||
-      schematic.wires.some((w, i) => !selectedWires.has(i) && onWireInterior(p, w) && !(follow({ x: w.x1, y: w.y1 }) && follow({ x: w.x2, y: w.y2 })))
+      schematic.wires.some((w, i) => !selectedWires.has(i) && onWireInterior(p, w) && !wireEnds(w).every((end) => follow(end)))
     for (const { from, to } of moves.values()) {
       if (!samePoint(from, to) && staysPut(from)) added.push(...polylineWires(route(from, to, true)))
     }
@@ -520,7 +521,7 @@ export function withTidyWires(
     x2: withoutFloatNoise(w.x2),
     y2: withoutFloatNoise(w.y2),
   }))
-  let tidy = withoutOverlaps(rounded).filter(({ wire }) => !samePoint({ x: wire.x1, y: wire.y1 }, { x: wire.x2, y: wire.y2 }))
+  let tidy = withoutOverlaps(rounded).filter(({ wire }) => !samePoint(...wireEnds(wire)))
   if (allowedLooseEnds) {
     const connections = connectionPoints(schematic, built)
     for (const p of allowedLooseEnds) connections.add(pointKey(p))
