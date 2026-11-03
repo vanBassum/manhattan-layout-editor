@@ -196,6 +196,22 @@ export interface Schematic {
   labels: NetLabel[]
 }
 
+/** A fixed DC voltage on a net, against ground, e.g. VCC at 12 V. */
+export interface Supply {
+  net: string
+  volts: number
+}
+
+/** What a SPICE simulation needs beyond the schematic: what powers the circuit, and models for its semiconductors. */
+export interface Simulation {
+  supplies: Supply[]
+  /**
+   * SPICE model text keyed by part value, e.g. "BC546": ".model BC546 NPN(IS=... BF=...)". Every
+   * transistor and diode needs the model its value names.
+   */
+  models: Record<string, string>
+}
+
 /** A project is called by its file's name (or its tab's, before it is saved); it holds no name itself. */
 export interface Project {
   /** Given once at creation and kept through renames, saves and reopening, so a project can be traced. */
@@ -206,6 +222,8 @@ export interface Project {
   /** The project's own component definitions, keyed by the id in each component's `definition`. */
   definitions?: Record<string, ComponentDefinition>
   settings: Settings
+  /** Missing until the user sets up a simulation. */
+  simulation?: Simulation
 }
 
 /** A project with its netlist built (see BuiltComponent), as checks and agent edits read it. */

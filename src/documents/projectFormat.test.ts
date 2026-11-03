@@ -12,6 +12,26 @@ describe('projectFromFile', () => {
   })
 })
 
+describe('checkedProject simulation', () => {
+  const stored = JSON.parse(example).project
+
+  it('keeps supplies and models through a save', () => {
+    const simulation = { supplies: [{ net: 'VCC', volts: 9 }], models: { BC547: '.model BC547 NPN(BF=300)' } }
+    const saved = projectFromFile(projectToFile(checkedProject({ ...stored, simulation })))
+    expect(saved.simulation).toEqual(simulation)
+  })
+
+  it('leaves it out of a project without one', () => {
+    expect(checkedProject(stored)).not.toHaveProperty('simulation')
+  })
+
+  it('refuses a supply without a number of volts', () => {
+    expect(() => checkedProject({ ...stored, simulation: { supplies: [{ net: 'VCC', volts: '9' }], models: {} } })).toThrow(
+      'simulation "supplies" must be a list of {net, volts}',
+    )
+  })
+})
+
 describe('checkedProject settings', () => {
   const stored = JSON.parse(example).project
   const settingsOf = (settings: object) => checkedProject({ ...stored, settings }).settings
@@ -45,7 +65,7 @@ describe('checkedProject settings', () => {
 
   it('writes only the snap, isolation and build style', () => {
     const saved = JSON.parse(projectToFile(projectFromFile(example)))
-    expect(saved.version).toBe(9)
+    expect(saved.version).toBe(10)
     expect(Object.keys(saved.project.settings).sort()).toEqual(['buildStyle', 'isolation', 'snap'])
   })
 })

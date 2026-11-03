@@ -68,7 +68,7 @@ function templateDefinition(component: NetComponent): { id: string; definition: 
  * template the part fits, else that template. withDefinitions stores exactly this choice, so a part
  * looks the same before and after its project is saved.
  */
-function resolvedDefinition(component: NetComponent, definitions: Definitions | undefined): { id: string; definition: ComponentDefinition } {
+export function resolvedDefinition(component: NetComponent, definitions: Definitions | undefined): { id: string; definition: ComponentDefinition } {
   if (component.definition !== undefined) return { id: component.definition, definition: ownDefinition(component, component.definition, definitions) }
   const template = templateDefinition(component)
   // A same-named definition that does not fit this part (other pins) gets a part-specific twin.

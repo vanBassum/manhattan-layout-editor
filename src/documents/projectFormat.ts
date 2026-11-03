@@ -4,7 +4,8 @@
 import { buildProjectNetlist, checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from '../model/definitions'
 import { withoutCutLines } from '../model/migrations/migrateCutLayout'
 import { completePlacements, labelSymbolForName, netlistSchematic } from '../model/schematic'
-import type { BuiltNetlist, LabelSymbol, NetLabel, Placement, Project, Schematic, SchematicPlacement, Settings, Wire } from '../model/types'
+import { isJsonObject } from '../model/netlist'
+import type { BuiltNetlist, LabelSymbol, NetLabel, Placement, Project, Schematic, SchematicPlacement, Settings, Simulation, Supply, Wire } from '../model/types'
 import { BUILD_STYLES, findBuildStyle } from '../model/buildStyles'
 
 export const DEFAULT_SETTINGS: Settings = { snap: 0.5, isolation: 0.4, buildStyle: BUILD_STYLES[0].id }
@@ -24,6 +25,19 @@ function checkedSettings(stored: StoredSettings | undefined): Settings {
   const { strategy, clearance: _clearance, maxLead: _maxLead, placement: _placement, ...current } = stored ?? {}
   const settings = { ...DEFAULT_SETTINGS, ...(strategy === undefined ? {} : { buildStyle: strategy }), ...current }
   return { ...settings, buildStyle: findBuildStyle(settings.buildStyle).id }
+}
+
+/** The stored simulation set-up, checked; missing when the project has none. */
+function checkedSimulation(data: unknown): Simulation | undefined {
+  if (data === undefined) return undefined
+  if (!isJsonObject(data)) throw new Error('"simulation" must be an object')
+  const { supplies, models } = data
+  const isSupply = (s: unknown) => isJsonObject(s) && typeof s.net === 'string' && typeof s.volts === 'number' && Number.isFinite(s.volts)
+  if (!Array.isArray(supplies) || !supplies.every(isSupply)) throw new Error('simulation "supplies" must be a list of {net, volts}')
+  if (!isJsonObject(models) || !Object.values(models).every((m) => typeof m === 'string')) {
+    throw new Error('simulation "models" must map part values to SPICE model text')
+  }
+  return { supplies: supplies as Supply[], models: models as Record<string, string> }
 }
 
 /** A label as stored before its symbol was: it was drawn as the symbol its name suggests. */
@@ -106,7 +120,8 @@ export function checkedProject(data: unknown): Project {
     }),
   )
   const schematic = checkedSchematic(storedSchematic, buildProjectNetlist(checked))
-  return { ...checked, schematic, settings: checkedSettings(checked.settings) }
+  const simulation = checkedSimulation(project.simulation)
+  return { ...checked, schematic, settings: checkedSettings(checked.settings), ...(simulation ? { simulation } : {}) }
 }
 
 // Bump the version when the stored layout changes meaning, and convert older files in projectFromFile.
@@ -114,8 +129,9 @@ export function checkedProject(data: unknown): Project {
 // v7: no name inside: a project is called by its file's name.
 // v8: settings hold a build style instead of a strategy, and no optimizer settings (clearance, maxLead).
 // v9: the footprint chosen in the editor is stored on the part (chosenFootprint), not on its placement.
+// v10: a simulation set-up (supplies and SPICE models), which older editors would drop.
 const FILE_FORMAT = 'manhattan-layout-editor'
-const FILE_VERSION = 9
+const FILE_VERSION = 10
 
 export function projectToFile(project: Project): string {
   return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, project: withDefinitions(project) }, null, 2)

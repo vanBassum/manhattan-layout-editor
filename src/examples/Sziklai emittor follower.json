@@ -1,6 +1,6 @@
 {
   "format": "manhattan-layout-editor",
-  "version": 7,
+  "version": 10,
   "project": {
     "guid": "154acc44-71b9-4426-b1f7-c9e475ba98b1",
     "netlist": {
@@ -1547,6 +1547,18 @@
           "name": "Q2_E"
         }
       ]
+    },
+    "simulation": {
+      "supplies": [
+        {
+          "net": "VCC",
+          "volts": 12
+        }
+      ],
+      "models": {
+        "BC546": "* Approximation of the BC546B; replace with the manufacturer's model for accurate results\n.model BC546 NPN(IS=2.39e-14 NF=1.008 ISE=3.545e-15 NE=1.541 BF=294.3 IKF=0.1357 VAF=63.2 NR=1.004\n+ ISC=6.272e-14 NC=1.243 BR=7.946 IKR=0.1144 VAR=25.9 RB=1 RBM=1 RE=0.4683 RC=0.85\n+ CJE=1.358e-11 VJE=0.65 MJE=0.3279 TF=4.391e-10 XTF=120 VTF=2.643 ITF=0.7495\n+ CJC=3.728e-12 VJC=0.3997 MJC=0.2955 XCJC=0.6193 FC=0.9579)",
+        "BD140": "* Rough generic model in the class of the BD140; replace with the manufacturer's model for accurate results\n.model BD140 PNP(IS=1.8e-13 BF=150 NF=1 VAF=100 IKF=1 ISE=1e-13 NE=1.5 BR=10 RB=5 RE=0.1 RC=0.2\n+ CJE=120p VJE=0.75 MJE=0.33 CJC=60p VJC=0.75 MJC=0.33 TF=1.5n TR=100n)"
+      }
     }
   }
 }

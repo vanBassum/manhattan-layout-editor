@@ -11,6 +11,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.2
         version: 1.32.2(zod@4.6.7)
+      eecircuit-engine:
+        specifier: 1.9.0
+        version: 1.9.0
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -440,6 +443,9 @@ packages:
 
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
+
+  eecircuit-engine@1.9.0:
+    resolution: {integrity: sha512-qmCR+2/sz8nkaCsXL2ZebBua7sff//Zu2zAQqQ+qkkXLcFjxfpbY1TNRax284UFq6hhi9q2y1E/VxIRhOHWXVA==}
 
   encodeurl@2.0.0:
     resolution: {integrity: sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==}
@@ -1257,6 +1263,8 @@ snapshots:
       gopd: 1.2.0
 
   ee-first@1.1.1: {}
+
+  eecircuit-engine@1.9.0: {}
 
   encodeurl@2.0.0: {}
 
