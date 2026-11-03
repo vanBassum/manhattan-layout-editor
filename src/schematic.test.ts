@@ -18,11 +18,12 @@ import {
   unconnectedPins,
   withLabelChanged,
   withPlacementChanges,
+  withSchematicMoved,
   withTidyWires,
   type FullSchematic,
 } from './schematic'
 import { NO_WIRING } from './selection'
-import type { BuiltNetlist, Netlist } from './types'
+import type { BuiltNetlist, Netlist, Point, WiringSelection } from './types'
 
 /** The example project's schematic with its part R1 and R1's first pin end. */
 function exampleWithR1() {
@@ -73,6 +74,88 @@ describe('withPlacementChanges', () => {
     const after = withPlacementChanges({ ...schematic, labels: [...schematic.labels, label] }, built, [moved])
 
     expect(after.labels.at(-1)).toEqual({ x: newEnd.x, y: newEnd.y, name: 'TEST' })
+  })
+})
+
+describe('withSchematicMoved', () => {
+  const noParts: BuiltNetlist = { components: [], nets: [] }
+  const move = (wiring: Partial<WiringSelection>, delta: Point, keepConnections = true) => ({
+    placements: [],
+    wiring: { ...NO_WIRING, ...wiring },
+    delta,
+    keepConnections,
+  })
+
+  it('stretches a wire along when its end moves along it', () => {
+    const schematic: FullSchematic = { placements: [], wires: [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }], labels: [] }
+
+    const after = withSchematicMoved(schematic, noParts, move({ points: [{ x: 10.16, y: 0 }] }, { x: 5.08, y: 0 }))
+
+    expect(after.wires).toEqual([{ x1: 0, y1: 0, x2: 15.24, y2: 0 }])
+  })
+
+  it('bends a wire whose end moves sideways into a Z, one grid step before the moved end', () => {
+    const schematic: FullSchematic = { placements: [], wires: [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }], labels: [] }
+
+    const after = withSchematicMoved(schematic, noParts, move({ points: [{ x: 10.16, y: 0 }] }, { x: 0, y: 5.08 }))
+
+    expect(after.wires).toEqual([
+      { x1: 0, y1: 0, x2: 7.62, y2: 0 },
+      { x1: 7.62, y1: 0, x2: 7.62, y2: 5.08 },
+      { x1: 7.62, y1: 5.08, x2: 10.16, y2: 5.08 },
+    ])
+  })
+
+  it('carries a wire whose two ends both move, with a label on its middle', () => {
+    const schematic: FullSchematic = {
+      placements: [],
+      wires: [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }],
+      labels: [{ x: 5.08, y: 0, name: 'A' }],
+    }
+    const ends = [{ x: 0, y: 0 }, { x: 10.16, y: 0 }]
+
+    const after = withSchematicMoved(schematic, noParts, move({ points: ends }, { x: 0, y: 2.54 }))
+
+    expect(after.wires).toEqual([{ x1: 0, y1: 2.54, x2: 10.16, y2: 2.54 }])
+    expect(after.labels).toEqual([{ x: 5.08, y: 2.54, name: 'A' }])
+  })
+
+  it('bridges the gap where a dragged wire leaves the middle of a wire that stays', () => {
+    const schematic: FullSchematic = {
+      placements: [],
+      wires: [
+        { x1: 0, y1: 0, x2: 20.32, y2: 0 },
+        { x1: 10.16, y1: 0, x2: 10.16, y2: 10.16 },
+      ],
+      labels: [],
+    }
+
+    const dragged = withSchematicMoved(schematic, noParts, move({ wires: [1] }, { x: 5.08, y: 0 }))
+    const moved = withSchematicMoved(schematic, noParts, move({ wires: [1] }, { x: 5.08, y: 0 }, false))
+
+    expect(dragged.wires).toEqual([
+      { x1: 0, y1: 0, x2: 20.32, y2: 0 },
+      { x1: 15.24, y1: 0, x2: 15.24, y2: 10.16 },
+      { x1: 10.16, y1: 0, x2: 15.24, y2: 0 },
+    ])
+    expect(moved.wires).toEqual(dragged.wires.slice(0, 2))
+  })
+
+  it('drags the wire on a moved part pin along, and bridges from a pin that stays', () => {
+    const { built, schematic, r1, pin } = exampleWithR1()
+    const outward = { x: pin.x + pin.dx * 5.08, y: pin.y + pin.dy * 5.08 }
+    const withWire = { ...schematic, wires: [{ x1: pin.x, y1: pin.y, x2: outward.x, y2: outward.y }] }
+    const delta = { x: pin.dx * 2.54, y: pin.dy * 2.54 }
+    const moved = { ...r1.placement, x: r1.placement.x + delta.x, y: r1.placement.y + delta.y }
+
+    const partDragged = withSchematicMoved(withWire, built, { placements: [moved], wiring: NO_WIRING, delta, keepConnections: true })
+    const wireDragged = withSchematicMoved(withWire, built, move({ wires: [0] }, delta))
+
+    expect(partDragged.wires).toEqual([{ x1: pin.x + delta.x, y1: pin.y + delta.y, x2: outward.x, y2: outward.y }])
+    expect(wireDragged.wires).toEqual([
+      { x1: pin.x + delta.x, y1: pin.y + delta.y, x2: outward.x + delta.x, y2: outward.y + delta.y },
+      { x1: pin.x, y1: pin.y, x2: pin.x + delta.x, y2: pin.y + delta.y },
+    ])
   })
 })
 
