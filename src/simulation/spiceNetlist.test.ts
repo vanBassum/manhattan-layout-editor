@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import sziklai from '../examples/Sziklai emittor follower.json?raw'
 import { projectFromFile } from '../documents/projectFormat'
-import type { Netlist, Simulation } from '../model/types'
+import type { Netlist, Simulation, Source } from '../model/types'
 import { runInEngine } from './spiceEngine'
-import { operatingPointNetlist, partValue, readOperatingPoint, spiceCircuit } from './spiceNetlist'
+import { operatingPointNetlist, partValue, readOperatingPoint, readTransient, spiceCircuit, transientNetlist } from './spiceNetlist'
 
 describe('partValue', () => {
   it.each([
@@ -33,7 +33,7 @@ const divider: Netlist = {
   ],
   nets: ['GND', 'MID', 'VCC'],
 }
-const fiveVolts: Simulation = { supplies: [{ net: 'VCC', volts: 5 }], models: {} }
+const fiveVolts: Simulation = { sources: [{ net: 'VCC', shape: 'dc', volts: 5 }], models: {} }
 
 describe('spiceCircuit', () => {
   it('writes parts with ground as node 0 and values as plain numbers', () => {
@@ -49,8 +49,8 @@ describe('spiceCircuit', () => {
       ],
       nets: ['A', 'B', 'GND'],
     }
-    expect(() => spiceCircuit(netlist, undefined, { supplies: [], models: {} })).toThrow(
-      'R1: cannot read "ten" as a value\nQ1: no SPICE model for "BC547"\nAdd a supply: nothing powers the circuit',
+    expect(() => spiceCircuit(netlist, undefined, { sources: [], models: {} })).toThrow(
+      'R1: cannot read "ten" as a value\nQ1: no SPICE model for "BC547"\nAdd a source: nothing powers the circuit',
     )
   })
 
@@ -59,7 +59,7 @@ describe('spiceCircuit', () => {
       components: [{ ref: 'D1', value: '1N4148', footprint: '', pins: [{ number: '1', net: 'A' }, { number: '2', net: 'GND' }] }],
       nets: ['A', 'GND'],
     }
-    const simulation = { supplies: [{ net: 'A', volts: 1 }], models: { '1N4148': '.model D1N4148 D(IS=2.5n)' } }
+    const simulation = { sources: [{ net: 'A', shape: 'dc' as const, volts: 1 }], models: { '1N4148': '.model D1N4148 D(IS=2.5n)' } }
     expect(() => spiceCircuit(netlist, undefined, simulation)).toThrow('D1: the model for "1N4148" does not start with ".model 1N4148"')
   })
 
@@ -68,7 +68,7 @@ describe('spiceCircuit', () => {
       components: [{ ref: 'R1', value: '1k', footprint: '', pins: [{ number: '1', net: 'Net-(R1-Pad1)' }, { number: '2', net: 'GND' }] }],
       nets: ['GND', 'Net-(R1-Pad1)'],
     }
-    const circuit = spiceCircuit(netlist, undefined, { supplies: [{ net: 'Net-(R1-Pad1)', volts: 1 }], models: {} })
+    const circuit = spiceCircuit(netlist, undefined, { sources: [{ net: 'Net-(R1-Pad1)', shape: 'dc', volts: 1 }], models: {} })
     expect(circuit.nodes.get('Net-(R1-Pad1)')).toBe('n1')
   })
 })
@@ -79,7 +79,7 @@ describe('operating point in ngspice', () => {
     const point = readOperatingPoint(circuit, (await runInEngine(operatingPointNetlist(circuit))).vectors)
     expect(point.volts.get('MID')).toBeCloseTo(3.75, 6)
     expect(point.volts.get('GND')).toBe(0)
-    expect(point.supplies).toEqual([{ net: 'VCC', volts: 5, amps: expect.closeTo(1.25e-3, 9) }])
+    expect(point.dcSources).toEqual([{ net: 'VCC', volts: 5, amps: expect.closeTo(1.25e-3, 9) }])
   })
 
   it('biases the Sziklai example with both transistors on', async () => {
@@ -97,5 +97,34 @@ describe('operating point in ngspice', () => {
 
   it('reports what ngspice could not parse', async () => {
     await expect(runInEngine('* bad\nV1 a 0 DC 5\nQ1 a a 0 NOPE\n.op\n.end')).rejects.toThrow(/can't find model 'nope'/)
+  })
+})
+
+describe('wave sources', () => {
+  const sziklaiWith = (wave: Source) => {
+    const project = projectFromFile(sziklai)
+    return spiceCircuit(project.netlist, project.definitions, { ...project.simulation!, sources: [{ net: 'VCC', shape: 'dc', volts: 12 }, wave] })
+  }
+
+  it('holds its net at 0 V for the operating point, so an input behind a capacitor no longer floats', async () => {
+    const circuit = sziklaiWith({ net: 'VIN', shape: 'square', volts: 0.5, hertz: 1e6 })
+    const run = await runInEngine(operatingPointNetlist(circuit))
+    expect(readOperatingPoint(circuit, run.vectors).volts.get('VIN')).toBeCloseTo(0, 9)
+    expect(run.warnings).toEqual([])
+  })
+
+  it('refuses a net another source already drives', () => {
+    expect(() => sziklaiWith({ net: 'VCC', shape: 'sine', volts: 1, hertz: 1e3 })).toThrow('Source on VCC: another source already drives that net')
+  })
+
+  it('shows a square wave through the follower for five periods', async () => {
+    const circuit = sziklaiWith({ net: 'VIN', shape: 'square', volts: 0.5, hertz: 1e6 })
+    const trace = readTransient(circuit, (await runInEngine(transientNetlist(circuit))).vectors)
+    expect(trace.time.at(-1)).toBeCloseTo(5e-6, 12)
+    const at = (net: string, seconds: number) => trace.volts.get(net)![trace.time.findIndex((t) => t >= seconds)]
+    // Late in the first high half the edge has settled: the output follows the input with a gain near 1.
+    expect(at('VIN', 0.4e-6)).toBeCloseTo(0.5, 6)
+    expect(at('VOUT', 0.4e-6) - at('VOUT', 0)).toBeCloseTo(0.5, 1)
+    expect(at('VIN', 0.9e-6)).toBeCloseTo(-0.5, 6)
   })
 })

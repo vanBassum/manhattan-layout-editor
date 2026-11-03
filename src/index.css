@@ -30,10 +30,15 @@
   --sch-power: #e03131;
   --sch-box: #fbfbf4;
   --sch-wire: #000000;
+  /* Categorical chart series, in fixed order: blue, orange. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
+  --series-1: #3987e5;
+  --series-2: #d95926;
   --bg: #131518;
   --panel: #1c1f24;
   --panel-muted: #252930;
@@ -655,21 +660,26 @@ input:focus-visible {
   gap: 6px;
 }
 
-.supply-list {
+.source-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-.supply-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
   gap: 6px;
 }
 
-.supply-row input[type='number'] {
+.source-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.source-fields input[type='number'] {
   width: 4.5em;
+}
+
+.source-fields input[type='text'] {
+  grid-column: span 2;
+  min-width: 0;
 }
 
 .model-list {
@@ -723,6 +733,100 @@ input:focus-visible {
 
 .simulation-result p {
   margin: 0;
+}
+
+.run-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.probe-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scope-legend {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 2px;
+}
+
+.line-key {
+  display: inline-block;
+  width: 12px;
+  height: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+  border-radius: 1px;
+}
+
+.line-key.series-1 {
+  background: var(--series-1);
+}
+
+.line-key.series-2 {
+  background: var(--series-2);
+}
+
+.scope-frame {
+  position: relative;
+}
+
+.scope-frame svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+
+.scope-grid {
+  stroke: var(--border);
+  stroke-width: 0.5;
+}
+
+.scope-axis {
+  stroke: var(--axis);
+  stroke-width: 0.75;
+}
+
+.scope-tick {
+  fill: var(--text-muted);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scope-trace {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.scope-trace.series-1 {
+  stroke: var(--series-1);
+}
+
+.scope-trace.series-2 {
+  stroke: var(--series-2);
+}
+
+.scope-crosshair {
+  stroke: var(--text-muted);
+  stroke-width: 0.75;
+}
+
+.scope-tooltip {
+  position: absolute;
+  top: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .transistor-table {

@@ -15,8 +15,11 @@ describe('projectFromFile', () => {
 describe('checkedProject simulation', () => {
   const stored = JSON.parse(example).project
 
-  it('keeps supplies and models through a save', () => {
-    const simulation = { supplies: [{ net: 'VCC', volts: 9 }], models: { BC547: '.model BC547 NPN(BF=300)' } }
+  it('keeps sources and models through a save', () => {
+    const simulation = {
+      sources: [{ net: 'VCC', shape: 'dc', volts: 9 }, { net: 'IN', shape: 'sine', volts: 1, hertz: 1000 }],
+      models: { BC547: '.model BC547 NPN(BF=300)' },
+    }
     const saved = projectFromFile(projectToFile(checkedProject({ ...stored, simulation })))
     expect(saved.simulation).toEqual(simulation)
   })
@@ -25,9 +28,9 @@ describe('checkedProject simulation', () => {
     expect(checkedProject(stored)).not.toHaveProperty('simulation')
   })
 
-  it('refuses a supply without a number of volts', () => {
-    expect(() => checkedProject({ ...stored, simulation: { supplies: [{ net: 'VCC', volts: '9' }], models: {} } })).toThrow(
-      'simulation "supplies" must be a list of {net, volts}',
+  it('refuses a wave source without a frequency', () => {
+    expect(() => checkedProject({ ...stored, simulation: { sources: [{ net: 'IN', shape: 'square', volts: 1 }], models: {} } })).toThrow(
+      'simulation "sources" must be a list of',
     )
   })
 })

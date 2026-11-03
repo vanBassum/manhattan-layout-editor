@@ -196,15 +196,18 @@ export interface Schematic {
   labels: NetLabel[]
 }
 
-/** A fixed DC voltage on a net, against ground, e.g. VCC at 12 V. */
-export interface Supply {
-  net: string
-  volts: number
-}
+/**
+ * A voltage source from a net to ground: a fixed DC voltage such as a supply, or a square or sine
+ * wave that drives the circuit. A wave swings between -volts and +volts and is 0 V for the
+ * DC operating point.
+ */
+export type Source = { net: string; shape: 'dc'; volts: number } | { net: string; shape: 'square' | 'sine'; volts: number; hertz: number }
 
-/** What a SPICE simulation needs beyond the schematic: what powers the circuit, and models for its semiconductors. */
+export type WaveSource = Extract<Source, { hertz: number }>
+
+/** What a SPICE simulation needs beyond the schematic: the sources that power and drive it, and models for its semiconductors. */
 export interface Simulation {
-  supplies: Supply[]
+  sources: Source[]
   /**
    * SPICE model text keyed by part value, e.g. "BC546": ".model BC546 NPN(IS=... BF=...)". Every
    * transistor and diode needs the model its value names.

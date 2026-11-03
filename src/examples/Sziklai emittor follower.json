@@ -1549,10 +1549,17 @@
       ]
     },
     "simulation": {
-      "supplies": [
+      "sources": [
         {
           "net": "VCC",
+          "shape": "dc",
           "volts": 12
+        },
+        {
+          "net": "VIN",
+          "shape": "square",
+          "volts": 0.5,
+          "hertz": 1000000
         }
       ],
       "models": {

@@ -1,7 +1,7 @@
 import { resolvedDefinition } from '../model/definitions'
 import { refPrefix } from '../model/footprintTemplates'
 import { isGroundNet, isRealNet } from '../model/netlist'
-import type { ComponentDefinition, NetComponent, Netlist, Simulation } from '../model/types'
+import type { ComponentDefinition, NetComponent, Netlist, Simulation, Source, WaveSource } from '../model/types'
 
 // Turns the schematic into an ngspice netlist and reads ngspice's answers back onto nets and parts.
 
@@ -13,7 +13,7 @@ const SCALES: Record<string, number> = { p: 1e-12, n: 1e-9, u: 1e-6, µ: 1e-6, m
  * Undefined for text that is no value.
  */
 export function partValue(text: string): number | undefined {
-  const match = text.trim().match(/^(\d+(?:\.\d+)?)\s*([pnuµmkKMGR]?)(\d*)\s*(Ω|ohms?|F|H)?$/)
+  const match = text.trim().match(/^(\d+(?:\.\d+)?)\s*([pnuµmkKMGR]?)(\d*)\s*(Ω|ohms?|F|Hz|H)?$/)
   if (!match) return undefined
   const [, number, prefix, decimals] = match
   // Digits after the prefix are decimals ("4k7"), so only after a prefix and a whole number.
@@ -36,8 +36,35 @@ export interface SpiceCircuit {
   /** The ngspice node of each net; every ground net is node 0. */
   nodes: Map<string, string>
   transistors: SpiceTransistor[]
-  /** The voltage source element of each supply. */
-  supplies: { net: string; volts: number; element: string }[]
+  /** Each source with the element ngspice knows it by. */
+  sources: (Source & { element: string })[]
+}
+
+/** The wave sources, slowest first: the slowest sets how long a transient run lasts. */
+export const waveSources = (sources: Source[]): WaveSource[] =>
+  sources.filter((s): s is WaveSource => s.shape !== 'dc').sort((a, b) => a.hertz - b.hertz)
+
+/**
+ * The source's voltage for ngspice. A wave starts at 0 V, like a generator that was off, so the
+ * operating point ngspice finds before a run is the circuit at rest. A square wave's edges take 1%
+ * of its period; it is a repeating piecewise-linear wave because a PULSE would start at its low level.
+ */
+function sourceVoltage(source: Source): string {
+  if (source.shape === 'dc') return `DC ${source.volts}`
+  const { shape, volts, hertz } = source
+  if (shape === 'sine') return `DC 0 SIN(0 ${volts} ${hertz})`
+  const period = 1 / hertz
+  const halfEdge = period / 200
+  const points = [
+    [0, 0],
+    [halfEdge, volts],
+    [period / 2 - halfEdge, volts],
+    [period / 2 + halfEdge, -volts],
+    [period - halfEdge, -volts],
+    [period + halfEdge, volts],
+  ]
+  // r= repeats the wave from the end of its first rising edge.
+  return `DC 0 PWL(${points.flat().join(' ')}) r=${halfEdge}`
 }
 
 /**
@@ -83,7 +110,7 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 const definesModel = (text: string, name: string) => new RegExp(`^\\s*\\.model\\s+${escapeRegExp(name)}\\s`, 'im').test(text)
 
 /**
- * The ngspice circuit of the schematic's netlist, powered by the simulation's supplies. Throws one
+ * The ngspice circuit of the schematic's netlist, powered and driven by the simulation's sources. Throws one
  * error listing every part it cannot simulate: unreadable values, missing models, unknown kinds.
  */
 export function spiceCircuit(netlist: Netlist, definitions: Record<string, ComponentDefinition> | undefined, simulation: Simulation): SpiceCircuit {
@@ -110,19 +137,20 @@ export function spiceCircuit(netlist: Netlist, definitions: Record<string, Compo
     }
   }
 
-  const supplies = simulation.supplies.map((supply) => {
-    const node = nodes.get(supply.net)
-    if (node === undefined) problems.push(`Supply ${supply.net}: no part is on that net`)
-    else if (node === '0') problems.push(`Supply ${supply.net}: that is ground`)
+  const sources = simulation.sources.map((source, k) => {
+    const node = nodes.get(source.net)
+    if (node === undefined) problems.push(`Source on ${source.net}: no part is on that net`)
+    else if (node === '0') problems.push(`Source on ${source.net}: that is ground`)
+    else if (simulation.sources.findIndex((s) => s.net === source.net) < k) problems.push(`Source on ${source.net}: another source already drives that net`)
     const element = `V_${node}`
-    lines.push(`${element} ${node} 0 DC ${supply.volts}`)
-    return { ...supply, element }
+    lines.push(`${element} ${node} 0 ${sourceVoltage(source)}`)
+    return { ...source, element }
   })
-  if (supplies.length === 0) problems.push('Add a supply: nothing powers the circuit')
+  if (sources.length === 0) problems.push('Add a source: nothing powers the circuit')
 
   if (problems.length) throw new Error(problems.join('\n'))
   for (const model of usedModels) lines.push(simulation.models[model].trim())
-  return { lines, nodes, transistors, supplies }
+  return { lines, nodes, transistors, sources }
 }
 
 interface PartLine {
@@ -173,6 +201,38 @@ export function operatingPointNetlist(circuit: SpiceCircuit): string {
   return [...circuit.lines, `.save all ${currents}`.trim(), '.op', '.end'].join('\n')
 }
 
+/** Periods of the slowest wave a transient run shows, and the time steps per period of the fastest. */
+const TRANSIENT_PERIODS = 5
+const STEPS_PER_PERIOD = 200
+
+/** The netlist that asks ngspice how the circuit responds to its wave sources over a few periods. */
+export function transientNetlist(circuit: SpiceCircuit): string {
+  const waves = waveSources(circuit.sources)
+  if (waves.length === 0) throw new Error('Add a square or sine source to see how the circuit responds over time')
+  const longest = 1 / waves[0].hertz
+  const shortest = 1 / waves[waves.length - 1].hertz
+  return [...circuit.lines, `.tran ${shortest / STEPS_PER_PERIOD} ${TRANSIENT_PERIODS * longest}`, '.end'].join('\n')
+}
+
+export interface Transient {
+  /** Seconds since the sources started. */
+  time: number[]
+  /** Volts on each net at each time; ground nets are left out. */
+  volts: Map<string, number[]>
+}
+
+/** The waveforms from ngspice's answer to transientNetlist. Throws when one it should hold is missing. */
+export function readTransient(circuit: SpiceCircuit, vectors: SpiceVector[]): Transient {
+  const byName = new Map(vectors.map((v) => [v.name.toLowerCase(), v.values]))
+  const read = (name: string) => {
+    const values = byName.get(name)
+    if (!values || !values.every((v) => typeof v === 'number')) throw new Error(`ngspice gave no waveform for ${name}`)
+    return values as number[]
+  }
+  const nets = [...circuit.nodes].filter(([, node]) => node !== '0')
+  return { time: read('time'), volts: new Map(nets.map(([net, node]) => [net, read(`v(${node})`)])) }
+}
+
 /** One vector of ngspice's answer, e.g. "v(vout)" with one value per point. */
 export interface SpiceVector {
   name: string
@@ -182,8 +242,8 @@ export interface SpiceVector {
 export interface OperatingPoint {
   /** Volts on each net against ground. */
   volts: Map<string, number>
-  /** What each supply delivers, in amps. */
-  supplies: { net: string; volts: number; amps: number }[]
+  /** What each DC source delivers, in amps; a wave source is at 0 V here. */
+  dcSources: { net: string; volts: number; amps: number }[]
   transistors: { ref: string; vbe: number; vce: number; ic: number; ib: number }[]
 }
 
@@ -198,8 +258,8 @@ export function readOperatingPoint(circuit: SpiceCircuit, vectors: SpiceVector[]
   const voltage = (node: string) => (node === '0' ? 0 : read(`v(${node})`))
   return {
     volts: new Map([...circuit.nodes].map(([net, node]) => [net, voltage(node)])),
-    // ngspice counts current into the source's + terminal; a supply delivers the opposite.
-    supplies: circuit.supplies.map(({ net, volts, element }) => ({ net, volts, amps: -read(`i(${element})`) })),
+    // ngspice counts current into the source's + terminal; what it delivers is the opposite.
+    dcSources: circuit.sources.flatMap((s) => (s.shape === 'dc' ? [{ net: s.net, volts: s.volts, amps: -read(`i(${s.element})`) }] : [])),
     transistors: circuit.transistors.map((t) => ({
       ref: t.ref,
       vbe: voltage(t.base) - voltage(t.emitter),

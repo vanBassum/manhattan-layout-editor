@@ -255,7 +255,7 @@ export function NumberField({ value, unit, step, label, onCommit }: NumberFieldP
 }
 
 /** Text input that commits on Enter or blur, like NumberField. */
-function TextField({ value, label, placeholder, onCommit }: { value: string; label: string; placeholder: string; onCommit: (value: string) => void }) {
+export function TextField({ value, label, placeholder, onCommit }: { value: string; label: string; placeholder: string; onCommit: (value: string) => void }) {
   const [draft, setDraft] = useState(value)
   useEffect(() => setDraft(value), [value])
 
