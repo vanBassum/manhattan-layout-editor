@@ -14,13 +14,11 @@ const ICON_PATHS = {
   file: 'M6 3h8l4 4v14H6z M14 3v4h4',
   newFile: 'M6 3h8l4 4v14H6z M14 3v4h4 M12 10v7 M8.5 13.5h7',
   folder: 'M3 6h6l2 2h10v11H3z',
-  folderPlus: 'M3 6h6l2 2h10v11H3z M12 11v5 M9.5 13.5h5',
+  computer: 'M3 4h18v12H3z M8 20h8 M12 16v4',
+  settings: 'M12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6 M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M4.9 19.1l2.1-2.1 M17 7l2.1-2.1',
+  user: 'M12 4a4 4 0 1 1 0 8a4 4 0 1 1 0-8 M4 21c0-4 3.6-6 8-6s8 2 8 6',
+  importExport: 'M4 8h13l-3-3 M20 16H7l3 3',
   clock: 'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18 M12 7v5l3 2',
-  arrowLeft: 'M19 12H5 M11 6l-6 6 6 6',
-  arrowRight: 'M5 12h14 M13 6l6 6-6 6',
-  arrowUp: 'M12 19V5 M6 11l6-6 6 6',
-  pencil: 'M4 20h4L19 9l-4-4L4 16z M14 6l4 4',
-  trash: 'M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13',
   open: 'M3 7h6l2 2h10v10H3z M3 7V5h6',
   save: 'M5 4h11l3 3v13H5z M8 4v5h7V4 M8 20v-6h8v6',
   sample: 'M4 6h16v12H4z M8 10h8 M8 14h5',
@@ -699,30 +697,19 @@ export function QuestionDialog<Answer extends string>({ question, onAnswer }: { 
   )
 }
 
-/** Asks for a name, starting from `initial`; null when cancelled. */
-export function NameDialog({ title, text, initial, onDone }: { title: string; text: string; initial: string; onDone: (name: string | null) => void }) {
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  useEffect(() => dialogRef.current?.showModal(), [])
-  const [name, setName] = useState(initial)
-  const trimmed = name.trim()
-
+/** A submenu of the main menu. It opens on hover, or on a click (keyboard, touch), which must not close the menu. */
+export function MenuGroup({ icon, label, children }: { icon: IconName; label: string; children: ReactNode }) {
   return (
-    <dialog ref={dialogRef} className="ai-dialog question-dialog" onCancel={() => onDone(null)}>
-      <h2>{title}</h2>
-      <p>{text}</p>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (trimmed) onDone(trimmed)
-        }}
-      >
-        <input className="name-input" value={name} onChange={(e) => setName(e.target.value)} onFocus={(e) => e.target.select()} autoFocus />
-        <div className="dialog-actions">
-          <button type="button" onClick={() => onDone(null)}>Cancel</button>
-          <button type="submit" className="primary" disabled={!trimmed}>Save</button>
-        </div>
-      </form>
-    </dialog>
+    <div className="submenu">
+      <button aria-haspopup="menu" onClick={(e) => e.stopPropagation()}>
+        <Icon name={icon} />
+        {label}
+        <Icon name="chevronRight" />
+      </button>
+      <div className="menu-list submenu-list" role="menu">
+        {children}
+      </div>
+    </div>
   )
 }
 

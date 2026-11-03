@@ -889,13 +889,116 @@ input:focus-visible {
   font-size: 17px;
 }
 
-.name-input {
-  width: 100%;
-  height: 32px;
-  margin-bottom: 14px;
-  padding: 0 8px;
-  border: 1px solid var(--border-strong);
+/* Open and Save as: recent projects, a name, and a choice between this computer and Google Drive. */
+.file-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.file-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.file-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.file-recent h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.file-recent button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 24px;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+}
+
+.file-recent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-recent-place {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Two square tiles side by side: this computer and Google Drive. */
+.file-places {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.file-place {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  aspect-ratio: 1;
+  padding: 16px;
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.file-place .icon {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+}
+
+.file-place > span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.file-place small {
+  color: var(--text-muted);
+}
+
+.file-place.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.file-name {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.file-name input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
   border-radius: 6px;
+  font-weight: normal;
+}
+
+.file-dialog .dialog-actions .primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .ai-dialog ol {

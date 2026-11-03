@@ -6,6 +6,7 @@ import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type EditMode, type Layers, t
 import { compareWithDrive, openDriveDocument, saveDriveDocument, saveInDriveFolder, type DriveLocation } from './driveDocuments'
 import { exportDxf } from './exportDxf'
 import { driveConfigured, isSignedIn, onSignInChange, signIn, signOut, SignInNeeded } from './googleDrive'
+import { OpenDialog, SaveAsDialog, type SaveChoice } from './FileDialogs'
 import { pickDriveFile, pickDriveFolder } from './googlePicker'
 import { errorText } from './errorText'
 import { downloadText, exportSvg } from './exportSvg'
@@ -29,8 +30,8 @@ import {
   HelpDialog,
   Icon,
   LayerToggles,
+  MenuGroup,
   PartProperties,
-  NameDialog,
   QuestionDialog,
   PCB_LAYERS,
   SchematicCheck,
@@ -541,32 +542,21 @@ export function App() {
     return answer === 'overwrite'
   }
 
-  const [nameQuestion, setNameQuestion] = useState<{ title: string; text: string; initial: string; done: (name: string | null) => void } | null>(null)
-  /** Asks for a name in a dialog; null when cancelled. */
-  const askName = (title: string, text: string, initial: string) =>
-    new Promise<string | null>((resolve) =>
-      setNameQuestion({
-        title,
-        text,
-        initial,
-        done: (name) => {
-          setNameQuestion(null)
-          resolve(name)
+  const [openDialogShown, setOpenDialogShown] = useState(false)
+  const [saveAsQuestion, setSaveAsQuestion] = useState<{ name: string; place: ProjectLocation['kind']; done: (choice: SaveChoice | null) => void } | null>(null)
+
+  /** Asks for a name and whether to save on this computer or in Google Drive; null when cancelled. */
+  const askSaveAs = (name: string, place: ProjectLocation['kind']) =>
+    new Promise<SaveChoice | null>((resolve) =>
+      setSaveAsQuestion({
+        name,
+        place,
+        done: (choice) => {
+          setSaveAsQuestion(null)
+          resolve(choice)
         },
       }),
     )
-
-  /** Asks where to save project `name`: on this computer or in Google Drive; null when cancelled. */
-  const chooseLocation = async (name: string): Promise<ProjectLocation['kind'] | null> => {
-    if (!driveConfigured) return 'local'
-    const answer = await ask({
-      title: `Save "${name}"`,
-      text: 'Where should it be saved?',
-      choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'local', label: 'This computer…' }, { answer: 'drive', label: 'Google Drive…' }],
-      cancel: 'cancel',
-    })
-    return answer === 'cancel' ? null : answer
-  }
 
   /** Writes `project` where it is saved; null when nothing was saved. */
   const saveToLocation = async (project: Project, file: ProjectFile, location: ProjectLocation): Promise<ProjectLocation | null> => {
@@ -578,28 +568,25 @@ export function App() {
     return handle && { kind: 'local', handle }
   }
 
-  /** Saves `project` to a new place in Google Drive: a folder picked in Google's picker, and a name. */
+  /** Saves `project` in a Google Drive folder picked in Google's picker. */
   const saveToNewDriveDocument = async (project: Project): Promise<{ project: Project; location: ProjectLocation } | null> => {
     if (!isSignedIn() && !(await signInToGoogle())) return null
     const folder = await pickDriveFolder()
     if (!folder) return null
-    const name = await askName(`Save in "${folder.name}"`, 'Name of the project in Google Drive:', project.name)
-    if (!name) return null
-    const named = { ...project, name }
-    const location = await saveInDriveFolder(named, folder.id, confirmOverwrite)
-    return location && { project: named, location }
+    const location = await saveInDriveFolder(project, folder.id, confirmOverwrite)
+    return location && { project, location }
   }
 
-  /** Saves `project` to a file picked in the computer's own save dialog, named after it. */
+  /** Saves `project` to a file picked in the computer's own save dialog; the file's name becomes the project's. */
   const saveToNewLocalFile = async (project: Project): Promise<{ project: Project; location: ProjectLocation } | null> => {
     const handle = await saveLocalFile(project, undefined, '', confirmOverwrite)
     return handle && { project: { ...project, name: fileLabel(handle) }, location: { kind: 'local', handle } }
   }
 
   /**
-   * Saves tab `id` where it is saved. A project without a location, or with `saveAs`, asks where to:
-   * the computer's own save dialog, or Google's picker. The tab then continues there, and the
-   * original stays as it was. False when nothing was saved.
+   * Saves tab `id` where it is saved. A project without a location, or with `saveAs`, asks for a name
+   * and a place; the computer's own save dialog or Google's picker then chooses the folder. The tab
+   * continues there, and the original stays as it was. False when nothing was saved.
    */
   const saveTab = async (id: string, saveAs = false): Promise<boolean> => {
     const file = projectFile(id)
@@ -610,14 +597,16 @@ export function App() {
         const location = await saveToLocation(current, file, file.location)
         saved = location && { project: current, location }
       } else {
-        const kind = await chooseLocation(current.name)
-        if (!kind) return false
-        if (kind === 'local' && !canUseFiles) {
-          downloadText(`${current.name}.manhattan.json`, projectToFile(current), 'application/json')
-          markSaved(id, current)
+        const choice = await askSaveAs(current.name, file.location?.kind ?? 'local')
+        if (!choice) return false
+        const named = { ...current, name: choice.name }
+        if (choice.place === 'local' && !canUseFiles) {
+          downloadText(`${named.name}.manhattan.json`, projectToFile(named), 'application/json')
+          if (id === activeIdRef.current) showProject(named)
+          markSaved(id, named)
           return true
         }
-        saved = kind === 'drive' ? await saveToNewDriveDocument(current) : await saveToNewLocalFile(current)
+        saved = choice.place === 'drive' ? await saveToNewDriveDocument(named) : await saveToNewLocalFile(named)
       }
       if (!saved) return false
       if (id === activeIdRef.current) showProject(saved.project)
@@ -1065,7 +1054,7 @@ export function App() {
       case 's':
         return () => saveTab(activeId, shift)
       case 'o':
-        return openProjectFile
+        return () => setOpenDialogShown(true)
       case 'n':
         return newProject
     }
@@ -1137,80 +1126,68 @@ export function App() {
             </button>
             {menuOpen && (
               <div className="menu-list" role="menu" onClick={() => setMenuOpen(false)}>
-                <span className="menu-heading">Project</span>
+                <span className="menu-heading">File</span>
                 <button onClick={newProject} title="An empty project in a new tab">
-                  <Icon name="plus" />New project<kbd>Ctrl+N</kbd>
+                  <Icon name="newFile" />New project<kbd>Ctrl+N</kbd>
                 </button>
-                <button onClick={openProjectFile} title="Open a project file from this computer in a new tab">
+                <button onClick={() => setOpenDialogShown(true)} title="Open a project from this computer or Google Drive in a new tab">
                   <Icon name="open" />Open…<kbd>Ctrl+O</kbd>
                 </button>
-                {driveConfigured && (
-                  <button onClick={openDriveFile} title="Pick a project in your Google Drive and open it in a new tab">
-                    <Icon name="cloud" />Open from Google Drive…
-                  </button>
-                )}
-                {recentDocuments().length > 0 && (
-                  <div className="submenu">
-                    <button aria-haspopup="menu" onClick={(e) => e.stopPropagation()}>
-                      <Icon name="clock" />Open recent<Icon name="chevronRight" />
-                    </button>
-                    <div className="menu-list submenu-list" role="menu">
-                      {recentDocuments().map((recent, k) => (
-                        <button key={k} onClick={() => openRecent(recent)} title={recent.location.kind === 'drive' ? 'Google Drive' : 'This computer'}>
-                          <Icon name={recent.location.kind === 'drive' ? 'cloud' : 'file'} />
-                          {recent.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {/* Opens on hover, or on a click (keyboard, touch), which must not close the menu. */}
-                <div className="submenu">
-                  <button aria-haspopup="menu" onClick={(e) => e.stopPropagation()}>
-                    <Icon name="sample" />Examples<Icon name="chevronRight" />
-                  </button>
-                  <div className="menu-list submenu-list" role="menu">
-                    {EXAMPLES.map((example) => (
-                      <button key={example.name} onClick={() => openInNewTab(example.open())} title="A copy of this example in a new tab">
-                        {example.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
                 <button onClick={() => saveTab(activeId)} title="Save this tab's project where it is saved; a new project asks where">
                   <Icon name="save" />Save<kbd>Ctrl+S</kbd>
                 </button>
-                <button onClick={() => saveTab(activeId, true)} title="Save a copy somewhere else; the original stays as it is">
+                <button onClick={() => saveTab(activeId, true)} title="Save under another name or somewhere else; the tab continues there">
                   <Icon name="save" />Save as…<kbd>Ctrl+Shift+S</kbd>
                 </button>
-                <button onClick={copyShareLink} title="Copy a link that holds this whole project; opening it gives a copy in a new tab">
-                  <Icon name="link" />Copy share link
-                </button>
-                {driveConfigured && signedIn && (
-                  <button onClick={signOut} title="Google Drive documents stay open here; they save again after signing in">
-                    <Icon name="cloud" />Sign out of Google
+                <MenuGroup icon="sample" label="Examples">
+                  {EXAMPLES.map((example) => (
+                    <button key={example.name} onClick={() => openInNewTab(example.open())} title="A copy of this example in a new tab">
+                      {example.name}
+                    </button>
+                  ))}
+                </MenuGroup>
+                <hr />
+                <MenuGroup icon="importExport" label="Import / Export">
+                  <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
+                  <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
+                  <button onClick={exportLayoutDxf} title="Area to burn as closed contours in mm (board outline + copper as holes), ready to hatch in EzCad">
+                    <Icon name="export" />Export DXF
                   </button>
+                  <button onClick={copyShareLink} title="Copy a link that holds this whole project; opening it gives a copy in a new tab">
+                    <Icon name="link" />Copy share link
+                  </button>
+                </MenuGroup>
+                <MenuGroup icon="settings" label="Settings">
+                  <button onClick={toggleTheme}>
+                    <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+                    {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                  </button>
+                </MenuGroup>
+                <MenuGroup icon="help" label="Help">
+                  <button onClick={() => setShowAiHelp(true)} title="Let an AI assistant edit this layout (MCP)">
+                    <Icon name="ai" />AI assistant…
+                    <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
+                  </button>
+                  <button onClick={() => setShowHelp(true)}>
+                    <Icon name="help" />Keyboard and mouse
+                  </button>
+                </MenuGroup>
+                {driveConfigured && (
+                  <>
+                    <hr />
+                    <MenuGroup icon="user" label="Google account">
+                      {signedIn ? (
+                        <button onClick={signOut} title="Google Drive projects stay open here; they save again after signing in">
+                          <Icon name="cloud" />Sign out
+                        </button>
+                      ) : (
+                        <button onClick={signInToGoogle} title="Sign in to open and save projects in Google Drive">
+                          <Icon name="cloud" />Sign in with Google
+                        </button>
+                      )}
+                    </MenuGroup>
+                  </>
                 )}
-                <hr />
-                <span className="menu-heading">Import and export</span>
-                <button onClick={() => fileInputRef.current!.click()}><Icon name="file" />Import netlist…</button>
-                <button onClick={exportLayout} title="Cut paths with stroke width = isolation"><Icon name="export" />Export SVG</button>
-                <button onClick={exportLayoutDxf} title="Area to burn as closed contours in mm (board outline + copper as holes), ready to hatch in EzCad">
-                  <Icon name="export" />Export DXF
-                </button>
-                <hr />
-                <span className="menu-heading">Editor</span>
-                <button onClick={() => setShowAiHelp(true)} title="Let an AI assistant edit this layout (MCP)">
-                  <Icon name="ai" />AI assistant…
-                  <span className={agentConnected ? 'agent-dot connected' : 'agent-dot'} aria-label={agentConnected ? 'Agent connected' : 'No agent'} />
-                </button>
-                <button onClick={toggleTheme}>
-                  <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-                  {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-                </button>
-                <button onClick={() => setShowHelp(true)}>
-                  <Icon name="help" />Keyboard and mouse
-                </button>
               </div>
             )}
           </div>
@@ -1605,7 +1582,22 @@ export function App() {
 
       {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
       {showAiHelp && <AiHelpDialog agentConnected={agentConnected} onClose={() => setShowAiHelp(false)} />}
-      {nameQuestion && <NameDialog title={nameQuestion.title} text={nameQuestion.text} initial={nameQuestion.initial} onDone={nameQuestion.done} />}
+      {openDialogShown && (
+        <OpenDialog
+          recent={recentDocuments()}
+          onOpenRecent={(recent) => {
+            setOpenDialogShown(false)
+            openRecent(recent)
+          }}
+          onOpenFrom={(place) => {
+            setOpenDialogShown(false)
+            if (place === 'drive') openDriveFile()
+            else openProjectFile()
+          }}
+          onClose={() => setOpenDialogShown(false)}
+        />
+      )}
+      {saveAsQuestion && <SaveAsDialog name={saveAsQuestion.name} place={saveAsQuestion.place} onDone={saveAsQuestion.done} />}
       {question && <QuestionDialog question={question.question} onAnswer={question.answer} />}
       {footprintDialogRefs && (
         <FootprintDialog
