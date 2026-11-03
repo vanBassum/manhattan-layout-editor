@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from '../../geometry'
+import { boundsOf, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from '../../geometry'
 import { analyzeLeads, bodyBounds, toWorld as toWorldPoint, type LeadInfo, type MovingPart, type PinStatus } from '../../layout'
 import { cutNeighbours, findCuts, type Cut, type Side } from '../../cuts'
 import { draggedLayout, type LayoutDrag } from '../../layoutDrag'
@@ -8,7 +8,18 @@ import { islandEdges, moveIslandEdge, type IslandEdge } from '../../raster'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from '../../selection'
 import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, Placement, Point, Rect, Selection } from '../../types'
 import { layerClasses, layerOpacities, type Layers } from '../layers'
-import { gridPitch, gridPitches, Rulers, useViewport, ViewportGrid, type View } from '../viewport'
+import {
+  CLICK_TOLERANCE_PX,
+  gridPitch,
+  gridPitches,
+  pannedView,
+  Rulers,
+  screenToWorld,
+  useViewport,
+  ViewportGrid,
+  type MarqueeDrag,
+  type PanDrag,
+} from '../viewport'
 import { BodyShape, COPPER_COLOR, LEAD_COLOR } from './partDrawing'
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
@@ -24,8 +35,8 @@ const TAB_WIDTH_MM = 2.5
 export type MoveMode = 'part' | 'body'
 
 type Drag =
-  | { kind: 'pan'; startX: number; startY: number; view: View }
-  | { kind: 'marquee'; start: Point; startX: number; startY: number; additive: boolean }
+  | PanDrag
+  | MarqueeDrag
   /**
    * `pressed`: the item whose press started the drag. A press that ends without moving toggles it
    * in the selection when `toggle` is set (Shift/Ctrl), and otherwise selects it alone after a
@@ -33,10 +44,6 @@ type Drag =
    */
   | { kind: 'edit'; edit: LayoutDrag; start: Point; moved: boolean; pressed?: SingleSelection; toggle: boolean }
 
-type MarqueeDrag = Extract<Drag, { kind: 'marquee' }>
-
-/** A press that moves less than this (screen pixels) is a click, not a selection rectangle. */
-const CLICK_TOLERANCE_PX = 3
 const HANDLES: Handle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
 
 const PIN_COLORS: Record<PinStatus, string> = {
@@ -271,7 +278,6 @@ export function Canvas(props: Props) {
   const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode, rectHandles, gridLinesPerMajor } = props
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
-  const { view, setView, size, fitTo } = useViewport(svgRef)
   const [hoveredRef, setHoveredRef] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<Rect | null>(null)
   /** "net:index" of the outline edge under the pointer; that edge shows its +. */
@@ -300,21 +306,14 @@ export function Canvas(props: Props) {
     [layout, componentsByRef, isolation],
   )
 
-  useEffect(() => {
-    if (fitRequest === 0) return
-    const rects = [
+  const { view, setView, size } = useViewport(svgRef, fitRequest, () =>
+    boundsOf([
       ...layout.islands.flatMap((i) => i.rects),
       ...parts.flatMap((p) => p.leads.map((lead) => ({ x: lead.end.x, y: lead.end.y, w: 0, h: 0 }))),
-    ]
-    const bounds = boundsOf(rects)
-    if (bounds) fitTo(inflate(bounds, 5))
-    // Only refit when explicitly requested, not on every layout change.
-  }, [fitRequest])
+    ]),
+  )
 
-  const toWorld = (e: { clientX: number; clientY: number }): Point => {
-    const r = svgRef.current!.getBoundingClientRect()
-    return { x: (e.clientX - r.left - view.ox) / view.scale, y: (e.clientY - r.top - view.oy) / view.scale }
-  }
+  const toWorld = (e: { clientX: number; clientY: number }): Point => screenToWorld(svgRef.current!, view, e)
 
   const beginDrag = (e: ReactPointerEvent, drag: Drag) => {
     dragRef.current = drag
@@ -420,7 +419,7 @@ export function Canvas(props: Props) {
     const drag = dragRef.current
     if (!drag) return
     if (drag.kind === 'pan') {
-      setView({ ...drag.view, ox: drag.view.ox + e.clientX - drag.startX, oy: drag.view.oy + e.clientY - drag.startY })
+      setView(pannedView(drag, e))
       return
     }
     if (drag.kind === 'marquee') {

@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useState } from 'react'
 import type { RefObject } from 'react'
-import type { Rect } from '../types'
+import { inflate } from '../geometry'
+import type { Point, Rect } from '../types'
 
 // Pan, zoom, grid and rulers shared by the layout canvas and the schematic view.
 
@@ -18,9 +19,48 @@ export interface Size {
 
 const MIN_SCALE = 0.5
 const MAX_SCALE = 200
+/** Room (mm) left around the content when the view is fitted to it. */
+const FIT_MARGIN = 5
 
-/** Tracks the svg's size and zooms around the pointer on the mouse wheel. */
-export function useViewport(svgRef: RefObject<SVGSVGElement | null>) {
+/** A press that moves less than this (screen pixels) is a click, not a drag. */
+export const CLICK_TOLERANCE_PX = 3
+
+/** Panning: the pointer's screen position and the view at the press. */
+export interface PanDrag {
+  kind: 'pan'
+  startX: number
+  startY: number
+  view: View
+}
+
+/**
+ * A selection rectangle from `start` (world), pressed at screen position startX, startY. With
+ * `additive` (Shift/Ctrl), it adds to the selection.
+ */
+export interface MarqueeDrag {
+  kind: 'marquee'
+  start: Point
+  startX: number
+  startY: number
+  additive: boolean
+}
+
+/** The view moved along with the pointer since the pan started. */
+export function pannedView(drag: PanDrag, e: { clientX: number; clientY: number }): View {
+  return { ...drag.view, ox: drag.view.ox + e.clientX - drag.startX, oy: drag.view.oy + e.clientY - drag.startY }
+}
+
+/** The world point (mm) under the pointer. */
+export function screenToWorld(svg: SVGSVGElement, view: View, e: { clientX: number; clientY: number }): Point {
+  const r = svg.getBoundingClientRect()
+  return { x: (e.clientX - r.left - view.ox) / view.scale, y: (e.clientY - r.top - view.oy) / view.scale }
+}
+
+/**
+ * Tracks the svg's size and zooms around the pointer on the mouse wheel. Each new `fitRequest` fits
+ * the view to `contentBounds()`; 0 asks for no fit, for a canvas that keeps the view it starts with.
+ */
+export function useViewport(svgRef: RefObject<SVGSVGElement | null>, fitRequest: number, contentBounds: () => Rect | null) {
   const [view, setView] = useState<View>({ scale: 5, ox: 40, oy: 40 })
   const [size, setSize] = useState<Size>({ width: 800, height: 600 })
 
@@ -64,7 +104,14 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>) {
     })
   }
 
-  return { view, setView, size, fitTo }
+  useEffect(() => {
+    if (fitRequest === 0) return
+    const bounds = contentBounds()
+    if (bounds) fitTo(inflate(bounds, FIT_MARGIN))
+    // Only refit when explicitly requested, not on every edit.
+  }, [fitRequest])
+
+  return { view, setView, size }
 }
 
 /** The part of the world that is on screen. */

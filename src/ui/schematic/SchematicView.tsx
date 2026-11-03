@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { boundsOf, inflate, rectBetween, snapToGrid } from '../../geometry'
+import { boundsOf, rectBetween, snapToGrid } from '../../geometry'
 import {
   alongDragAxis,
   CELL_HEIGHT,
@@ -37,7 +37,17 @@ import {
 } from '../../selection'
 import type { BuiltComponent, BuiltNetlist, Point, Rect, SchematicPlacement, Selection } from '../../types'
 import { layerClasses, layerOpacities, type SchematicLayers } from '../layers'
-import { gridPitch, gridPitches, useViewport, ViewportGrid, type View } from '../viewport'
+import {
+  CLICK_TOLERANCE_PX,
+  gridPitch,
+  gridPitches,
+  pannedView,
+  screenToWorld,
+  useViewport,
+  ViewportGrid,
+  type MarqueeDrag,
+  type PanDrag,
+} from '../viewport'
 import { LabelMark, SchematicPart, textOffsetOf } from './SchematicDrawing'
 
 /**
@@ -46,8 +56,6 @@ import { LabelMark, SchematicPart, textOffsetOf } from './SchematicDrawing'
  */
 export type SchematicTool = 'select' | 'wire' | 'label'
 
-/** A press that moves less than this (screen pixels) is a click, not a drag. */
-const CLICK_TOLERANCE_PX = 3
 /** How close (screen pixels) the pointer must be to grab a pin end or wire end. */
 const GRAB_RADIUS_PX = 8
 /**
@@ -72,8 +80,8 @@ const draftPath = (draft: WireDraft) => {
 }
 
 type Drag =
-  | { kind: 'pan'; startX: number; startY: number; view: View }
-  | { kind: 'marquee'; start: Point; startX: number; startY: number; additive: boolean }
+  | PanDrag
+  | MarqueeDrag
   /**
    * The pressed item, or the whole selection when it is in it (`moving`). Each step is applied to
    * `base`, the schematic at the start, shifted by `delta`. `keepConnections`: drag (the wiring
@@ -97,7 +105,6 @@ type Drag =
   | { kind: 'part-text'; ref: string; start: Point; origin: Point; moved: boolean }
 
 type SelectionDrag = Extract<Drag, { kind: 'selection' }>
-type MarqueeDrag = Extract<Drag, { kind: 'marquee' }>
 
 /** Reference and value text moves in quarter grid steps: finer than parts, so it can be fitted between wires. */
 const TEXT_STEP = SCHEMATIC_GRID / 4
@@ -137,7 +144,9 @@ export function SchematicView({
   const [draft, setDraft] = useState<WireDraft | null>(null)
   const [overPoint, setOverPoint] = useState(false)
   const [marquee, setMarquee] = useState<{ rect: Rect; crossing: boolean } | null>(null)
-  const { view, setView, size, fitTo } = useViewport(svgRef)
+  const { view, setView, size } = useViewport(svgRef, fitRequest, () =>
+    boundsOf(schematic.placements.map((p) => ({ x: p.x - CELL_WIDTH / 2, y: p.y - CELL_HEIGHT / 2, w: CELL_WIDTH, h: CELL_HEIGHT }))),
+  )
   const highlightedRefs = new Set(selectedRefs(selection))
   const wiring = selectedWiring(selection)
   const highlightedWires = new Set(wiring.wires)
@@ -147,20 +156,10 @@ export function SchematicView({
   const pinKeys = pinKeysOf(parts)
   const grabRadius = Math.min(GRAB_RADIUS_PX / view.scale, MAX_GRAB_RADIUS_MM)
 
-  useEffect(() => {
-    const cells = schematic.placements.map((p) => ({ x: p.x - CELL_WIDTH / 2, y: p.y - CELL_HEIGHT / 2, w: CELL_WIDTH, h: CELL_HEIGHT }))
-    const bounds = boundsOf(cells)
-    if (bounds) fitTo(inflate(bounds, 5))
-    // Only refit when explicitly requested, not on every edit.
-  }, [fitRequest])
-
   // A draft belongs to the tool it was started in.
   useEffect(() => setDraft(null), [tool])
 
-  const toWorld = (e: { clientX: number; clientY: number }): Point => {
-    const r = svgRef.current!.getBoundingClientRect()
-    return { x: (e.clientX - r.left - view.ox) / view.scale, y: (e.clientY - r.top - view.oy) / view.scale }
-  }
+  const toWorld = (e: { clientX: number; clientY: number }): Point => screenToWorld(svgRef.current!, view, e)
 
   const beginDrag = (e: ReactPointerEvent, drag: Drag) => {
     dragRef.current = drag
@@ -320,7 +319,7 @@ export function SchematicView({
       return
     }
     if (drag.kind === 'pan') {
-      setView({ ...drag.view, ox: drag.view.ox + e.clientX - drag.startX, oy: drag.view.oy + e.clientY - drag.startY })
+      setView(pannedView(drag, e))
       return
     }
     if (drag.kind === 'marquee') {
