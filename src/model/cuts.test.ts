@@ -31,6 +31,23 @@ describe('findCuts', () => {
     expect(moved.find((i) => i.net === 'Q2_C')).toEqual(collector)
     expect(moved.find((i) => i.net === 'Q2_E')).toEqual(emitter)
   })
+
+  it('splits a rectangle that reaches past the cut, so only the part along it moves', () => {
+    // VCC runs over both BIAS and OUT; the cut between VCC and BIAS covers only x = 0..10.
+    const vcc: Island = { net: 'VCC', rects: [{ x: 0, y: 0, w: 20, h: 5 }] }
+    const low: Island = { net: 'BIAS', rects: [{ x: 0, y: 5, w: 10, h: 5 }] }
+    const out: Island = { net: 'OUT', rects: [{ x: 10, y: 5, w: 10, h: 5 }] }
+    const cut = findCuts([vcc, low, out]).find((c) => c.axis === 'y' && c.nets.includes('BIAS'))!
+    const moved = moveCut([vcc, low, out], cut, 7)
+    expect(moved.find((i) => i.net === 'VCC')!.rects).toEqual([{ x: 0, y: 0, w: 10, h: 7 }, { x: 10, y: 0, w: 10, h: 5 }])
+    expect(moved.find((i) => i.net === 'BIAS')!.rects).toEqual([{ x: 0, y: 7, w: 10, h: 3 }])
+    expect(moved.find((i) => i.net === 'OUT')).toEqual(out)
+  })
+
+  it('leaves the islands as they are when the cut does not move', () => {
+    const cut = findCuts(islands).find((c) => c.axis === 'y' && c.nets[0] === 'BIAS')!
+    expect(moveCut(islands, cut, 5)).toBe(islands)
+  })
 })
 
 describe('resizeRect', () => {

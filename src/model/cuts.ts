@@ -63,41 +63,51 @@ function mergeCollinear(pieces: Cut[]): Cut[] {
 }
 
 /**
- * Moves the cut to `target`, together with every rectangle edge on its line that it touches, so
- * both sides follow and no gap or overlap opens. Rectangles keep at least MIN_RECT_SIZE.
+ * Moves the cut to `target`: the islands of its two nets follow along the cut, and nothing else
+ * moves. A rectangle reaching past the cut's ends is split there, so only the part along the cut
+ * moves and the island gets a notch or a tab. Rectangles keep at least MIN_RECT_SIZE.
  */
 export function moveCut(islands: Island[], cut: Cut, target: number): Island[] {
-  const { axis, at } = cut
-  const rects = islands.filter((island) => !island.plane).flatMap((island) => island.rects)
-  const onLine = (r: Rect) => Math.abs(lowEdge(r, axis) - at) < EPS || Math.abs(highEdge(r, axis) - at) < EPS
+  const { axis, at, from, to } = cut
+  const onCut = (net: string, r: Rect) =>
+    cut.nets.includes(net) &&
+    (Math.abs(lowEdge(r, axis) - at) < EPS || Math.abs(highEdge(r, axis) - at) < EPS) &&
+    overlapAlong(r, axis, from, to) > EPS
 
-  // Grow the range to every edge on the line that overlaps it: an edge reaching past the cut
-  // moves as a whole, so whatever it touches there has to move along.
-  let { from, to } = cut
-  for (let grown = true; grown; ) {
-    grown = false
-    for (const r of rects) {
-      if (!onLine(r) || overlapAlong(r, axis, from, to) <= EPS) continue
-      if (spanStart(r, axis) < from - EPS || spanEnd(r, axis) > to + EPS) {
-        from = Math.min(from, spanStart(r, axis))
-        to = Math.max(to, spanEnd(r, axis))
-        grown = true
-      }
-    }
-  }
-
-  const moves = (r: Rect) => onLine(r) && overlapAlong(r, axis, from, to) > EPS
   let lowest = -Infinity
   let highest = Infinity
-  for (const r of rects.filter(moves)) {
-    if (Math.abs(lowEdge(r, axis) - at) < EPS) highest = Math.min(highest, highEdge(r, axis) - MIN_RECT_SIZE)
-    else lowest = Math.max(lowest, lowEdge(r, axis) + MIN_RECT_SIZE)
+  for (const island of islands) {
+    for (const r of island.rects) {
+      if (island.plane || !onCut(island.net, r)) continue
+      if (Math.abs(lowEdge(r, axis) - at) < EPS) highest = Math.min(highest, highEdge(r, axis) - MIN_RECT_SIZE)
+      else lowest = Math.max(lowest, lowEdge(r, axis) + MIN_RECT_SIZE)
+    }
   }
   const value = Math.min(Math.max(target, lowest), highest)
+  // Nothing to split when the cut stays put, e.g. a click without a drag.
+  if (Math.abs(value - at) < EPS) return islands
 
+  const moved = (r: Rect) =>
+    splitAlong(r, axis, from, to).map((piece) => (overlapAlong(piece, axis, from, to) > EPS ? withEdgeAt(piece, axis, at, value) : piece))
   return islands.map((island) =>
-    island.plane ? island : { ...island, rects: island.rects.map((r) => (moves(r) ? withEdgeAt(r, axis, at, value) : r)) },
+    island.plane ? island : { ...island, rects: island.rects.flatMap((r) => (onCut(island.net, r) ? moved(r) : [r])) },
   )
+}
+
+/** The rectangle in up to three pieces along the cut's line: before `from`, from..to, after `to`. */
+function splitAlong(r: Rect, axis: Cut['axis'], from: number, to: number): Rect[] {
+  const start = spanStart(r, axis)
+  const end = spanEnd(r, axis)
+  const cuts = [start, Math.max(start, from), Math.min(end, to), end]
+  const pieces: Rect[] = []
+  for (let k = 0; k < 3; k++) {
+    if (cuts[k + 1] - cuts[k] > EPS) pieces.push(withSpan(r, axis, cuts[k], cuts[k + 1]))
+  }
+  return pieces
+}
+
+function withSpan(r: Rect, axis: Cut['axis'], start: number, end: number): Rect {
+  return axis === 'x' ? { ...r, y: start, h: end - start } : { ...r, x: start, w: end - start }
 }
 
 function withEdgeAt(r: Rect, axis: Cut['axis'], at: number, value: number): Rect {
