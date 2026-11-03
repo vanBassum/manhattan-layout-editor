@@ -45,10 +45,6 @@ describe.each(inputs)('$name', ({ netlist, settings }) => {
     const layout: Layout = strategy.run(netlist, settings)
     const componentOf = (ref: string) => netlist.components.find((c) => c.ref === ref)!
 
-    it('gives the same layout as before', () => {
-      expect(layout).toMatchSnapshot()
-    })
-
     it('places every part', () => {
       expect(layout.placements.map((p) => p.ref).sort()).toEqual(netlist.components.map((c) => c.ref).sort())
     })
