@@ -1,4 +1,4 @@
-import type { BuiltNetlist, Layout, Settings } from '../types'
+import type { BuiltNetlist, Layout, Settings, StrategyId } from '../types'
 import { knifeStrategy } from './knife'
 import { manhattanStrategy } from './manhattan'
 
@@ -7,7 +7,7 @@ import { manhattanStrategy } from './manhattan'
  * islands are still one per net and parts still connect to the nets the netlist says.
  */
 export interface Strategy {
-  id: string
+  id: StrategyId
   label: string
   description: string
   run: (netlist: BuiltNetlist, settings: Settings) => Layout
@@ -16,5 +16,7 @@ export interface Strategy {
 export const STRATEGIES: Strategy[] = [knifeStrategy, manhattanStrategy]
 
 export function findStrategy(id: string): Strategy {
-  return STRATEGIES.find((s) => s.id === id) ?? STRATEGIES[0]
+  const strategy = STRATEGIES.find((s) => s.id === id)
+  if (!strategy) throw new Error(`Unknown strategy "${id}"; choose ${STRATEGIES.map((s) => `"${s.id}"`).join(' or ')}`)
+  return strategy
 }

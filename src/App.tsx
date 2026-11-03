@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from './agentBridge'
-import { buildNetlist, buildProjectNetlist, withDefinitions } from './definitions'
+import { buildNetlist, buildProjectNetlist, withDefinitions, withoutUnfitDefinitions } from './definitions'
 import { agentTargetId, runAgentCommand } from './agentDispatch'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
 import { compareWithDrive, openDriveDocument, saveDriveDocument, saveInDriveFolder, type DriveLocation } from './driveDocuments'
@@ -207,20 +207,23 @@ const DEFAULT_SCHEMATIC_LAYERS: SchematicLayers = {
 function projectFromNetlist(text: string, current: Project, keepLayout: boolean): Project {
   const imported = parseNetlist(text)
   // A value typed in the editor survives a re-import that still has none (EasyEDA exports "{Value}"
-  // as empty), and so does the part's definition; withDefinitions drops one that no longer fits.
+  // as empty), and so does the part's definition, unless its pins changed and it no longer fits.
   const previous = new Map(current.netlist.components.map((c) => [c.ref, c]))
+  const definitions = keepLayout ? current.definitions : undefined
   const netlist = keepLayout
-    ? {
-        ...imported,
-        components: imported.components.map((c) => ({
-          ...c,
-          value: c.value || previous.get(c.ref)?.value || '',
-          definition: previous.get(c.ref)?.definition,
-        })),
-      }
+    ? withoutUnfitDefinitions(
+        {
+          ...imported,
+          components: imported.components.map((c) => ({
+            ...c,
+            value: c.value || previous.get(c.ref)?.value || '',
+            definition: previous.get(c.ref)?.definition,
+          })),
+        },
+        definitions,
+      )
     : imported
   const previousLayout = keepLayout ? current.layout : undefined
-  const definitions = keepLayout ? current.definitions : undefined
   return withDefinitions({
     guid: current.guid,
     netlist,
@@ -1487,7 +1490,7 @@ export function App() {
               <div className="settings">
                 <label title={findStrategy(settings.strategy).description}>
                   Mode
-                  <select value={settings.strategy} onChange={(e) => setSettings({ strategy: e.target.value })}>
+                  <select value={settings.strategy} onChange={(e) => setSettings({ strategy: findStrategy(e.target.value).id })}>
                     {STRATEGIES.map((s) => (
                       <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
                     ))}

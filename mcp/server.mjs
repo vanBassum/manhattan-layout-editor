@@ -12,7 +12,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { WebSocketServer } from 'ws'
 import { z } from 'zod'
 
-const BRIDGE_PORT = Number(process.env.MANHATTAN_BRIDGE_PORT ?? 5174)
+// Fixed: the editor page, also the published one, connects to this port (src/agentBridge.ts).
+const BRIDGE_PORT = 5174
 // Pages that may act as the editor: the local dev server, plus the published GitHub Pages site.
 // MANHATTAN_ALLOWED_ORIGINS (comma separated) replaces the published-site entry.
 const ALLOWED_ORIGINS = (process.env.MANHATTAN_ALLOWED_ORIGINS ?? 'https://vanbassum.github.io')
@@ -83,6 +84,13 @@ function acceptEditor(socket) {
   socket.on('close', () => {
     editors.splice(editors.indexOf(socket), 1)
     log(`editor disconnected (${editors.length} open)`)
+    // Its answers will never come: fail now instead of at the timeout.
+    for (const [id, request] of pending) {
+      if (request.editor !== socket) continue
+      pending.delete(id)
+      clearTimeout(request.timer)
+      request.reject(new Error(`The editor closed before answering "${request.command}".`))
+    }
   })
 }
 
@@ -110,7 +118,7 @@ function callEditor(command, args = {}) {
       pending.delete(id)
       reject(new Error(`The editor did not answer "${command}" within ${REQUEST_TIMEOUT_MS / 1000} s.`))
     }, REQUEST_TIMEOUT_MS)
-    pending.set(id, { resolve, reject, timer })
+    pending.set(id, { resolve, reject, timer, editor, command })
     editor.send(JSON.stringify({ id, command, args }))
   })
 }

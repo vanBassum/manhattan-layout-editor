@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import server from '../mcp/server.mjs?raw'
 import { AGENT_COMMANDS, agentTargetId, runAgentCommand, type AgentTab } from './agentDispatch'
 import example from './examples/Astable multivibrator.manhattan.json?raw'
+import { STRATEGIES } from './optimize'
 import { emptyProject, projectFromFile } from './projectStore'
 
 describe('agent commands', () => {
@@ -16,6 +17,38 @@ describe('agent commands', () => {
     const result = runAgentCommand('move_component', { ref: 'R1', x: 10, y: 20 }, tab)
     expect(project.layout.placements.find((p) => p.ref === 'R1')).toMatchObject({ x: 10, y: 20 })
     expect(result).toHaveProperty('problems.openPins')
+  })
+
+  it('offer exactly the optimizer strategies the editor has', () => {
+    const offered = /strategy: z\.enum\(\[([^\]]*)\]\)/.exec(server)![1].match(/[a-z-]+/g)
+    expect(offered).toEqual(STRATEGIES.map((s) => s.id))
+  })
+
+  it('refuse an unknown strategy instead of running another one', () => {
+    let project = projectFromFile(example)
+    const tab: AgentTab = { project, change: (changes) => (project = { ...project, ...changes }), step: () => project, screenshot: async () => '' }
+    expect(() => runAgentCommand('run_optimizer', { strategy: 'teleport' }, tab)).toThrow('Unknown strategy "teleport"')
+    expect(() => runAgentCommand('run_optimizer', {}, tab)).toThrow('"strategy" must be a non-empty string')
+  })
+
+  it('run every strategy on the example', () => {
+    for (const { id } of STRATEGIES) {
+      let project = projectFromFile(example)
+      const tab: AgentTab = { project, change: (changes) => (project = { ...project, ...changes }), step: () => project, screenshot: async () => '' }
+      expect(() => runAgentCommand('run_optimizer', { strategy: id }, tab)).not.toThrow()
+    }
+  })
+
+  it('refuse a definition change that takes away pins a part still uses', () => {
+    let project = projectFromFile(example)
+    const tab: AgentTab = { project, change: (changes) => (project = { ...project, ...changes }), step: () => project, screenshot: async () => '' }
+    const part = project.netlist.components.find((c) => c.ref === 'R1')!
+    const used = project.definitions![part.definition!]
+    const onePin = { ...used, pins: [used.pins[0]], symbol: { ...used.symbol, pins: [used.symbol.pins[0]] }, footprints: {} }
+    expect(() => runAgentCommand('set_definition', { id: part.definition, definition: onePin }, tab)).toThrow(
+      `definition "${part.definition}" lacks some of its pins`,
+    )
+    expect(project.definitions![part.definition!]).toBe(used)
   })
 
   it('refuses a command it does not know, also one named like an object property', () => {

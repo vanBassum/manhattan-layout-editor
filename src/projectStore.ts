@@ -9,11 +9,11 @@
 // remembers its own active project in sessionStorage, so two browser tabs can work on different
 // projects without overwriting each other.
 
-import { checkedDefinitions, withDefinitions } from './definitions'
+import { checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from './definitions'
 import { errorText } from './errorText'
 import { withoutCutLines } from './migrateCutLayout'
 import { migrateGappedIslands } from './migrateIslands'
-import { STRATEGIES } from './optimize'
+import { findStrategy, STRATEGIES } from './optimize'
 import type { Project, Settings } from './types'
 
 export interface ProjectTab {
@@ -105,14 +105,18 @@ function checkedProject(data: unknown): Project | null {
   const project = { ...(data as Partial<Project> & { name?: unknown }) }
   if (!project?.netlist?.components || !project.layout?.islands) return null
   delete project.name
-  return withoutCutLines(
+  const definitions = checkedDefinitions(project.definitions)
+  const checked = withoutCutLines(
     withDefinitions({
       ...(project as Project),
       guid: project.guid || crypto.randomUUID(),
-      definitions: checkedDefinitions(project.definitions),
+      // Recovery copies from before definitions were checked may still refer to one a re-import made unfit.
+      netlist: withoutUnfitDefinitions(project.netlist, definitions),
+      definitions,
       settings: { ...DEFAULT_SETTINGS, ...project.settings },
     }),
   )
+  return { ...checked, settings: { ...checked.settings, strategy: findStrategy(checked.settings.strategy).id } }
 }
 
 // A saved project file. Bump the version when the stored layout changes meaning, and convert

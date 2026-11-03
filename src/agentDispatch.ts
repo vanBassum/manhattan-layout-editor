@@ -13,6 +13,7 @@ import {
   setFootprint,
   setIsland,
   setLeadEnd,
+  stringArg,
 } from './agentCommands'
 import { buildNetlist, builtProject, checkedDefinition, withAssignedDefinition } from './definitions'
 import { chooseResistors, keepFootprintChoices } from './layout'
@@ -123,7 +124,7 @@ const COMMANDS: Record<string, (tab: AgentTab, args: Args) => unknown> = {
   move_island: layoutEdit(moveIsland),
   batch: layoutEdit(applyBatch),
   run_optimizer: layoutEdit((current, args) => {
-    const optimized = findStrategy(String(args.strategy)).run(current.netlist, current.settings)
+    const optimized = findStrategy(stringArg(args, 'strategy')).run(current.netlist, current.settings)
     return keepFootprintChoices(optimized, current.layout)
   }),
   set_resistor_footprint: layoutEdit((current, args, imported) => {
@@ -145,9 +146,12 @@ const COMMANDS: Record<string, (tab: AgentTab, args: Args) => unknown> = {
     parts: project.netlist.components.map((c) => ({ ref: c.ref, value: c.value, definition: c.definition, footprint: c.footprint })),
   }),
   set_definition: (tab, args) => {
-    const id = String(args.id ?? '')
+    const id = stringArg(args, 'id')
     if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error('"id" must be lowercase letters, digits and dashes, e.g. "lm1875"')
     const definitions = { ...tab.project.definitions, [id]: checkedDefinition(args.definition) }
+    // Parts already using the definition must keep all their pins in it.
+    const users = tab.project.netlist.components.filter((c) => c.definition === id)
+    buildNetlist({ ...tab.project.netlist, components: users }, tab.project.layout.placements, definitions)
     tab.change({ definitions })
     return { id, definitions: Object.keys(definitions) }
   },

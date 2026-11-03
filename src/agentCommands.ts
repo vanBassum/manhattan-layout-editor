@@ -109,7 +109,7 @@ export function describeProject(project: BuiltProject) {
 
 type Args = Record<string, unknown>
 
-function stringArg(args: Args, name: string): string {
+export function stringArg(args: Args, name: string): string {
   const value = args[name]
   if (typeof value !== 'string' || value === '') throw new Error(`"${name}" must be a non-empty string`)
   return value
@@ -238,7 +238,8 @@ export function addComponent(project: Project, args: Args): Pick<Project, 'netli
     args.pins === undefined && definition ? definition.pins.map((p) => ({ number: p.number, net: '' })) : pinsArg(args.pins)
   pins.sort((a, b) => naturalCompare(a.number, b.number))
   const footprint = args.footprint === undefined ? Object.keys(definition?.footprints ?? {})[0] ?? '' : stringArg(args, 'footprint')
-  const value = args.value === undefined ? '' : String(args.value).trim()
+  if (args.value !== undefined && typeof args.value !== 'string') throw new Error('"value" must be a string')
+  const value = args.value?.trim() ?? ''
 
   const components = [...project.netlist.components, { ref, value, footprint, pins }].sort((a, b) => naturalCompare(a.ref, b.ref))
   const nets = new Set([...project.netlist.nets, ...pins.map((p) => p.net).filter(isRealNet)])
