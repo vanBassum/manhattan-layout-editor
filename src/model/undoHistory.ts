@@ -3,13 +3,14 @@ import type { Project } from './types'
 const UNDO_LIMIT = 100
 
 /** What one undo step restores. */
-export type Snapshot = Pick<Project, 'netlist' | 'layout' | 'schematic' | 'definitions'>
+export type Snapshot = Pick<Project, 'netlist' | 'layout' | 'schematic' | 'definitions' | 'simulation'>
 
 export const snapshotOf = (project: Project): Snapshot => ({
   netlist: project.netlist,
   layout: project.layout,
   schematic: project.schematic,
   definitions: project.definitions,
+  simulation: project.simulation,
 })
 
 /** Never changed in place, so tabs can share NO_HISTORY and a parked history stays as it was. */

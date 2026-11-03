@@ -24,6 +24,14 @@ describe('undo history', () => {
     expect(stepHistory(undone.history, undone.restored, 'redo')!.restored).toEqual(snapshotOf(dragged))
   })
 
+  it('undoes a change to the simulation, such as a source', () => {
+    const before = emptyProject()
+    const after: Project = { ...before, simulation: { sources: [{ net: 'VCC', shape: 'dc', volts: 9 }], models: {} } }
+    const undone = stepHistory(withEdit(NO_HISTORY, snapshotOf(before)), snapshotOf(after), 'undo')!
+    expect(undone.restored.simulation).toBeUndefined()
+    expect(stepHistory(undone.history, undone.restored, 'redo')!.restored.simulation).toEqual(after.simulation)
+  })
+
   it('undoes edits one at a time, newest first', () => {
     const first = emptyProject()
     const second = { ...first, schematic: { placements: [], wires: [], labels: [] } }
