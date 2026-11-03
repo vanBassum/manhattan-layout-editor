@@ -5,7 +5,7 @@ import type { ProjectLocation, RecentDocument } from './projectStore'
 
 const PLACES: Record<ProjectLocation['kind'], { icon: IconName; label: string; open: string; save: string }> = {
   local: { icon: 'computer', label: 'This computer', open: 'Open a file from your computer', save: 'Choose a location on your computer' },
-  drive: { icon: 'cloud', label: 'Google Drive', open: 'Open a file from your Google Drive', save: 'Choose a folder in Google Drive' },
+  drive: { icon: 'cloud', label: 'Google Drive', open: 'Open a file from your Google Drive', save: 'Save in the folder Manhattan Layout Editor' },
 }
 
 const placesShown = (): ProjectLocation['kind'][] => (driveConfigured ? ['local', 'drive'] : ['local'])

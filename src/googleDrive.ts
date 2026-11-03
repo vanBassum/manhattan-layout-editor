@@ -192,6 +192,32 @@ export async function findFile(folderId: string, name: string): Promise<DriveIte
   return (await search(`${quoted(folderId)} in parents and name = ${quoted(name)} and trashed = false`))[0]
 }
 
+const FOLDER_TYPE = 'application/vnd.google-apps.folder'
+export const SAVE_FOLDER_NAME = 'Manhattan Layout Editor'
+let saveFolder: Promise<string> | null = null
+
+/**
+ * The folder in My Drive that new projects are saved in, made on first use. Google's picker cannot
+ * save, so there is no choosing; the user moves files elsewhere in Drive itself.
+ */
+export function projectsFolder(): Promise<string> {
+  saveFolder ??= (async () => {
+    const query = `name = ${quoted(SAVE_FOLDER_NAME)} and mimeType = ${quoted(FOLDER_TYPE)} and 'root' in parents and trashed = false`
+    const found = (await search(query))[0]
+    if (found) return found.id
+    const created = await json<{ id: string }>(
+      call('/drive/v3/files?fields=id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: SAVE_FOLDER_NAME, mimeType: FOLDER_TYPE, parents: ['root'] }),
+      }),
+    )
+    return created.id
+  })()
+  saveFolder.catch(() => (saveFolder = null))
+  return saveFolder
+}
+
 export async function readFile(id: string): Promise<string> {
   return (await call(`/drive/v3/files/${id}?alt=media`)).text()
 }

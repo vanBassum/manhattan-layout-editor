@@ -52,11 +52,6 @@ export async function saveInDriveFolder(
   return driveLocation(await writeFile(text, existing ? { id: existing.id } : { parentId: folderId, name: fileName }))
 }
 
-/** Saves `project` over Drive file `fileId`, which keeps its name. */
-export async function replaceDriveFile(project: Project, fileId: string): Promise<DriveLocation> {
-  return driveLocation(await writeFile(projectToFile(project), { id: fileId }))
-}
-
 /** How the document stands against the tab, and its current version. Throws when it cannot be read or is no project anymore. */
 export async function compareWithDrive(location: DriveLocation, file: ProjectFile): Promise<{ comparison: FileComparison; location: DriveLocation }> {
   const version = await fileVersion(location.fileId)
