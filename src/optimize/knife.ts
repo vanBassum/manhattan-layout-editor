@@ -1,105 +1,187 @@
-import { snapToGrid, withoutFloatNoise } from '../model/geometry'
-import { naturalCompare, pinsByNet } from '../model/netlist'
-import type { BuiltNetlist, Island, Netlist, Settings } from '../model/types'
-import { componentNets, placeOnIslands, type PlacedPart } from './common'
+import { boundsOf, inflate, snapToGrid } from '../model/geometry'
+import { cellsToRects, columns, rows, uniqueSorted, type Grid } from '../model/raster'
+import type { BuiltNetlist, Layout, Point, Settings } from '../model/types'
+import { bendOnto, gridOutward, leadsOf, withBentLeads, type Lead, type PlacedPart } from './common'
 
-/** Generous strips: room for parts, their clearance and a soldering iron. */
-const ROW_HEIGHT = 14
-const RAIL_HEIGHT = 9
-const MIN_CELL_WIDTH = 12
-const WIDTH_PER_PIN = 6
-/** Nets with at least this many pins become full-width rails. */
-const RAIL_MIN_PINS = 5
-const MAX_RAILS = 3
-const MIN_BOARD_WIDTH = 30
-/** The board width is rounded up to whole multiples of this. */
-const BOARD_WIDTH_STEP = 5
-/** In the net chain, sharing parts with the net just before counts this much more than with earlier ones. */
-const LAST_NET_WEIGHT = 3
+/** Lead ends closer together than this on an axis share a column (or row) of cells. */
+const MIN_CELL = 1
+/** Copper beyond the outermost parts. */
+const BOARD_MARGIN = 3
+/** Cut lines and the board edge lie on this grid. */
+const CUT_GRID = 0.5
+const FREE = -1
 
 /**
- * Knife: unlike Manhattan, the copper comes first, because straight edge-to-edge cuts
- * only work when the nets are laid out for them. Full-width horizontal cuts separate rows; each
- * row is split by short vertical cuts running from one horizontal cut to the next. The busiest
- * nets become full-width rails, and nets that share parts are neighbors. Components are then
- * placed onto the strips with the shared collision-free placer.
+ * Knife: the copper board is cut into one island per net. The board is divided into cells by lines
+ * halfway between the lead ends, so cuts run straight between them and every lead end lies inside
+ * its cell with room to spare. Each lead end claims its cell for its net. Then each net's cells are
+ * joined by the shortest way through free cells, nets with close-together leads first, so the
+ * far-reaching ones (supply rails) go around them. Last, every free cell goes to the nearest net,
+ * so the islands cover the board and the cuts are their shared edges. A lead end that could not be
+ * joined to its net, or shares its cell with another net's, is bent onto its net's island.
  */
-function knifeLayout(netlist: BuiltNetlist, settings: Settings) {
-  const pinsOnNet = pinsByNet(netlist)
-  const pins = (net: string) => pinsOnNet.get(net)?.length ?? 1
+export function knifeCopper(netlist: BuiltNetlist, parts: PlacedPart[], settings: Settings): Layout {
+  const leads = leadsOf(parts, settings)
+  const board = gridOutward(inflate(boundsOf(parts.map((p) => p.keepOut))!, BOARD_MARGIN), CUT_GRID)
+  const xs = cellLines(leads.map((l) => l.end.x), board.x, board.x + board.w)
+  const ys = cellLines(leads.map((l) => l.end.y), board.y, board.y + board.h)
+  const grid: Grid = { xs, ys, owner: new Int32Array((xs.length - 1) * (ys.length - 1)).fill(FREE) }
 
-  // Busy nets (supply, ground) become full-width rails, but at their place in the chain rather than
-  // at the board edges, so rails joined by e.g. decoupling capacitors end up next to each other.
-  const busiest = [...netlist.nets].sort((a, b) => pins(b) - pins(a) || naturalCompare(a, b))
-  const rails = new Set(busiest.filter((net) => pins(net) >= RAIL_MIN_PINS).slice(0, MAX_RAILS))
-  const chain = chainNets(netlist, busiest)
-
-  const cellWidth = (net: string) => Math.max(MIN_CELL_WIDTH, pins(net) * WIDTH_PER_PIN)
-  const cells = chain.filter((net) => !rails.has(net))
-  const area = cells.reduce((sum, net) => sum + cellWidth(net) * ROW_HEIGHT, 0)
-  const boardWidth = Math.ceil(Math.max(...cells.map(cellWidth), Math.sqrt(area), MIN_BOARD_WIDTH) / BOARD_WIDTH_STEP) * BOARD_WIDTH_STEP
-
-  const rows: { rail: boolean; nets: string[] }[] = []
-  let used = 0
-  for (const net of chain) {
-    const current = rows[rows.length - 1]
-    if (rails.has(net)) {
-      rows.push({ rail: true, nets: [net] })
-    } else if (!current || current.rail || used + cellWidth(net) > boardWidth) {
-      rows.push({ rail: false, nets: [net] })
-      used = cellWidth(net)
-    } else {
-      current.nets.push(net)
-      used += cellWidth(net)
-    }
+  const nets = netlist.nets.filter((net) => leads.some((l) => l.net === net))
+  for (const lead of leads) {
+    const cell = cellAt(grid, lead.end)
+    if (grid.owner[cell] === FREE) grid.owner[cell] = nets.indexOf(lead.net)
   }
+  const bySpan = nets.map((_, k) => k).sort((a, b) => span(leads, nets[a]) - span(leads, nets[b]))
+  for (const net of bySpan) joinNet(grid, net)
+  growIntoFreeCells(grid)
 
-  const islands: Island[] = []
-  let y = 0
-  let cellRowIndex = 0
-  for (const row of rows) {
-    if (row.rail) {
-      islands.push({ net: row.nets[0], rects: [{ x: 0, y, w: boardWidth, h: RAIL_HEIGHT }] })
-      y += RAIL_HEIGHT
-      continue
-    }
-    // Every other row runs right to left, so the chain continues straight down at the row ends.
-    const ordered = cellRowIndex++ % 2 === 0 ? row.nets : [...row.nets].reverse()
-    // Stretch the cells so each row runs edge to edge and every vertical cut ends on a horizontal one.
-    // Neighboring cells touch: the cut runs along their shared edge, which lies on the snap grid.
-    const rowWidth = ordered.reduce((sum, net) => sum + cellWidth(net), 0)
-    let unstretchedRight = 0
-    let x = 0
-    ordered.forEach((net, k) => {
-      unstretchedRight += cellWidth(net)
-      const right = k === ordered.length - 1 ? boardWidth : snapToGrid((unstretchedRight / rowWidth) * boardWidth, settings.snap)
-      islands.push({ net, rects: [{ x, y, w: withoutFloatNoise(right - x), h: ROW_HEIGHT }] })
-      x = right
-    })
-    y += ROW_HEIGHT
-  }
-
-  return { islands, placements: placeOnIslands(netlist, islands, settings) }
+  const islands = nets.map((net, k) => ({ net, rects: cellsToRects(grid, (cell) => grid.owner[cell] === k) }))
+  const islandOf = new Map(islands.map((island) => [island.net, island]))
+  const placements = withBentLeads(parts, leads, (lead) => bendOnto(islandOf.get(lead.net)!, lead, settings.isolation))
+  return { islands, placements }
 }
 
-/** Orders nets so that each next net shares the most parts with the ones just before it. */
-function chainNets(netlist: Netlist, nets: string[]): string[] {
-  const shared = (a: string, b: string) =>
-    netlist.components.filter((c) => {
-      const cn = componentNets(c)
-      return cn.includes(a) && cn.includes(b)
-    }).length
-  const remaining = [...nets].sort(naturalCompare)
-  const chain: string[] = []
-  while (remaining.length > 0) {
-    const score = (net: string) => chain.reduce((sum, p, k) => sum + shared(net, p) * (k === chain.length - 1 ? LAST_NET_WEIGHT : 1), 0)
-    let best = 0
-    for (let k = 1; k < remaining.length; k++) if (score(remaining[k]) > score(remaining[best])) best = k
-    const [next] = remaining.splice(best, 1)
-    chain.push(next)
-  }
-  return chain
+/** Lines from `from` to `to`, and on the cut grid halfway between values that lie at least MIN_CELL apart. */
+function cellLines(values: number[], from: number, to: number): number[] {
+  const sorted = [...values].sort((a, b) => a - b)
+  const between = sorted.flatMap((v, k) => (k > 0 && v - sorted[k - 1] >= MIN_CELL ? [snapToGrid((v + sorted[k - 1]) / 2, CUT_GRID)] : []))
+  return uniqueSorted([from, ...between, to])
 }
 
-// Temporary: still lays out its own strips and places the parts on them, ignoring `parts`.
-export const knifeCopper = (netlist: BuiltNetlist, _parts: PlacedPart[], settings: Settings) => knifeLayout(netlist, settings)
+function cellAt(grid: Grid, p: Point): number {
+  return band(grid.ys, p.y) * columns(grid) + band(grid.xs, p.x)
+}
+
+/** Which of the bands between `lines` holds `v`. */
+function band(lines: number[], v: number): number {
+  let k = 0
+  while (k < lines.length - 2 && lines[k + 1] <= v) k++
+  return k
+}
+
+/** The cells for which `holds` is true. */
+const cellsWhere = (grid: Grid, holds: (owner: number, cell: number) => boolean) =>
+  Array.from(grid.owner).flatMap((owner, cell) => (holds(owner, cell) ? [cell] : []))
+
+/** Half the perimeter around a net's lead ends: how far the net reaches. */
+function span(leads: Lead[], net: string): number {
+  const bounds = boundsOf(leads.filter((l) => l.net === net).map((l) => ({ ...l.end, w: 0, h: 0 })))!
+  return bounds.w + bounds.h
+}
+
+function centre(grid: Grid, cell: number): Point {
+  const i = cell % columns(grid)
+  const j = Math.floor(cell / columns(grid))
+  return { x: (grid.xs[i] + grid.xs[i + 1]) / 2, y: (grid.ys[j] + grid.ys[j + 1]) / 2 }
+}
+
+function neighbours(grid: Grid, cell: number): number[] {
+  const i = cell % columns(grid)
+  const j = Math.floor(cell / columns(grid))
+  const result: number[] = []
+  if (i > 0) result.push(cell - 1)
+  if (i < columns(grid) - 1) result.push(cell + 1)
+  if (j > 0) result.push(cell - columns(grid))
+  if (j < rows(grid) - 1) result.push(cell + columns(grid))
+  return result
+}
+
+const distance = (grid: Grid, a: number, b: number) => {
+  const p = centre(grid, a)
+  const q = centre(grid, b)
+  return Math.hypot(p.x - q.x, p.y - q.y)
+}
+
+/** The cells of `net` connected to `start`, edge to edge. */
+function connectedCells(grid: Grid, start: number, net: number): Set<number> {
+  const found = new Set([start])
+  const queue = [start]
+  while (queue.length > 0) {
+    for (const next of neighbours(grid, queue.pop()!)) {
+      if (grid.owner[next] === net && !found.has(next)) {
+        found.add(next)
+        queue.push(next)
+      }
+    }
+  }
+  return found
+}
+
+/**
+ * Joins the cells of `net` one at a time by the shortest way through free cells. Cells that cannot
+ * be reached are given up: their lead ends are bent onto the island later.
+ */
+function joinNet(grid: Grid, net: number) {
+  const start = grid.owner.indexOf(net)
+  for (;;) {
+    const joined = connectedCells(grid, start, net)
+    const apart = new Set(cellsWhere(grid, (owner, cell) => owner === net && !joined.has(cell)))
+    if (apart.size === 0) return
+    const path = shortestPath(grid, joined, apart)
+    if (!path) {
+      for (const cell of apart) grid.owner[cell] = FREE
+      return
+    }
+    for (const cell of path) grid.owner[cell] = net
+  }
+}
+
+/** The free cells on the shortest way from `from` to any cell of `to`, or null when there is none. */
+function shortestPath(grid: Grid, from: Set<number>, to: Set<number>): number[] | null {
+  const previous = new Int32Array(grid.owner.length).fill(-1)
+  const reached = nearestFirst(grid, [...from], (cell) => grid.owner[cell] === FREE || to.has(cell), (cell, from) => {
+    previous[cell] = from
+    return to.has(cell)
+  })
+  if (reached === null) return null
+  const path: number[] = []
+  for (let cell = previous[reached]; !from.has(cell); cell = previous[cell]) path.push(cell)
+  return path
+}
+
+/** Every free cell goes to the net whose copper is nearest, growing outward from all nets at once. */
+function growIntoFreeCells(grid: Grid) {
+  nearestFirst(grid, cellsWhere(grid, (owner) => owner !== FREE), (cell) => grid.owner[cell] === FREE, (cell, from) => {
+    grid.owner[cell] = grid.owner[from]
+    return false
+  })
+}
+
+/**
+ * Visits the cells that `mayEnter` allows in order of distance from `sources` (Dijkstra between cell
+ * centres), telling `visit` each cell and the cell it was reached from. Stops at the first cell for
+ * which `visit` returns true and returns it; null when every reachable cell was visited.
+ */
+function nearestFirst(
+  grid: Grid,
+  sources: number[],
+  mayEnter: (cell: number) => boolean,
+  visit: (cell: number, from: number) => boolean,
+): number | null {
+  const cost = new Float64Array(grid.owner.length).fill(Infinity)
+  const cameFrom = new Int32Array(grid.owner.length).fill(-1)
+  const done = new Uint8Array(grid.owner.length)
+  const waiting = new Set<number>()
+  for (const cell of sources) {
+    cost[cell] = 0
+    waiting.add(cell)
+  }
+  while (waiting.size > 0) {
+    let cell = -1
+    for (const c of waiting) if (cell === -1 || cost[c] < cost[cell]) cell = c
+    waiting.delete(cell)
+    done[cell] = 1
+    if (cameFrom[cell] !== -1 && visit(cell, cameFrom[cell])) return cell
+    for (const next of neighbours(grid, cell)) {
+      if (done[next] || !mayEnter(next)) continue
+      const through = cost[cell] + distance(grid, cell, next)
+      if (through < cost[next]) {
+        cost[next] = through
+        cameFrom[next] = cell
+        waiting.add(next)
+      }
+    }
+  }
+  return null
+}

@@ -1,8 +1,8 @@
-import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid, withoutFloatNoise } from '../model/geometry'
-import { onCopper, solderPoint, toLocal, toWorld } from '../model/layout'
-import { isGroundNet, isRealNet, naturalCompare, pinsByNet } from '../model/netlist'
+import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid } from '../model/geometry'
+import { solderPoint } from '../model/layout'
+import { isGroundNet, naturalCompare, pinsByNet } from '../model/netlist'
 import type { BuiltNetlist, Island, Layout, Point, Rect, Settings } from '../model/types'
-import { leadCost, leadLimit, spiralOffsets, type PlacedPart } from './common'
+import { bendOnto, gridOutward, leadCost, leadsOf, spiralOffsets, withBentLeads, type Lead, type PlacedPart } from './common'
 
 /** Standard square pad sizes (mm) and how many leads each takes with room to solder and probe. */
 const PAD_SIZES: [side: number, leads: number][] = [
@@ -30,15 +30,6 @@ const PLANE_MARGIN = 5
 const foreignClearance = (lead: Lead) =>
   lead.part.component.geometry.shape === 'smd' ? SMD_FOREIGN_LEAD_CLEARANCE : FOREIGN_LEAD_CLEARANCE
 
-interface Lead {
-  part: PlacedPart
-  index: number
-  net: string
-  anchor: Point
-  end: Point
-  limit: number
-}
-
 function padSize(leadCount: number): { w: number; h: number } {
   const standard = PAD_SIZES.find(([, leads]) => leadCount <= leads)
   if (standard) return { w: standard[0], h: standard[0] }
@@ -63,14 +54,7 @@ export function manhattanCopper(netlist: BuiltNetlist, parts: PlacedPart[], sett
   const busiest = [...netlist.nets].sort((a, b) => pinCount(b) - pinCount(a))[0]
   const ground = netlist.nets.find(isGroundNet) ?? busiest
 
-  const leads: Lead[] = parts.flatMap((part) => {
-    const { geometry } = part.component
-    return part.component.pins.flatMap((pin, index) =>
-      isRealNet(pin.net)
-        ? [{ part, index, net: pin.net, anchor: toWorld(geometry.anchors[index], part.placement), end: part.ends[index], limit: leadLimit(geometry, settings) }]
-        : [],
-    )
-  })
+  const leads = leadsOf(parts, settings)
 
   const padNets = netlist.nets
     .filter((net) => net !== ground)
@@ -104,34 +88,13 @@ export function manhattanCopper(netlist: BuiltNetlist, parts: PlacedPart[], sett
     pads.push({ net, rects: [best.rect] })
   }
 
-  const placements = parts.map((part) => {
-    const bent: Record<string, Point> = {}
-    for (const lead of leads.filter((l) => l.part === part)) {
-      const end = lead.net === ground ? groundEnd(lead, pads) : padEnd(lead, pads, settings.isolation)
-      if (end) bent[part.component.pins[lead.index].number] = toLocal(end, part.placement)
-    }
-    return Object.keys(bent).length > 0 ? { ...part.placement, leads: bent } : part.placement
-  })
+  const placements = withBentLeads(parts, leads, (lead) =>
+    lead.net === ground ? groundEnd(lead, pads) : bendOnto(pads.find((p) => p.net === lead.net)!, lead, settings.isolation),
+  )
 
   const everything = [...parts.map((p) => p.keepOut), ...pads.map((p) => p.rects[0])]
   const plane: Island = { net: ground, plane: true, rects: [gridOutward(inflate(boundsOf(everything)!, PLANE_MARGIN), PAD_SEARCH_STEP)] }
   return { islands: [plane, ...pads], placements }
-}
-
-/** The smallest rectangle with edges on the grid that contains `r`. */
-function gridOutward(r: Rect, step: number): Rect {
-  const left = Math.floor(r.x / step) * step
-  const top = Math.floor(r.y / step) * step
-  const right = Math.ceil((r.x + r.w) / step) * step
-  const bottom = Math.ceil((r.y + r.h) / step) * step
-  return { x: withoutFloatNoise(left), y: withoutFloatNoise(top), w: withoutFloatNoise(right - left), h: withoutFloatNoise(bottom - top) }
-}
-
-/** Bends a lead onto its pad, or returns null when it already lands there. */
-function padEnd(lead: Lead, pads: Island[], isolation: number): Point | null {
-  const pad = pads.find((p) => p.net === lead.net)
-  if (!pad || onCopper(pad, lead.end, isolation)) return null
-  return solderPoint(pad, lead.anchor, lead.part.component.geometry, isolation)
 }
 
 /** A ground lead that would land on a pad is extended straight on until it reaches bare plane. */

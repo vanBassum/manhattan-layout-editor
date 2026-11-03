@@ -3,7 +3,7 @@ import { EXAMPLES } from '../documents/examples'
 import { DEFAULT_SETTINGS } from '../documents/projectFormat'
 import { buildNetlist, buildProjectNetlist } from '../model/definitions'
 import { inflate, rectsOverlap } from '../model/geometry'
-import { analyzeLeads, bodyBounds, defaultLeadEnds } from '../model/layout'
+import { analyzeLeads, bodyBounds, defaultLeadEnds, findSpacingViolations, findSplitNets } from '../model/layout'
 import { isRealNet } from '../model/netlist'
 import { completeSchematic, projectSchematic, type FullSchematic } from '../model/schematic'
 import type { BuiltNetlist, Layout, NetComponent, Settings } from '../model/types'
@@ -72,6 +72,12 @@ describe.each(inputs)('$name', ({ netlist, settings, schematic }) => {
 
     it('gives every net an island', () => {
       expect(netlist.nets.filter((net) => !layout.islands.some((i) => i.net === net))).toEqual([])
+    })
+
+    // Islands that touch are fine: the isolation is burned centred on their shared edge.
+    it('keeps islands of different nets from overlapping, each in one piece', () => {
+      expect([...findSpacingViolations(layout.islands)]).toEqual([])
+      expect([...findSplitNets(layout.islands)]).toEqual([])
     })
   })
 })
