@@ -20,7 +20,7 @@ const PAD_SPACING = 1.5
 const FOREIGN_LEAD_CLEARANCE = 0.8
 
 /** SMD parts are made to straddle an edge: their other end may sit right next to the pad. */
-const foreignClearance = (lead: Lead) => (lead.part.geometry.shape === 'smd' ? 0.05 : FOREIGN_LEAD_CLEARANCE)
+const foreignClearance = (lead: Lead) => (lead.part.component.geometry.shape === 'smd' ? 0.05 : FOREIGN_LEAD_CLEARANCE)
 const PAD_SEARCH_RADIUS = 15
 const PAD_SEARCH_STEP = 0.5
 const PLANE_MARGIN = 5
@@ -58,13 +58,14 @@ function manhattanLayout(netlist: BuiltNetlist, settings: Settings) {
   const ground = netlist.nets.find(isGroundNet) ?? busiest
 
   const parts = placeComponents(netlist, settings)
-  const leads: Lead[] = parts.flatMap((part) =>
-    part.component.pins.flatMap((pin, index) =>
+  const leads: Lead[] = parts.flatMap((part) => {
+    const { geometry } = part.component
+    return part.component.pins.flatMap((pin, index) =>
       isRealNet(pin.net)
-        ? [{ part, index, net: pin.net, anchor: toWorld(part.geometry.anchors[index], part.placement), end: part.ends[index], limit: leadLimit(part.geometry, settings) }]
+        ? [{ part, index, net: pin.net, anchor: toWorld(geometry.anchors[index], part.placement), end: part.ends[index], limit: leadLimit(geometry, settings) }]
         : [],
-    ),
-  )
+    )
+  })
 
   const padNets = netlist.nets
     .filter((net) => net !== ground)
@@ -88,7 +89,7 @@ function manhattanLayout(netlist: BuiltNetlist, settings: Settings) {
       const pad = { net, rects: [rect] }
       const cost =
         own.reduce((sum, l) => {
-          const target = solderPoint(pad, l.anchor, l.part.geometry, settings.isolation)
+          const target = solderPoint(pad, l.anchor, l.part.component.geometry, settings.isolation)
           return sum + leadCost(Math.hypot(target.x - l.anchor.x, target.y - l.anchor.y), l.limit)
         }, 0) +
         0.1 * Math.hypot(offset.x, offset.y)
@@ -125,7 +126,7 @@ function gridOutward(r: Rect, step: number): Rect {
 function padEnd(lead: Lead, pads: Island[], isolation: number): Point | null {
   const pad = pads.find((p) => p.net === lead.net)
   if (!pad || onCopper(pad, lead.end, isolation)) return null
-  return solderPoint(pad, lead.anchor, lead.part.geometry, isolation)
+  return solderPoint(pad, lead.anchor, lead.part.component.geometry, isolation)
 }
 
 /** A ground lead that would land on a pad is extended straight on until it reaches bare plane. */

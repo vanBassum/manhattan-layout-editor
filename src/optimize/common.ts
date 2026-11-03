@@ -34,7 +34,6 @@ export function spiralOffsets(radius: number, step: number): Point[] {
 /** A component placed by the optimizer, with its unbent lead ends in world coordinates. */
 export interface PlacedPart {
   component: BuiltComponent
-  geometry: Geometry
   placement: Placement
   ends: Point[]
   /** Body and leads in world coordinates, grown by half the clearance on every side. */
@@ -202,7 +201,7 @@ function findBestSpot<S extends Spot>(
         if (placed.some((p) => rectsOverlap(p.keepOut, keepOut))) continue
         const spot = score(placement, localEnds.map((p) => toWorld(p, placement)), offset)
         if (!spot || endsTooClose(spot.ends, nets, placed)) continue
-        if (!best || spot.cost < best.spot.cost) best = { part: { component, geometry, placement, ends: spot.ends, keepOut }, spot }
+        if (!best || spot.cost < best.spot.cost) best = { part: { component, placement, ends: spot.ends, keepOut }, spot }
       }
     }
     if (best) return best
