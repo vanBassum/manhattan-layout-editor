@@ -1,9 +1,9 @@
 import { errorText } from './errorText'
 import { generatedGeometry } from './footprintTemplates'
-import { createLayout, withFootprintChoices } from './layout'
-import { isJsonObject, parseNetlist } from './netlist'
+import { withFootprintChoices } from './layout'
+import { isJsonObject } from './netlist'
 import { symbolTemplate } from './schematicSymbols'
-import type { BuiltNetlist, Geometry, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, Settings, SymbolDefinition } from './types'
+import type { BuiltNetlist, Geometry, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, SymbolDefinition } from './types'
 
 // A part's symbol and footprints come from the project's own definitions. Parts without one get a
 // built-in template, which is copied into the project when it is loaded or saved; until then the
@@ -165,50 +165,6 @@ export function withDefinitions(project: Project): Project {
   })
   if (!changed && project.definitions) return project
   return { ...project, netlist: { ...project.netlist, components }, definitions }
-}
-
-/** A project that starts over from netlist `text`, on a fresh grid with no schematic yet. */
-export function importedProject(text: string, guid: string, settings: Settings): Project {
-  const netlist = parseNetlist(text)
-  return withDefinitions({
-    guid,
-    netlist,
-    layout: createLayout(buildNetlist(netlist, [], undefined)),
-    schematic: undefined,
-    definitions: undefined,
-    settings,
-  })
-}
-
-/**
- * `current` with netlist `text` imported again; it stays the same project, so it keeps its guid.
- * Parts, islands and schematic symbols stay where they were; wires and labels start over from the
- * imported nets.
- */
-export function reimportedProject(text: string, current: Project): Project {
-  const imported = parseNetlist(text)
-  // A value typed in the editor survives a re-import that still has none (EasyEDA exports "{Value}"
-  // as empty), and so does the part's definition, unless its pins changed and it no longer fits.
-  const previous = new Map(current.netlist.components.map((c) => [c.ref, c]))
-  const netlist = withoutUnfitDefinitions(
-    {
-      ...imported,
-      components: imported.components.map((c) => ({
-        ...c,
-        value: c.value || previous.get(c.ref)?.value || '',
-        definition: previous.get(c.ref)?.definition,
-      })),
-    },
-    current.definitions,
-  )
-  return withDefinitions({
-    guid: current.guid,
-    netlist,
-    layout: createLayout(buildNetlist(netlist, current.layout.placements, current.definitions), current.layout),
-    schematic: current.schematic ? { placements: current.schematic.placements } : undefined,
-    definitions: current.definitions,
-    settings: current.settings,
-  })
 }
 
 const isPinList = (v: unknown) => Array.isArray(v) && v.every((p) => isJsonObject(p) && typeof p.number === 'string')

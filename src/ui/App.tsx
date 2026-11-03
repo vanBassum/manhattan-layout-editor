@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { connectAgentBridge } from '../agentBridge'
-import { buildNetlist, buildProjectNetlist, importedProject, reimportedProject } from '../definitions'
+import { buildNetlist, buildProjectNetlist } from '../definitions'
+import { importedProject, reimportedProject } from '../netlistImport'
 import { runAgentCommand, type AgentTab } from '../agentDispatch'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type MoveMode, type Tool } from './pcb/Canvas'
 import { exportDxf } from '../exportDxf'
