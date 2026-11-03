@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { boundsOf, inflate, nearestPointOnRects, outlinePath, rectBetween, rectsOverlap, snapToGrid } from './geometry'
-import { analyzeLeads, bodyBounds, toWorld as toWorldPoint, type MovingPart, type PinStatus } from './layout'
+import { analyzeLeads, bodyBounds, toWorld as toWorldPoint, type LeadInfo, type MovingPart, type PinStatus } from './layout'
 import { cutNeighbours, findCuts, type Cut, type Side } from './cuts'
 import { draggedLayout, type LayoutDrag } from './layoutDrag'
 import { islandEdges, moveIslandEdge, type IslandEdge } from './raster'
 import { addToSelection, isSelected, isToggleClick, selectedNets, selectedRefs, selectionOf, toggleSelected, type SingleSelection } from './selection'
-import type { BuiltNetlist, Island, Layout, Placement, Point, Rect, Selection } from './types'
+import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, Placement, Point, Rect, Selection } from './types'
 import { layerClasses, layerOpacities, type Layers } from './ui/layers'
 import { BodyShape, COPPER_COLOR, LEAD_COLOR } from './ui/pcb/partDrawing'
 import { gridPitch, gridPitches, Rulers, useViewport, ViewportGrid, type View } from './ui/viewport'
@@ -95,6 +95,177 @@ const HANDLE_CURSORS: Record<Handle, string> = {
 
 /** The ground plane goes underneath the pads glued onto it. */
 const planesFirst = (islands: Island[]) => [...islands.filter((i) => i.plane), ...islands.filter((i) => !i.plane)]
+
+/** A plane is paler copper, selected copper is lighter, and a problem net gets a thick red outline. */
+function islandStyle(plane: boolean, selected: boolean, violating: boolean): { fill: string; stroke: string; strokeWidthPx: number } {
+  const fill = plane ? (selected ? '#f3d6b4' : '#ecc9a4') : (selected ? '#f0a860' : COPPER_COLOR)
+  if (violating) return { fill, stroke: '#e02020', strokeWidthPx: 3 }
+  if (selected) return { fill, stroke: '#7a3d00', strokeWidthPx: 2 }
+  return { fill, stroke: '#9c5a24', strokeWidthPx: 1 }
+}
+
+/** A part as drawn: its placement and where each of its leads ends up. */
+interface DrawnPart {
+  component: BuiltComponent
+  placement: Placement
+  geometry: Geometry
+  leads: LeadInfo[]
+}
+
+interface LayoutPartProps {
+  part: DrawnPart
+  selected: boolean
+  opacity: number
+  /** One screen pixel in mm. */
+  px: number
+  onPointerDown: (e: ReactPointerEvent) => void
+  onPointerEnter: () => void
+  onPointerLeave: () => void
+  onLeadPointerDown: (e: ReactPointerEvent, pin: string, end: Point) => void
+}
+
+function LayoutPart({ part, selected, opacity, px, onPointerDown, onPointerEnter, onPointerLeave, onLeadPointerDown }: LayoutPartProps) {
+  const { component, placement, geometry, leads } = part
+  const { body } = geometry
+  const center = toWorldPoint({ x: body.x + body.w / 2, y: body.y + body.h / 2 }, placement)
+  const rotatedHeight = bodyBounds(geometry, placement).h
+  return (
+    <g className="part" opacity={opacity} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+      {leads.map((lead, k) => (
+        <line
+          key={k}
+          className="lead"
+          x1={lead.anchor.x}
+          y1={lead.anchor.y}
+          x2={lead.end.x}
+          y2={lead.end.y}
+          stroke={LEAD_COLOR}
+          strokeWidth={0.35}
+          strokeLinecap="round"
+        />
+      ))}
+      <g transform={`translate(${placement.x} ${placement.y}) rotate(${placement.rotation})`}>
+        <BodyShape geometry={geometry} stroke={selected ? '#2a7fff' : '#111'} strokeWidth={(selected ? 2.5 : 1) * px} />
+      </g>
+      {leads.map((lead, k) => {
+        const pin = component.pins[k]
+        const color = PIN_COLORS[lead.status]
+        const { x, y } = lead.end
+        return (
+          <g key={k} className="lead-end" onPointerDown={(e) => onLeadPointerDown(e, pin.number, lead.end)}>
+            <title>
+              {`${component.ref}.${pin.number}: ${pin.net || '(no net)'} — drag to bend the lead`}
+            </title>
+            {/* Square marks pin 1. */}
+            {k === 0 ? (
+              <rect x={x - 0.5} y={y - 0.5} width={1} height={1} fill={color} />
+            ) : (
+              <circle cx={x} cy={y} r={0.5} fill={color} />
+            )}
+            <circle cx={x} cy={y} r={Math.max(0.9, 7 * px)} fill="transparent" />
+          </g>
+        )
+      })}
+      <text x={center.x} y={center.y + 0.45} className="part-ref">
+        {component.ref}
+      </text>
+      {component.value && (
+        <text x={center.x} y={center.y + rotatedHeight / 2 + 1.3} className="part-value">
+          {component.value}
+        </text>
+      )}
+    </g>
+  )
+}
+
+interface IslandEdgeHandleProps {
+  edge: IslandEdge
+  /** One screen pixel in mm. */
+  px: number
+  /** A hovered edge shows the + that pulls out a tab. */
+  hovered: boolean
+  onPointerEnter: () => void
+  onPointerLeave: () => void
+  onEdgePointerDown: (e: ReactPointerEvent) => void
+  onGrowPointerDown: (e: ReactPointerEvent) => void
+}
+
+function IslandEdgeHandle({ edge, px, hovered, onPointerEnter, onPointerLeave, onEdgePointerDown, onGrowPointerDown }: IslandEdgeHandleProps) {
+  const [x1, y1, x2, y2] = edge.axis === 'x' ? [edge.at, edge.from, edge.at, edge.to] : [edge.from, edge.at, edge.to, edge.at]
+  // The + sits just outside the island, touching the edge's hit area so the pointer can reach it.
+  const outward = (edge.inside === 'low' ? 1 : -1) * 9 * px
+  const mid = (edge.from + edge.to) / 2
+  const plus = edge.axis === 'x' ? { x: edge.at + outward, y: mid } : { x: mid, y: edge.at + outward }
+  return (
+    <g className={hovered ? 'island-edge hovered' : 'island-edge'} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+      <line
+        className={edge.axis === 'x' ? 'cut-x' : 'cut-y'}
+        x1={x1}
+        y1={y1}
+        x2={x2}
+        y2={y2}
+        strokeWidth={6 * px}
+        onPointerDown={onEdgePointerDown}
+      />
+      {hovered && (
+        <g className="grow-button" onPointerDown={onGrowPointerDown}>
+          <title>Add a {TAB_WIDTH_MM} × {TAB_DEPTH_MM} mm tab here; drag the edge to move all of it</title>
+          <circle cx={plus.x} cy={plus.y} r={7 * px} strokeWidth={px} />
+          <path
+            d={`M${plus.x - 3.5 * px} ${plus.y}h${7 * px}M${plus.x} ${plus.y - 3.5 * px}v${7 * px}`}
+            strokeWidth={1.5 * px}
+          />
+        </g>
+      )}
+    </g>
+  )
+}
+
+interface RectHandlesProps {
+  rect: Rect
+  /** Outline the rectangle, to tell it apart from the other rectangles of its island. */
+  outlined: boolean
+  /** One screen pixel in mm. */
+  px: number
+  onHandlePointerDown: (e: ReactPointerEvent, handle: Handle) => void
+}
+
+function RectHandles({ rect, outlined, px, onHandlePointerDown }: RectHandlesProps) {
+  return (
+    <g>
+      {outlined && (
+        <rect
+          x={rect.x}
+          y={rect.y}
+          width={rect.w}
+          height={rect.h}
+          fill="none"
+          stroke="#2a7fff"
+          strokeWidth={px}
+          strokeDasharray={`${4 * px} ${3 * px}`}
+          pointerEvents="none"
+        />
+      )}
+      {HANDLES.map((handle) => {
+        const p = handlePosition(rect, handle)
+        return (
+          <rect
+            key={handle}
+            x={p.x - 4 * px}
+            y={p.y - 4 * px}
+            width={8 * px}
+            height={8 * px}
+            fill="#fff"
+            stroke="#2a7fff"
+            strokeWidth={px}
+            style={{ cursor: HANDLE_CURSORS[handle] }}
+            onPointerDown={(e) => onHandlePointerDown(e, handle)}
+          />
+        )
+      })}
+    </g>
+  )
+}
 
 export function Canvas(props: Props) {
   const { netlist, layout, onLayoutChange, onBeginEdit, selection, onSelect, snap, isolation, problemNets, fitRequest, layers, tool, moveMode, rectHandles, gridLinesPerMajor } = props
@@ -299,6 +470,7 @@ export function Canvas(props: Props) {
   const pitch = gridPitch(view.scale, gridPitches(FINE_GRID_MM, gridLinesPerMajor))
   const selectedIsland = selection?.kind === 'island' ? islandsByNet.get(selection.net) : undefined
   const selectedRectIndex = selection?.kind === 'island' ? selection.rectIndex : -1
+  const handleRect = rectHandles ? selectedIsland?.rects[selectedRectIndex] : undefined
   const highlightedNets = new Set(selectedNets(selection))
   const selectedEdges = selectedIsland && !selectedIsland.plane ? islandEdges(layout.islands, selectedIsland.net) : []
   const highlightedRefs = new Set(selectedRefs(selection))
@@ -317,17 +489,16 @@ export function Canvas(props: Props) {
         <ViewportGrid view={view} size={size} pitch={pitch} linesPerMajor={gridLinesPerMajor} />
 
         {planesFirst(layout.islands).map((island) => {
-          const violating = problemNets.has(island.net)
-          const selected = highlightedNets.has(island.net)
+          const style = islandStyle(island.plane === true, highlightedNets.has(island.net), problemNets.has(island.net))
           return (
             <g key={island.net} className="island">
               {/* The copper left after cutting; the rectangles themselves only catch the pointer. */}
               <path
                 d={outlinePath(island.rects, isolation / 2)}
-                fill={island.plane ? (selected ? '#f3d6b4' : '#ecc9a4') : selected ? '#f0a860' : COPPER_COLOR}
+                fill={style.fill}
                 fillRule="evenodd"
-                stroke={violating ? '#e02020' : selected ? '#7a3d00' : '#9c5a24'}
-                strokeWidth={(violating ? 3 : selected ? 2 : 1) * px}
+                stroke={style.stroke}
+                strokeWidth={style.strokeWidthPx * px}
                 pointerEvents="none"
               />
               {island.rects.map((r, k) => (
@@ -393,140 +564,50 @@ export function Canvas(props: Props) {
           }),
         )}
 
-        {parts.map(({ component, placement, geometry, leads }) => {
-          const selected = highlightedRefs.has(component.ref)
-          const { body } = geometry
-          const center = toWorldPoint({ x: body.x + body.w / 2, y: body.y + body.h / 2 }, placement)
-          const rotatedHeight = bodyBounds(geometry, placement).h
+        {parts.map((part) => {
+          const { ref } = part.component
           return (
-            <g
-              key={component.ref}
-              className="part"
-              opacity={partOpacity(component.ref) * layers.parts.opacity}
-              onPointerDown={(e) => onPartPointerDown(e, component.ref)}
-              onPointerEnter={() => setHoveredRef(component.ref)}
-              onPointerLeave={() => setHoveredRef((ref) => (ref === component.ref ? null : ref))}
-            >
-              {leads.map((lead, k) => (
-                <line
-                  key={k}
-                  className="lead"
-                  x1={lead.anchor.x}
-                  y1={lead.anchor.y}
-                  x2={lead.end.x}
-                  y2={lead.end.y}
-                  stroke={LEAD_COLOR}
-                  strokeWidth={0.35}
-                  strokeLinecap="round"
-                />
-              ))}
-              <g transform={`translate(${placement.x} ${placement.y}) rotate(${placement.rotation})`}>
-                <BodyShape geometry={geometry} stroke={selected ? '#2a7fff' : '#111'} strokeWidth={(selected ? 2.5 : 1) * px} />
-              </g>
-              {leads.map((lead, k) => {
-                const pin = component.pins[k]
-                const color = PIN_COLORS[lead.status]
-                const { x, y } = lead.end
-                return (
-                  <g key={k} className="lead-end" onPointerDown={(e) => onLeadPointerDown(e, placement, pin.number, lead.end)}>
-                    <title>
-                      {`${component.ref}.${pin.number}: ${pin.net || '(no net)'} — drag to bend the lead`}
-                    </title>
-                    {/* Square marks pin 1. */}
-                    {k === 0 ? (
-                      <rect x={x - 0.5} y={y - 0.5} width={1} height={1} fill={color} />
-                    ) : (
-                      <circle cx={x} cy={y} r={0.5} fill={color} />
-                    )}
-                    <circle cx={x} cy={y} r={Math.max(0.9, 7 * px)} fill="transparent" />
-                  </g>
-                )
-              })}
-              <text x={center.x} y={center.y + 0.45} className="part-ref">
-                {component.ref}
-              </text>
-              {component.value && (
-                <text x={center.x} y={center.y + rotatedHeight / 2 + 1.3} className="part-value">
-                  {component.value}
-                </text>
-              )}
-            </g>
+            <LayoutPart
+              key={ref}
+              part={part}
+              selected={highlightedRefs.has(ref)}
+              opacity={partOpacity(ref) * layers.parts.opacity}
+              px={px}
+              onPointerDown={(e) => onPartPointerDown(e, ref)}
+              onPointerEnter={() => setHoveredRef(ref)}
+              onPointerLeave={() => setHoveredRef((hovered) => (hovered === ref ? null : hovered))}
+              onLeadPointerDown={(e, pin, end) => onLeadPointerDown(e, part.placement, pin, end)}
+            />
           )
         })}
 
-        {selectedEdges.map((edge, k) => {
-          const net = selectedIsland!.net
-          const [x1, y1, x2, y2] = edge.axis === 'x' ? [edge.at, edge.from, edge.at, edge.to] : [edge.from, edge.at, edge.to, edge.at]
-          // The + sits just outside the island, touching the edge's hit area so the pointer can reach it.
-          const outward = (edge.inside === 'low' ? 1 : -1) * 9 * px
-          const mid = (edge.from + edge.to) / 2
-          const plus = edge.axis === 'x' ? { x: edge.at + outward, y: mid } : { x: mid, y: edge.at + outward }
-          const hoverKey = `${net}:${k}`
-          return (
-            <g
-              key={k}
-              className={hoveredEdge === hoverKey ? 'island-edge hovered' : 'island-edge'}
-              onPointerEnter={() => setHoveredEdge(hoverKey)}
-              onPointerLeave={() => setHoveredEdge((key) => (key === hoverKey ? null : key))}
-            >
-              <line
-                className={edge.axis === 'x' ? 'cut-x' : 'cut-y'}
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                strokeWidth={6 * px}
-                onPointerDown={(e) => onEdgePointerDown(e, net, edge)}
+        {selectedIsland &&
+          selectedEdges.map((edge, k) => {
+            const net = selectedIsland.net
+            const hoverKey = `${net}:${k}`
+            return (
+              <IslandEdgeHandle
+                key={k}
+                edge={edge}
+                px={px}
+                hovered={hoveredEdge === hoverKey}
+                onPointerEnter={() => setHoveredEdge(hoverKey)}
+                onPointerLeave={() => setHoveredEdge((key) => (key === hoverKey ? null : key))}
+                onEdgePointerDown={(e) => onEdgePointerDown(e, net, edge)}
+                onGrowPointerDown={(e) => onGrowPointerDown(e, net, edge)}
               />
-              {hoveredEdge === hoverKey && (
-                <g className="grow-button" onPointerDown={(e) => onGrowPointerDown(e, net, edge)}>
-                  <title>Add a {TAB_WIDTH_MM} × {TAB_DEPTH_MM} mm tab here; drag the edge to move all of it</title>
-                  <circle cx={plus.x} cy={plus.y} r={7 * px} strokeWidth={px} />
-                  <path
-                    d={`M${plus.x - 3.5 * px} ${plus.y}h${7 * px}M${plus.x} ${plus.y - 3.5 * px}v${7 * px}`}
-                    strokeWidth={1.5 * px}
-                  />
-                </g>
-              )}
-            </g>
-          )
-        })}
+            )
+          })}
 
         {/* Handles only on the clicked rectangle: optimized islands can consist of hundreds. */}
-        {rectHandles && selectedIsland?.rects.map((r, k) => k === selectedRectIndex && (
-          <g key={k}>
-            {selectedIsland.rects.length > 1 && (
-              <rect
-                x={r.x}
-                y={r.y}
-                width={r.w}
-                height={r.h}
-                fill="none"
-                stroke="#2a7fff"
-                strokeWidth={px}
-                strokeDasharray={`${4 * px} ${3 * px}`}
-                pointerEvents="none"
-              />
-            )}
-            {HANDLES.map((handle) => {
-              const p = handlePosition(r, handle)
-              return (
-                <rect
-                  key={handle}
-                  x={p.x - 4 * px}
-                  y={p.y - 4 * px}
-                  width={8 * px}
-                  height={8 * px}
-                  fill="#fff"
-                  stroke="#2a7fff"
-                  strokeWidth={px}
-                  style={{ cursor: HANDLE_CURSORS[handle] }}
-                  onPointerDown={(e) => onHandlePointerDown(e, selectedIsland, k, handle)}
-                />
-              )
-            })}
-          </g>
-        ))}
+        {selectedIsland && handleRect && (
+          <RectHandles
+            rect={handleRect}
+            outlined={selectedIsland.rects.length > 1}
+            px={px}
+            onHandlePointerDown={(e, handle) => onHandlePointerDown(e, selectedIsland, selectedRectIndex, handle)}
+          />
+        )}
 
         {marquee && (
           <rect
