@@ -15,7 +15,6 @@ import { chooseFootprints, createLayout, findPinIssues, findSpacingViolations, f
 import { withValues } from '../model/netlist'
 import { findBuildStyle } from '../model/buildStyles'
 import { AiHelpDialog, HelpDialog, QuestionDialog, type Question } from './dialogs'
-import { Icon } from './icons'
 import { ComponentList, PartProperties, SchematicCheck, Section, SelectionDetails, Validation } from './panels'
 import { DEFAULT_SETTINGS } from '../documents/projectFormat'
 import { projectFile, restoreErrors } from '../documents/projectStore'
@@ -47,18 +46,20 @@ import {
   parseGridLinesPerMajor,
   parseLayerViews,
   parseTheme,
-  parseView,
+  parseRightPane,
+  parseSplit,
+  RIGHT_PANE_KEY,
+  SPLIT_KEY,
   PCB_GRID_KEY,
   SCHEMATIC_GRID_KEY,
   SCHEMATIC_LAYERS_KEY,
   THEME_KEY,
   usePreference,
-  VIEW_KEY,
-  type ViewMode,
 } from './preferences'
 import { SchematicToolRail } from './SchematicToolRail'
-import { SimulationPanel } from './SimulationPanel'
-import { RightPaneSwitch, type RightPane } from './RightPaneSwitch'
+import { SimulationResults, SimulationSidebar, useSimulation } from './SimulationPanel'
+import { RightPaneSwitch } from './RightPaneSwitch'
+import { PaneDivider } from './PaneDivider'
 import { useShortcuts } from './shortcuts'
 import { useDocuments } from './useDocuments'
 import { useTabs, type UndoDirection } from './useTabs'
@@ -67,6 +68,9 @@ type Pane = 'schematic' | 'layout'
 
 /** The name of a project opened from a share link, until it is saved. */
 const SHARED_PROJECT = 'Shared project'
+
+/** A project's simulation before the user sets one up. */
+const NO_SIMULATION: Simulation = { sources: [], models: {} }
 
 /** A project update that changes the layout with `update`. */
 const layoutUpdate =
@@ -82,15 +86,11 @@ export function App() {
   const [selection, setSelection] = useState<Selection>(null)
   const [tool, setTool] = useState<Tool>('select')
   const [moveMode, setMoveMode] = useState<MoveMode>('part')
-  const [view, setView] = usePreference(VIEW_KEY, parseView)
-  /** The pane last clicked in; keyboard shortcuts act on it when both are shown. */
-  const [activePane, setActivePane] = useState<Pane>(() => (view === 'schematic' ? 'schematic' : 'layout'))
+  /** The pane last clicked in; keyboard shortcuts act on it. */
+  const [activePane, setActivePane] = useState<Pane>('schematic')
   const [schematicTool, setSchematicTool] = useState<SchematicTool>('select')
-  const [rightPane, setRightPane] = useState<RightPane>('pcb')
-  const showView = (mode: ViewMode) => {
-    setView(mode)
-    if (mode !== 'split') setActivePane(mode)
-  }
+  const [rightPane, setRightPane] = usePreference(RIGHT_PANE_KEY, parseRightPane)
+  const [split, setSplit] = usePreference(SPLIT_KEY, parseSplit)
   const [fitRequest, setFitRequest] = useState(1)
   const refit = () => setFitRequest((n) => n + 1)
   const [error, setError] = useState(() => restoreErrors.join(' '))
@@ -155,6 +155,9 @@ export function App() {
     [schematicNets, project.definitions],
   )
   const pinsNotInPcb = useMemo(() => pinsWithOtherNet(netlist, schematicNets.netlist), [netlist, schematicNets])
+  const simulation = project.simulation ?? NO_SIMULATION
+  // The schematic is what gets simulated; runs belong to the tab's project.
+  const simulationSession = useSimulation(schematicNets.netlist, project.definitions, simulation, activeId)
   const schematicOpenPins = useMemo(() => unconnectedPins(schematicNets.netlist), [schematicNets])
 
   const stepShownTab = (direction: UndoDirection) => {
@@ -364,7 +367,7 @@ export function App() {
   const changeValue = (ref: string, value: string) =>
     commitEdit((p) => ({ ...p, netlist: withValues(p.netlist, [{ ref, value }]) }))
 
-  const changeSimulation = (simulation: Simulation) => commitEdit((p) => ({ ...p, simulation }))
+  const changeSimulation = (next: Simulation) => commitEdit((p) => ({ ...p, simulation: next }))
 
   const selectAll = () => {
     const wiring = { wires: schematic.wires.map((_, i) => i), labels: schematic.labels.map((_, i) => i), points: [] }
@@ -436,7 +439,7 @@ export function App() {
   return (
     <div className="app">
       {/* Same columns as the workspace below, so the project tabs start where the canvas does. */}
-      <header className={`header view-${view}`}>
+      <header className="header">
         <div className="header-start">
           <AppMenu
             agentConnected={agentConnected}
@@ -483,27 +486,11 @@ export function App() {
           onSwitch={switchTab}
           onClose={closeTab}
         />
-        <div className="view-switch" role="group" aria-label="View">
-          <button className={view === 'schematic' ? 'active' : ''} aria-pressed={view === 'schematic'} onClick={() => showView('schematic')}>
-            <Icon name="schematic" />Schematic
-          </button>
-          <button
-            className={view === 'split' ? 'active' : ''}
-            aria-pressed={view === 'split'}
-            onClick={() => showView('split')}
-            title="Schematic and PCB side by side"
-          >
-            <Icon name="split" />Split
-          </button>
-          <button className={view === 'layout' ? 'active' : ''} aria-pressed={view === 'layout'} onClick={() => showView('layout')}>
-            <Icon name="grid" />PCB
-          </button>
-        </div>
+        <RightPaneSwitch pane={rightPane} onChange={setRightPane} />
       </header>
 
       {/* The simulation takes the PCB's place, sidebar included. */}
-      <div className={`workspace view-${view}${view !== 'schematic' && rightPane === 'simulation' ? ' simulating' : ''}`}>
-        {view !== 'layout' && (
+      <div className="workspace">
           <aside className="sidebar">
             {/* The schematic panel has the most room, so the shared list lives here and takes the rest of its height. */}
             <Section title={`Components (${schematicNetlist.components.length})`} fill>
@@ -511,7 +498,7 @@ export function App() {
                 netlist={schematicNetlist}
                 selection={selection}
                 onSelect={setSelection}
-                pcb={view === 'split' ? { refsWithIssues: pinIssues.refsWithIssues, onChangeFootprint: openFootprintDialog } : undefined}
+                pcb={{ refsWithIssues: pinIssues.refsWithIssues, onChangeFootprint: openFootprintDialog }}
               />
             </Section>
             <Section title="Properties">
@@ -532,7 +519,6 @@ export function App() {
               />
             </Section>
           </aside>
-        )}
 
         <main className="canvas-area">
           <CanvasBanners
@@ -550,55 +536,44 @@ export function App() {
             onUpdatePcb={updatePcb}
           />
           <div className="canvas-panes">
-            {view !== 'layout' && (
-              <section className="canvas-pane" onPointerDownCapture={() => setActivePane('schematic')}>
-                <SchematicToolRail
+            <section className="canvas-pane" style={{ flexGrow: split }} onPointerDownCapture={() => setActivePane('schematic')}>
+              <SchematicToolRail
+                tool={schematicTool}
+                onToolChange={setSchematicTool}
+                onFit={refit}
+                canTurn={canTurnSchematic}
+                onRotate={() => rotateSelected(90, 'schematic')}
+                onFlip={flipSelected}
+                gridLinesPerMajor={schematicGrid}
+                onGridChange={setSchematicGrid}
+                layers={schematicLayers}
+                onLayersChange={setSchematicLayers}
+              />
+              <div className="canvas-frame">
+                <SchematicView
+                  netlist={schematicNetlist}
+                  schematic={schematic}
+                  nets={schematicNets}
+                  onChange={updateSchematic}
+                  onBeginEdit={beginEdit}
+                  selection={selection}
+                  onSelect={setSelection}
                   tool={schematicTool}
-                  onToolChange={setSchematicTool}
-                  onFit={refit}
-                  canTurn={canTurnSchematic}
-                  onRotate={() => rotateSelected(90, 'schematic')}
-                  onFlip={flipSelected}
-                  gridLinesPerMajor={schematicGrid}
-                  onGridChange={setSchematicGrid}
+                  fitRequest={fitRequest}
                   layers={schematicLayers}
-                  onLayersChange={setSchematicLayers}
+                  gridLinesPerMajor={schematicGrid}
                 />
-                <div className="canvas-frame">
-                  <SchematicView
-                    netlist={schematicNetlist}
-                    schematic={schematic}
-                    nets={schematicNets}
-                    onChange={updateSchematic}
-                    onBeginEdit={beginEdit}
-                    selection={selection}
-                    onSelect={setSelection}
-                    tool={schematicTool}
-                    fitRequest={fitRequest}
-                    layers={schematicLayers}
-                    gridLinesPerMajor={schematicGrid}
-                  />
-                </div>
-              </section>
-            )}
-            {view !== 'schematic' && rightPane === 'simulation' && (
-              <section className="canvas-pane">
-                <RightPaneSwitch pane={rightPane} onChange={setRightPane} />
+              </div>
+            </section>
+            <PaneDivider share={split} onChange={setSplit} />
+            {rightPane === 'simulation' ? (
+              <section className="canvas-pane" style={{ flexGrow: 1 - split }}>
                 <div className="simulation-frame">
-                  {/* Keyed by tab: a run belongs to the project it ran. */}
-                  <SimulationPanel
-                    key={activeId}
-                    netlist={schematicNets.netlist}
-                    definitions={project.definitions}
-                    simulation={project.simulation}
-                    onChange={changeSimulation}
-                  />
+                  <SimulationResults session={simulationSession} />
                 </div>
               </section>
-            )}
-            {view !== 'schematic' && rightPane === 'pcb' && (
-              <section className="canvas-pane" onPointerDownCapture={() => setActivePane('layout')}>
-                <RightPaneSwitch pane={rightPane} onChange={setRightPane} />
+            ) : (
+              <section className="canvas-pane" style={{ flexGrow: 1 - split }} onPointerDownCapture={() => setActivePane('layout')}>
                 <PcbToolRail
                   tool={tool}
                   onToolChange={setTool}
@@ -638,7 +613,12 @@ export function App() {
           </div>
         </main>
 
-        {view !== 'schematic' && rightPane === 'pcb' && (
+        {rightPane === 'simulation' && (
+          <aside className="sidebar">
+            <SimulationSidebar session={simulationSession} netlist={schematicNets.netlist} simulation={simulation} onChange={changeSimulation} />
+          </aside>
+        )}
+        {rightPane === 'pcb' && (
           <aside className="sidebar">
             <Section title="Placement">
               <SelectionDetails
@@ -649,7 +629,7 @@ export function App() {
                 onChangeFootprint={openFootprintDialog}
               />
             </Section>
-            <PcbSettings settings={settings} onChange={setSettings}onResetToGrid={resetToGrid} boardSize={boardSize} />
+            <PcbSettings settings={settings} onChange={setSettings} onResetToGrid={resetToGrid} boardSize={boardSize} />
             <Section title="Design rule check">
               <Validation
                 components={netlist.components.length}
@@ -660,17 +640,6 @@ export function App() {
                 netsSplit={splitNets.size}
               />
             </Section>
-            {/* The component list lives in the schematic panel; only without it does the PCB panel show one. */}
-            {view === 'layout' && (
-              <Section title={`Components (${builtNetlist.components.length})`} fill>
-                <ComponentList
-                  netlist={builtNetlist}
-                  selection={selection}
-                  onSelect={setSelection}
-                  pcb={{ refsWithIssues: pinIssues.refsWithIssues, onChangeFootprint: openFootprintDialog }}
-                />
-              </Section>
-            )}
           </aside>
         )}
       </div>

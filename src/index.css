@@ -158,14 +158,6 @@ input:focus-visible {
   border-bottom: 1px solid var(--border);
 }
 
-.header.view-schematic {
-  grid-template-columns: 260px minmax(0, 1fr) auto;
-}
-
-.header.view-layout {
-  grid-template-columns: auto minmax(0, 1fr) 260px;
-}
-
 .header-start {
   display: flex;
   align-items: center;
@@ -188,28 +180,16 @@ input:focus-visible {
   padding: 0;
 }
 
+/* Schematic panel left; right, the panel of what the right pane shows (PCB or simulation). */
 .workspace {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 260px;
+  grid-template-columns: 260px minmax(0, 1fr) 260px;
   gap: 8px;
   padding: 8px;
   min-height: 0;
 }
 
-/* Side panels follow the view: schematic panel left, PCB panel right, both in split view. */
-.workspace.view-schematic {
-  grid-template-columns: 260px minmax(0, 1fr);
-}
-
-.workspace.view-layout {
-  grid-template-columns: minmax(0, 1fr) 260px;
-}
-
-.workspace.view-split {
-  grid-template-columns: 260px minmax(0, 1fr) 260px;
-}
-
-/* Segmented Layout / Schematic toggle in the header. */
+/* Segmented PCB layout / Simulation toggle in the header. */
 .view-switch {
   display: flex;
   border: 1px solid var(--border);
@@ -233,19 +213,6 @@ input:focus-visible {
 .view-switch button.active {
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-/* PCB layout / Simulation toggle above the right-hand pane. */
-.pane-switch {
-  background: var(--panel);
-}
-
-.workspace.view-split.simulating {
-  grid-template-columns: 260px minmax(0, 1fr);
-}
-
-.workspace.view-layout.simulating {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .simulation-frame {
@@ -678,24 +645,14 @@ input:focus-visible {
   color: var(--ok);
 }
 
-/* Simulation panel: supplies, models, the run button and the operating point. */
-/* Set-up on the left, results taking the rest; the results wrap below when the pane is narrow. */
-.simulation {
+/* Simulation sidebar (Run, sources, models) and the results pane. */
+.simulation-run {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.simulation-setup {
-  display: flex;
-  flex: 0 0 270px;
   flex-direction: column;
   gap: 6px;
 }
 
 .simulation-results {
-  flex: 1 1 360px;
   min-width: 0;
 }
 
@@ -1323,21 +1280,52 @@ details.card > summary.card-title {
   pointer-events: auto;
 }
 
-/* Schematic and PCB panes: one fills the area, or both side by side in split view. */
+/* The schematic and the right pane side by side; their inline flex-grow is each one's share. */
 .canvas-panes {
   display: flex;
   flex: 1;
-  gap: 8px;
   min-height: 0;
 }
 
 .canvas-pane {
   display: flex;
-  flex: 1;
+  flex: 1 1 0;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
   min-height: 0;
+}
+
+/* The draggable bar between the panes; its 8px replace the gap they had. */
+.pane-divider {
+  position: relative;
+  flex: 0 0 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.pane-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 2px;
+  height: 32px;
+  margin-top: -16px;
+  border-radius: 1px;
+  background: var(--border-strong);
+}
+
+.pane-divider:hover::after,
+.pane-divider:focus-visible::after {
+  top: 0;
+  height: 100%;
+  margin-top: 0;
+  background: var(--accent);
+}
+
+.pane-divider:focus-visible {
+  outline: none;
 }
 
 /* Tool bar: icon above a one-word label, like a navigation rail. */

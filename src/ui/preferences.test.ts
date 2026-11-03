@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ALL_LAYERS } from './layers'
-import { parseGridLinesPerMajor, parseLayerView, parseLayerViews, parseTheme, parseView } from './preferences'
+import { parseGridLinesPerMajor, parseLayerView, parseLayerViews, parseRightPane, parseSplit, parseTheme } from './preferences'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -45,11 +45,20 @@ describe('parseGridLinesPerMajor', () => {
   })
 })
 
-describe('parseView', () => {
-  it('takes a stored view and shows both views otherwise', () => {
-    expect(parseView('layout')).toBe('layout')
-    expect(parseView('pcb')).toBe('split')
-    expect(parseView(null)).toBe('split')
+describe('parseRightPane', () => {
+  it('takes the simulation when stored and shows the board otherwise', () => {
+    expect(parseRightPane('simulation')).toBe('simulation')
+    expect(parseRightPane('layout')).toBe('pcb')
+    expect(parseRightPane(null)).toBe('pcb')
+  })
+})
+
+describe('parseSplit', () => {
+  it('keeps the divider where it was, within reach of both panes', () => {
+    expect(parseSplit('0.3')).toBe(0.3)
+    expect(parseSplit('0.99')).toBe(0.85)
+    expect(parseSplit('wide')).toBe(0.5)
+    expect(parseSplit(null)).toBe(0.5)
   })
 })
 

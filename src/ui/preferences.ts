@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { SHOWN, type LayerView } from './layers'
 import { GRID_LINES_PER_MAJOR_OPTIONS } from './panels'
 
-/** Which views are shown: one of them, or both side by side. */
-export type ViewMode = 'schematic' | 'split' | 'layout'
+/** What the pane beside the schematic shows: the board, or the simulation of the schematic. */
+export type RightPane = 'pcb' | 'simulation'
 export type Theme = 'light' | 'dark'
 
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
@@ -12,7 +12,11 @@ export const SCHEMATIC_LAYERS_KEY = 'manhattan-layout-editor/schematic-layers'
 export const PCB_GRID_KEY = 'manhattan-layout-editor/pcb-grid-lines-per-major'
 export const SCHEMATIC_GRID_KEY = 'manhattan-layout-editor/schematic-grid-lines-per-major'
 export const THEME_KEY = 'manhattan-layout-editor/theme'
-export const VIEW_KEY = 'manhattan-layout-editor/view'
+export const RIGHT_PANE_KEY = 'manhattan-layout-editor/right-pane'
+export const SPLIT_KEY = 'manhattan-layout-editor/split'
+
+/** How far the divider between the schematic and the right pane may go, as the schematic's share of the width. */
+export const SPLIT_RANGE = { min: 0.15, max: 0.85 }
 
 export const DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR = 6
 
@@ -49,9 +53,15 @@ export function parseGridLinesPerMajor(stored: string | null, fallback: number):
   return GRID_LINES_PER_MAJOR_OPTIONS.includes(linesPerMajor) ? linesPerMajor : fallback
 }
 
-export function parseView(stored: string | null): ViewMode {
-  if (stored === 'schematic' || stored === 'split' || stored === 'layout') return stored
-  return 'split'
+export function parseRightPane(stored: string | null): RightPane {
+  return stored === 'simulation' ? 'simulation' : 'pcb'
+}
+
+/** The schematic's stored share of the width, kept within SPLIT_RANGE; half when none was stored. */
+export function parseSplit(stored: string | null): number {
+  const share = Number(stored)
+  if (stored === null || !Number.isFinite(share)) return 0.5
+  return Math.min(SPLIT_RANGE.max, Math.max(SPLIT_RANGE.min, share))
 }
 
 /** The stored theme, or the system's when none was picked. */

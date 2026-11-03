@@ -17,20 +17,10 @@ import {
   type Transient,
 } from '../simulation/spiceNetlist'
 import { Icon } from './icons'
-import { NumberField, TextField } from './panels'
+import { NumberField, Section, TextField } from './panels'
 import { formatQuantity } from './quantity'
 import { ScopePlot, type Cursors, type ScopeTrace, type SeriesSlot } from './ScopePlot'
 import { measure } from '../simulation/waveform'
-
-const NO_SIMULATION: Simulation = { sources: [], models: {} }
-
-interface SimulationPanelProps {
-  /** With the schematic's nets: the schematic is what gets simulated. */
-  netlist: Netlist
-  definitions: Record<string, ComponentDefinition> | undefined
-  simulation: Simulation | undefined
-  onChange: (simulation: Simulation) => void
-}
 
 type Analysis = 'operating point' | 'transient'
 
@@ -56,18 +46,32 @@ function withShape(source: Source, shape: Source['shape']): Source {
   return { net: source.net, shape, volts: source.volts, hertz: source.shape === 'dc' ? 1e3 : source.hertz }
 }
 
-/** Sets up the sources and SPICE models of the schematic, and shows its operating point or its response over time. */
-export function SimulationPanel({ netlist, definitions, simulation = NO_SIMULATION, onChange }: SimulationPanelProps) {
+/** The simulation's state, shared by its sidebar (set-up and Run) and its pane (results). */
+export interface SimulationSession {
+  tab: Analysis
+  setTab: (tab: Analysis) => void
+  /** The circuit as it stands, or why it cannot be simulated. */
+  circuit: { circuit: SpiceCircuit } | { problems: string[] }
+  /** The last run of each analysis. */
+  runs: Partial<Record<Analysis, Run>>
+  running: boolean
+  /** Whether the tab shown can run now. */
+  canRun: boolean
+  runTab: () => void
+}
+
+/**
+ * Runs analyses of the schematic and keeps the last run of each. Runs belong to the project they
+ * ran: another `projectId` starts without any.
+ */
+export function useSimulation(netlist: Netlist, definitions: Record<string, ComponentDefinition> | undefined, simulation: Simulation, projectId: string): SimulationSession {
   const [tab, setTab] = useState<Analysis>('operating point')
-  const [runs, setRuns] = useState<Partial<Record<Analysis, Run>>>({})
+  const [stored, setStored] = useState<{ projectId: string; runs: Partial<Record<Analysis, Run>> }>({ projectId, runs: {} })
   const [running, setRunning] = useState(false)
-  const nets = useMemo(
-    () => [...new Set(netlist.components.flatMap((c) => c.pins.map((p) => p.net)))].filter((n) => n && !isGroundNet(n)).sort(naturalCompare),
-    [netlist],
-  )
+  const runs = stored.projectId === projectId ? stored.runs : {}
 
   // The circuit as it stands; its problems are shown before anything runs.
-  const circuit = useMemo((): { circuit: SpiceCircuit } | { problems: string[] } => {
+  const circuit = useMemo((): SimulationSession['circuit'] => {
     try {
       return { circuit: spiceCircuit(netlist, definitions, simulation) }
     } catch (e) {
@@ -90,20 +94,62 @@ export function SimulationPanel({ netlist, definitions, simulation = NO_SIMULATI
     } catch (e) {
       outcome = { error: errorText(e) }
     }
-    setRuns((previous) => ({ ...previous, [analysis]: { analysis, netlist: text, milliseconds: performance.now() - started, ...outcome } }))
+    const run: Run = { analysis, netlist: text, milliseconds: performance.now() - started, ...outcome }
+    setStored((previous) => ({ projectId, runs: { ...(previous.projectId === projectId ? previous.runs : {}), [analysis]: run } }))
     setRunning(false)
   }
 
+  const canRun = !('problems' in circuit) && netlistFor(tab, circuit.circuit) !== undefined
+  return {
+    tab,
+    setTab,
+    circuit,
+    runs,
+    running,
+    canRun,
+    runTab: () => {
+      if (!('problems' in circuit)) runAnalysis(tab, circuit.circuit)
+    },
+  }
+}
+
+interface SimulationSidebarProps {
+  session: SimulationSession
+  /** With the schematic's nets: the schematic is what gets simulated. */
+  netlist: Netlist
+  simulation: Simulation
+  onChange: (simulation: Simulation) => void
+}
+
+/** The simulation's sidebar: its sources, the models its semiconductors need, and Run. */
+export function SimulationSidebar({ session, netlist, simulation, onChange }: SimulationSidebarProps) {
+  const nets = useMemo(
+    () => [...new Set(netlist.components.flatMap((c) => c.pins.map((p) => p.net)))].filter((n) => n && !isGroundNet(n)).sort(naturalCompare),
+    [netlist],
+  )
   const { sources } = simulation
   const changeSources = (next: Source[]) => onChange({ ...simulation, sources: next })
   const undrivenNet = nets.find((n) => !sources.some((s) => s.net === n))
-  const canRun = !('problems' in circuit) && netlistFor(tab, circuit.circuit) !== undefined
-  const run = runs[tab]
+  const { tab, circuit, running, canRun } = session
 
   return (
-    <div className="simulation">
-      <div className="simulation-setup">
-        <span className="field-label">Sources</span>
+    <>
+      <Section title="Run">
+        <div className="simulation-run">
+          {'problems' in circuit && (
+            <ul className="check-list">
+              {circuit.problems.map((problem) => (
+                <li key={problem} className="warn">{problem}</li>
+              ))}
+            </ul>
+          )}
+          {tab === 'transient' && !('problems' in circuit) && !canRun && <p className="warn">Give a source a square or sine wave to run a transient.</p>}
+          <button className="run-button" disabled={running || !canRun} onClick={session.runTab}>
+            {running ? 'Running…' : `Run ${tab}`}
+          </button>
+        </div>
+      </Section>
+      <Section title={`Sources (${sources.length})`}>
         <div className="source-list">
           {sources.map((source, k) => (
             <SourceFields
@@ -118,36 +164,30 @@ export function SimulationPanel({ netlist, definitions, simulation = NO_SIMULATI
             <Icon name="plus" />Add source
           </button>
         </div>
+      </Section>
+      <Models netlist={netlist} simulation={simulation} onChange={onChange} />
+    </>
+  )
+}
 
-        <Models netlist={netlist} simulation={simulation} onChange={onChange} />
-
-        {'problems' in circuit && (
-          <ul className="check-list">
-            {circuit.problems.map((problem) => (
-              <li key={problem} className="warn">{problem}</li>
-            ))}
-          </ul>
-        )}
-        {tab === 'transient' && !('problems' in circuit) && !canRun && <p className="warn">Give a source a square or sine wave to run a transient.</p>}
-        <button className="primary run-button" disabled={running || !canRun} onClick={() => !('problems' in circuit) && runAnalysis(tab, circuit.circuit)}>
-          {running ? 'Running…' : `Run ${tab}`}
-        </button>
+/** The simulation's pane: a tab per analysis with its last run. */
+export function SimulationResults({ session }: { session: SimulationSession }) {
+  const { tab, setTab, runs, circuit } = session
+  const run = runs[tab]
+  return (
+    <div className="simulation-results">
+      <div className="analysis-tabs" role="tablist" aria-label="Analysis">
+        {ANALYSES.map(({ analysis, label }) => (
+          <button key={analysis} role="tab" aria-selected={tab === analysis} className={tab === analysis ? 'active' : ''} onClick={() => setTab(analysis)}>
+            {label}
+          </button>
+        ))}
       </div>
-
-      <div className="simulation-results">
-        <div className="analysis-tabs" role="tablist" aria-label="Analysis">
-          {ANALYSES.map(({ analysis, label }) => (
-            <button key={analysis} role="tab" aria-selected={tab === analysis} className={tab === analysis ? 'active' : ''} onClick={() => setTab(analysis)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        {run ? (
-          <RunResult run={run} outdated={'problems' in circuit || netlistFor(run.analysis, circuit.circuit) !== run.netlist} />
-        ) : (
-          <p className="muted">Press Run to see the {tab} here.</p>
-        )}
-      </div>
+      {run ? (
+        <RunResult run={run} outdated={'problems' in circuit || netlistFor(run.analysis, circuit.circuit) !== run.netlist} />
+      ) : (
+        <p className="muted">Press Run to see the {tab} here.</p>
+      )}
     </div>
   )
 }
@@ -216,8 +256,7 @@ function Models({ netlist, simulation, onChange }: { netlist: Netlist; simulatio
     onChange({ ...simulation, models: text.trim() ? { ...others, [value]: text } : others })
   }
   return (
-    <>
-      <span className="field-label">Models</span>
+    <Section title={`Models (${needed.size})`}>
       <ul className="model-list">
         {[...needed].map(([value, refs]) => (
           <li key={value}>
@@ -236,7 +275,7 @@ function Models({ netlist, simulation, onChange }: { netlist: Netlist; simulatio
           </li>
         ))}
       </ul>
-    </>
+    </Section>
   )
 }
 
