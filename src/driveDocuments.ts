@@ -2,8 +2,8 @@
 // on this computer. A project is called by its file's name.
 
 import { fileInfo, fileVersion, findFile, readFile, writeFile } from './googleDrive'
-import { compareSaved, projectNameOf, readSavedProject, type FileComparison } from './projectFiles'
-import { projectFromFile, projectToFile, type ProjectFile, type ProjectLocation } from './projectStore'
+import { compareSaved, readSavedProject, type FileComparison } from './projectFiles'
+import { projectFromFile, projectNameOf, projectToFile, type ProjectFile, type ProjectLocation } from './projectStore'
 import type { Project } from './types'
 
 export type DriveLocation = Extract<ProjectLocation, { kind: 'drive' }>

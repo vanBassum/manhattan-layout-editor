@@ -126,6 +126,21 @@ export function projectToFile(project: Project): string {
   return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, project: withDefinitions(project) }, null, 2)
 }
 
+/**
+ * `text` as this version of the editor writes it, so saved contents compare equal whatever version
+ * wrote them; text that is no project stays as it is.
+ */
+export function asCurrentFormat(text: string): string {
+  try {
+    return projectToFile(projectFromFile(text))
+  } catch {
+    return text
+  }
+}
+
+/** "amp.manhattan.json" → "amp". */
+export const projectNameOf = (fileName: string) => fileName.replace(/(\.manhattan)?\.json$/i, '')
+
 export function projectFromFile(text: string): Project {
   const data = JSON.parse(text) as { format?: unknown; version?: unknown; project?: unknown }
   if (data?.format !== FILE_FORMAT || typeof data.version !== 'number') throw new Error('Not a Manhattan project file.')
@@ -258,8 +273,9 @@ export async function openProjectStore() {
       }
       if (!project) continue
       const location: ProjectLocation | undefined = stored.location ?? (stored.handle && { kind: 'local', handle: stored.handle })
-      remember(tab.id, { project, savedContent: stored.savedContent, location }, false)
-      openTabs.push(tab)
+      remember(tab.id, { project, savedContent: asCurrentFormat(stored.savedContent), location }, false)
+      // Tabs from when projects held a name of their own may still show it instead of their file's.
+      openTabs.push(location?.kind === 'local' ? { ...tab, name: projectNameOf(location.handle.name) } : tab)
     }
     recent = ((await request(db.transaction(META_STORE).objectStore(META_STORE).get(RECENT_RECORD))) as RecentDocument[] | undefined) ?? []
   } catch {

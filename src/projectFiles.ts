@@ -1,7 +1,7 @@
 // Project files on this computer through the File System Access API (Chromium browsers). Elsewhere
 // the editor falls back to downloading and uploading.
 
-import { projectFromFile, projectToFile, type ProjectFile } from './projectStore'
+import { projectFromFile, projectNameOf, projectToFile, type ProjectFile } from './projectStore'
 import type { Project } from './types'
 
 // Not in TypeScript's DOM types yet.
@@ -138,5 +138,4 @@ export async function compareWithFile(handle: FileSystemFileHandle, file: Projec
 }
 
 /** "amp.manhattan.json" → "amp". */
-export const projectNameOf = (fileName: string) => fileName.replace(/(\.manhattan)?\.json$/i, '')
 export const fileLabel = (handle: FileSystemFileHandle) => projectNameOf(handle.name)

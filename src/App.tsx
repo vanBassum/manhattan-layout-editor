@@ -42,7 +42,7 @@ import {
   Validation,
   type Question,
 } from './panels'
-import { canUseFiles, compareWithFile, fileLabel, mayUse, pickFileToOpen, projectNameOf, readFile, saveLocalFile, type FileComparison } from './projectFiles'
+import { canUseFiles, compareWithFile, fileLabel, mayUse, pickFileToOpen, readFile, saveLocalFile, type FileComparison } from './projectFiles'
 import {
   acceptSavedContent,
   addProject,
@@ -58,6 +58,7 @@ import {
   onRemoteChange,
   projectFile,
   projectFromFile,
+  projectNameOf,
   projectToFile,
   readProject,
   recentDocuments,

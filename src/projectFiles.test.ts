@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import example from './examples/Astable multivibrator.manhattan.json?raw'
-import { compareWithFile, saveLocalFile } from './projectFiles'
-import { projectFromFile, projectToFile, type ProjectFile } from './projectStore'
+import { compareSaved, compareWithFile, saveLocalFile } from './projectFiles'
+import { asCurrentFormat, projectFromFile, projectToFile, type ProjectFile } from './projectStore'
 
 /** A file with permission already granted; `written` collects what the editor writes to it. */
 function fakeFile(content: string) {
@@ -68,5 +68,12 @@ describe('projectFromFile', () => {
     expect(JSON.parse(example).project.name).toBe('Astable multivibrator')
     expect(projectFromFile(example)).not.toHaveProperty('name')
     expect(JSON.parse(projectToFile(projectFromFile(example))).project).not.toHaveProperty('name')
+  })
+})
+
+describe('compareSaved', () => {
+  it('finds no change between the same project written by an older and a newer version', () => {
+    const olderSaved: ProjectFile = { savedContent: example, dirty: false, checked: false }
+    expect(compareSaved(projectToFile(projectFromFile(example)), { ...olderSaved, savedContent: asCurrentFormat(example) })).toMatchObject({ kind: 'unchanged' })
   })
 })
