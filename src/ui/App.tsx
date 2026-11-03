@@ -628,7 +628,13 @@ export function App() {
 
         {rightPane === 'simulation' && (
           <aside className="sidebar">
-            <SimulationSidebar session={simulationSession} netlist={schematicNets.netlist} simulation={simulation} onChange={changeSimulation} />
+            <SimulationSidebar
+              session={simulationSession}
+              netlist={schematicNets.netlist}
+              definitions={project.definitions}
+              simulation={simulation}
+              onChange={changeSimulation}
+            />
           </aside>
         )}
         {rightPane === 'pcb' && (

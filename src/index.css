@@ -753,6 +753,28 @@ input:focus-visible {
   min-width: 0;
 }
 
+.trimmer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Ref and value, then the position, with the slider below across the full width. */
+.trimmer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trimmer-row input[type='range'] {
+  grid-column: span 2;
+  width: 100%;
+}
+
 .model-list {
   margin: 0;
   padding: 0;

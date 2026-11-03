@@ -63,6 +63,18 @@ describe('spiceCircuit', () => {
     expect(() => spiceCircuit(netlist, undefined, simulation)).toThrow('D1: the model for "1N4148" does not start with ".model 1N4148"')
   })
 
+  it('splits a trimmer at its wiper position, and asks for one until it is set', () => {
+    const netlist: Netlist = {
+      components: [
+        { ref: 'RV1', value: '1k', footprint: '', pins: [{ number: '1', net: 'VCC' }, { number: '2', net: 'MID' }, { number: '3', net: 'GND' }] },
+      ],
+      nets: ['GND', 'MID', 'VCC'],
+    }
+    expect(() => spiceCircuit(netlist, undefined, fiveVolts)).toThrow('RV1: set its wiper position under Trimmers')
+    const circuit = spiceCircuit(netlist, undefined, { ...fiveVolts, trimmers: { RV1: 0.25 } })
+    expect(circuit.lines.join('\n')).toContain('RV1_1 vcc mid 250\nRV1_2 mid 0 750')
+  })
+
   it('gives a net whose name ngspice would change a node of its own', () => {
     const netlist: Netlist = {
       components: [{ ref: 'R1', value: '1k', footprint: '', pins: [{ number: '1', net: 'Net-(R1-Pad1)' }, { number: '2', net: 'GND' }] }],

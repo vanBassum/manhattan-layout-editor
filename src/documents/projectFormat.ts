@@ -48,7 +48,16 @@ function checkedSimulation(data: unknown): Simulation | undefined {
   if (!isJsonObject(models) || !Object.values(models).every((m) => typeof m === 'string')) {
     throw new Error('simulation "models" must map part values to SPICE model text')
   }
-  return { sources: sources as Source[], models: models as Record<string, string> }
+  const { trimmers } = data
+  const isPosition = (p: unknown) => isNumber(p) && p >= 0 && p <= 1
+  if (trimmers !== undefined && !(isJsonObject(trimmers) && Object.values(trimmers).every(isPosition))) {
+    throw new Error('simulation "trimmers" must map trimmer refs to a wiper position from 0 to 1')
+  }
+  return {
+    sources: sources as Source[],
+    models: models as Record<string, string>,
+    ...(trimmers ? { trimmers: trimmers as Record<string, number> } : {}),
+  }
 }
 
 /** A label as stored before its symbol was: it was drawn as the symbol its name suggests. */

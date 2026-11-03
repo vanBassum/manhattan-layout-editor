@@ -96,6 +96,20 @@ const PASSIVES: Record<string, string> = { R: 'R', RL: 'R', C: 'C', L: 'L' }
 const isTransistor = (component: NetComponent) => refPrefix(component.ref) === 'Q'
 const isDiode = (component: NetComponent) => ['D', 'LED'].includes(refPrefix(component.ref))
 
+/** A trimmer's wiper: the pin its definition calls W. Undefined for any other part. */
+const wiperOf = (component: NetComponent, definition: ComponentDefinition) =>
+  component.pins.length === 3 ? definition.pins.find((p) => p.name === 'W')?.number : undefined
+
+/** The trimmers of the netlist, whose wiper position the simulation needs, in netlist order. */
+export const trimmersOf = (netlist: Netlist, definitions: Record<string, ComponentDefinition> | undefined): NetComponent[] =>
+  netlist.components.filter((c) => wiperOf(c, resolvedDefinition(c, definitions).definition) !== undefined)
+
+/**
+ * A wiper never quite reaches an end: it keeps some contact resistance. It also keeps ngspice from
+ * a 0 Ω resistor, which it cannot solve.
+ */
+const WIPER_CONTACT_OHMS = 1e-3
+
 /** The part values that need a SPICE model, each with the refs of its parts, in netlist order. */
 export function valuesNeedingModels(netlist: Netlist): Map<string, string[]> {
   const values = new Map<string, string[]>()
@@ -178,6 +192,25 @@ function partLine(
     if (number === undefined) throw new Error(`${ref}: cannot read "${value}" as a value`)
     const [a, b] = component.pins
     return { text: `${elementName(passive, ref)} ${nodeOfPin(a.number)} ${nodeOfPin(b.number)} ${number}` }
+  }
+
+  const wiper = wiperOf(component, definition)
+  if (wiper !== undefined) {
+    const ohms = partValue(value)
+    if (ohms === undefined) throw new Error(`${ref}: cannot read "${value}" as a value`)
+    const position = simulation.trimmers?.[ref]
+    if (position === undefined) throw new Error(`${ref}: set its wiper position under Trimmers`)
+    // Two resistors meeting at the wiper: from the first end to the wiper, and on to the other end.
+    const [first, last] = component.pins.filter((p) => p.number !== wiper)
+    const element = elementName('R', ref)
+    const toWiper = Math.max(ohms * position, WIPER_CONTACT_OHMS)
+    const fromWiper = Math.max(ohms * (1 - position), WIPER_CONTACT_OHMS)
+    return {
+      text: [
+        `${element}_1 ${nodeOfPin(first.number)} ${nodeOfPin(wiper)} ${toWiper}`,
+        `${element}_2 ${nodeOfPin(wiper)} ${nodeOfPin(last.number)} ${fromWiper}`,
+      ].join('\n'),
+    }
   }
 
   if (!isTransistor(component) && !isDiode(component)) throw new Error(`${ref}: parts like this cannot be simulated yet`)

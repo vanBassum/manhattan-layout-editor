@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { errorText } from '../errorText'
 import { isGroundNet, naturalCompare } from '../model/netlist'
-import type { ComponentDefinition, Netlist, Simulation, Source } from '../model/types'
+import type { ComponentDefinition, NetComponent, Netlist, Simulation, Source } from '../model/types'
 import { runSpice } from '../simulation/ngspice'
 import {
   operatingPointNetlist,
@@ -10,6 +10,7 @@ import {
   readTransient,
   spiceCircuit,
   transientNetlist,
+  trimmersOf,
   valuesNeedingModels,
   waveSources,
   type OperatingPoint,
@@ -138,12 +139,13 @@ interface SimulationSidebarProps {
   session: SimulationSession
   /** With the schematic's nets: the schematic is what gets simulated. */
   netlist: Netlist
+  definitions: Record<string, ComponentDefinition> | undefined
   simulation: Simulation
   onChange: (simulation: Simulation) => void
 }
 
-/** The simulation's sidebar: its sources, the models its semiconductors need, and Run. */
-export function SimulationSidebar({ session, netlist, simulation, onChange }: SimulationSidebarProps) {
+/** The simulation's sidebar: Run, its sources, its trimmers' positions and the models its semiconductors need. */
+export function SimulationSidebar({ session, netlist, definitions, simulation, onChange }: SimulationSidebarProps) {
   const nets = useMemo(
     () => [...new Set(netlist.components.flatMap((c) => c.pins.map((p) => p.net)))].filter((n) => n && !isGroundNet(n)).sort(naturalCompare),
     [netlist],
@@ -196,6 +198,7 @@ export function SimulationSidebar({ session, netlist, simulation, onChange }: Si
           {sources.length === 0 && <p className="muted">No sources yet: add one to power the circuit.</p>}
         </div>
       </Section>
+      <Trimmers trimmers={trimmersOf(netlist, definitions)} simulation={simulation} onChange={onChange} />
       <Models netlist={netlist} simulation={simulation} onChange={onChange} />
     </>
   )
@@ -303,6 +306,57 @@ function SourceCard({ nets, source, onChange, onRemove }: SourceCardProps) {
         )}
       </div>
     </div>
+  )
+}
+
+interface TrimmersProps {
+  trimmers: NetComponent[]
+  simulation: Simulation
+  onChange: (simulation: Simulation) => void
+}
+
+/** Each trimmer's wiper position, set with a slider. */
+function Trimmers({ trimmers, simulation, onChange }: TrimmersProps) {
+  if (trimmers.length === 0) return null
+  const setPosition = (ref: string, position: number) => onChange({ ...simulation, trimmers: { ...simulation.trimmers, [ref]: position } })
+  return (
+    <Section title={`Trimmers (${trimmers.length})`}>
+      <ul className="trimmer-list">
+        {trimmers.map((trimmer) => (
+          <TrimmerRow key={trimmer.ref} trimmer={trimmer} position={simulation.trimmers?.[trimmer.ref]} onCommit={(p) => setPosition(trimmer.ref, p)} />
+        ))}
+      </ul>
+    </Section>
+  )
+}
+
+/**
+ * One trimmer: its ref and value, and a slider from pin 1 (0%) to the far end (100%). The position
+ * is kept when the slider is let go, so a slide is one undo step and one run.
+ */
+function TrimmerRow({ trimmer, position, onCommit }: { trimmer: NetComponent; position: number | undefined; onCommit: (position: number) => void }) {
+  const [draft, setDraft] = useState<number | undefined>(position)
+  useEffect(() => setDraft(position), [position])
+  const commit = () => draft !== undefined && draft !== position && onCommit(draft)
+  return (
+    <li className="trimmer-row">
+      <span>
+        <strong>{trimmer.ref}</strong> <span className="muted">{trimmer.value}</span>
+      </span>
+      <span className={draft === undefined ? 'warn' : ''}>{draft === undefined ? 'not set' : `${Math.round(draft * 100)}%`}</span>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={Math.round((draft ?? 0.5) * 100)}
+        aria-label={`Wiper position of ${trimmer.ref}`}
+        onChange={(e) => setDraft(Number(e.target.value) / 100)}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+      />
+    </li>
   )
 }
 

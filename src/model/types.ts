@@ -216,6 +216,11 @@ export interface Simulation {
    * transistor and diode needs the model its value names.
    */
   models: Record<string, string>
+  /**
+   * Each trimmer's wiper position by ref, from 0 (at pin 1) to 1 (at the far end). Missing until the
+   * user sets one; a trimmer without a position cannot be simulated.
+   */
+  trimmers?: Record<string, number>
 }
 
 /** A project is called by its file's name (or its tab's, before it is saved); it holds no name itself. */
