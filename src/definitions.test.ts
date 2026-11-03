@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import example from './examples/Astable multivibrator.manhattan.json?raw'
-import { buildNetlist, checkedDefinition, checkedDefinitions, withDefinitions } from './definitions'
-import { projectFromFile } from './projectStore'
+import { buildNetlist, checkedDefinition, checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from './definitions'
+import { EXAMPLES, projectFromFile } from './projectStore'
 import type { ComponentDefinition, FootprintDefinition, NetComponent, Project, SymbolDefinition } from './types'
 
 const SYMBOL: SymbolDefinition = {
@@ -88,6 +88,44 @@ describe('buildNetlist', () => {
     const onePin = { ...ODD_FOOTPRINT, pins: [ODD_FOOTPRINT.pins[0]] }
     const project = projectWith([resistor({ definition: 'odd' })], { odd: definition({ 'R_AXIAL-0.4': onePin }) })
     expect(() => build(project)).toThrow('lacks some of its pins')
+  })
+
+  it('refuses a definition that does not exist or lacks the part\'s pins, instead of drawing a template', () => {
+    expect(() => build(projectWith([resistor({ definition: 'gone' })], {}))).toThrow('R1: definition "gone" does not exist')
+    const threePins = resistor({ definition: 'odd', pins: [...resistor().pins, { number: '3', net: 'A' }] })
+    expect(() => build(projectWith([threePins], { odd: definition({ 'R_AXIAL-0.4': ODD_FOOTPRINT }) }))).toThrow(
+      'R1: definition "odd" lacks some of its pins',
+    )
+  })
+})
+
+describe('withoutUnfitDefinitions', () => {
+  it("drops only a definition that lacks the part's pins, as after a re-import that changed them", () => {
+    const definitions = { odd: definition({ 'R_AXIAL-0.4': ODD_FOOTPRINT }) }
+    const changedPins = resistor({ definition: 'odd', pins: [...resistor().pins, { number: '3', net: 'A' }] })
+    const missing = resistor({ ref: 'R2', definition: 'gone' })
+    const fitting = resistor({ ref: 'R3', definition: 'odd' })
+    const netlist = withoutUnfitDefinitions({ components: [changedPins, missing, fitting], nets: ['A', 'B'] }, definitions)
+    expect(netlist.components.map((c) => c.definition)).toEqual([undefined, 'gone', 'odd'])
+  })
+})
+
+describe('projectFromFile', () => {
+  it('opens every example, and builds its netlist', () => {
+    expect(EXAMPLES.length).toBeGreaterThan(0)
+    for (const example of EXAMPLES) expect(() => build(example.open())).not.toThrow()
+  })
+
+  it('refuses a part referring to a definition the file does not have', () => {
+    const project = projectWith([resistor({ definition: 'gone' })], {})
+    const file = JSON.stringify({ format: 'manhattan-layout-editor', version: 7, project })
+    expect(() => projectFromFile(file)).toThrow('R1: definition "gone" does not exist')
+  })
+
+  it('refuses an unknown optimizer strategy', () => {
+    const project = { ...projectWith([resistor()]), settings: { ...projectWith([]).settings, strategy: 'teleport' } }
+    const file = JSON.stringify({ format: 'manhattan-layout-editor', version: 7, project })
+    expect(() => projectFromFile(file)).toThrow('Unknown strategy "teleport"')
   })
 })
 

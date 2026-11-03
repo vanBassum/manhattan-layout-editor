@@ -94,7 +94,8 @@ function manhattanLayout(netlist: BuiltNetlist, settings: Settings) {
         0.1 * Math.hypot(offset.x, offset.y)
       if (!best || cost < best.cost) best = { rect, cost }
     }
-    pads.push({ net, rects: [best?.rect ?? { x: center.x - size.w / 2, y: center.y - size.h / 2, ...size }] })
+    if (!best) throw new Error(`No free spot found for the pad of net ${net}`)
+    pads.push({ net, rects: [best.rect] })
   }
 
   const placements = parts.map((part) => {

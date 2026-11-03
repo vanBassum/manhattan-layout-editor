@@ -48,10 +48,24 @@ const hasPins = (symbol: SymbolDefinition, component: NetComponent) => {
   return component.pins.every((p) => numbers.has(p.number))
 }
 
-/** The definition a part refers to, if it exists and has all the part's pins. */
-function definitionOf(component: NetComponent, definitions: Definitions | undefined): ComponentDefinition | undefined {
-  const definition = component.definition ? definitions?.[component.definition] : undefined
-  return definition && hasPins(definition.symbol, component) ? definition : undefined
+/** The definition a part refers to; throws when it does not exist or lacks one of the part's pins. */
+function ownDefinition(component: NetComponent, id: string, definitions: Definitions | undefined): ComponentDefinition {
+  const definition = definitions?.[id]
+  if (!definition) throw new Error(`${component.ref}: definition "${id}" does not exist`)
+  if (!hasPins(definition.symbol, component)) throw new Error(`${component.ref}: definition "${id}" lacks some of its pins`)
+  return definition
+}
+
+/**
+ * The netlist without references to definitions that lack some of their part's pins. A netlist
+ * imported again keeps each part's definition, but one whose pins changed no longer fits it and
+ * gets a template again. A reference to a definition that does not exist is left alone: that is
+ * damage, which building the netlist reports.
+ */
+export function withoutUnfitDefinitions(netlist: Netlist, definitions: Definitions | undefined): Netlist {
+  const unfit = (c: NetComponent) => c.definition !== undefined && definitions?.[c.definition] !== undefined && !hasPins(definitions[c.definition].symbol, c)
+  if (!netlist.components.some(unfit)) return netlist
+  return { ...netlist, components: netlist.components.map((c) => (unfit(c) ? { ...c, definition: undefined } : c)) }
 }
 
 /** The built-in template for a part, with no footprints yet; the id is shared by every part that fits it. */
@@ -71,16 +85,16 @@ function templateDefinition(component: NetComponent): { id: string; definition: 
 }
 
 /**
- * The definition a part uses: its own when it fits, else the project's definition for the built-in
+ * The definition a part uses: its own when it has one, else the project's definition for the built-in
  * template the part fits, else that template. withDefinitions stores exactly this choice, so a part
  * looks the same before and after its project is saved.
  */
 function resolvedDefinition(component: NetComponent, definitions: Definitions | undefined): { id: string; definition: ComponentDefinition } {
-  const own = definitionOf(component, definitions)
-  if (own) return { id: component.definition!, definition: own }
+  if (component.definition !== undefined) return { id: component.definition, definition: ownDefinition(component, component.definition, definitions) }
   const template = templateDefinition(component)
   // A same-named definition that does not fit this part (other pins) gets a part-specific twin.
-  const fits = !definitions?.[template.id] || definitionOf({ ...component, definition: template.id }, definitions)
+  const existing = definitions?.[template.id]
+  const fits = !existing || hasPins(existing.symbol, component)
   const id = fits ? template.id : `${template.id}-${component.ref.toLowerCase()}`
   return { id, definition: definitions?.[id] ?? template.definition }
 }

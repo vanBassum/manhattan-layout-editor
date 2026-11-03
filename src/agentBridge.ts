@@ -32,7 +32,15 @@ export function connectAgentBridge(handle: AgentCommandHandler, onStatus: (conne
       retryMs = Math.min(retryMs * 2, MAX_RETRY_MS)
     }
     socket.onmessage = async (event) => {
-      const { id, command, args } = JSON.parse(String(event.data))
+      let message: { id: unknown; command: string; args?: Record<string, unknown> }
+      try {
+        message = JSON.parse(String(event.data))
+      } catch {
+        // Without an id there is no request to answer; the server times it out.
+        console.error('Ignored a message from the MCP server that is not JSON:', event.data)
+        return
+      }
+      const { id, command, args } = message
       try {
         const result = await handle(command, args ?? {})
         socket?.send(JSON.stringify({ id, result }))

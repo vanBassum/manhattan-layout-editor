@@ -13,7 +13,9 @@ type CutLineLayout = Layout & { knife?: CutBoard; freeCopper?: unknown }
 
 export function withoutCutLines(project: Project): Project {
   const { knife, freeCopper: _derived, ...layout } = project.layout as CutLineLayout
-  const strategy = project.settings.strategy === CUT_LINES_STRATEGY ? 'knife' : project.settings.strategy
+  // Settings come straight from the stored project here: the strategy may still be the old one.
+  const stored: string = project.settings.strategy
+  const strategy = stored === CUT_LINES_STRATEGY ? 'knife' : project.settings.strategy
   const settings = { ...project.settings, strategy }
   if (!knife) return { ...project, settings }
 

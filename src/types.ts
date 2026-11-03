@@ -151,11 +151,14 @@ export interface Layout {
   placements: Placement[]
 }
 
+/** The optimization strategies optimize/index.ts offers. */
+export type StrategyId = 'knife' | 'manhattan'
+
 export interface Settings {
   snap: number
   isolation: number
   /** Id of the optimization strategy selected in the toolbar. */
-  strategy: string
+  strategy: StrategyId
   /** Free space the optimizer keeps around each component (body and leads), for soldering access. */
   clearance: number
   /** Longest lead the optimizer should bend; beyond this the penalty rises sharply. */
