@@ -22,6 +22,9 @@ export function isRealNet(net: string): boolean {
   return net !== '' && !net.startsWith('unconnected-')
 }
 
+/** Names a ground net goes by; "0" is SPICE's. */
+export const isGroundNet = (net: string) => /^(GND|AGND|DGND|PGND|VSS|0|0V|EARTH|GROUND)$/i.test(net)
+
 export const naturalCompare = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true })
 
 function buildNetlist(components: NetComponent[]): Netlist {

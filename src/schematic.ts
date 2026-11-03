@@ -1,7 +1,7 @@
 import { buildNetlist, buildProjectNetlist } from './definitions'
 import { boundsOf, inflate, rectContains, rectsOverlap, rotatePoint, samePoint, snapToGrid } from './geometry'
 import { followNetlist } from './layout'
-import { isRealNet, naturalCompare } from './netlist'
+import { isGroundNet, isRealNet, naturalCompare } from './netlist'
 import { NO_WIRING, selectedRefs, selectedWiring } from './selection'
 import type {
   BuiltComponent,
@@ -133,13 +133,12 @@ export function completeSchematic(built: BuiltNetlist, schematic: Schematic | un
   return { placements, wires: schematic?.wires ?? [], labels }
 }
 
-const isGroundName = (name: string) => /^(GND|AGND|DGND|PGND|VSS|0)$/i.test(name)
 const isPowerName = (name: string) => /^(V\+|V-|VCC|VDD|VEE|[+-]?\d+(\.\d+)?V)$/i.test(name)
 
 /** How a label is drawn; labels from before it was stored get the symbol their name suggests. */
 export function labelSymbol(label: NetLabel): LabelSymbol {
   if (label.symbol) return label.symbol
-  if (isGroundName(label.name)) return 'ground'
+  if (isGroundNet(label.name)) return 'ground'
   return isPowerName(label.name) ? 'power' : 'net'
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseNetlist } from './netlist'
+import { isGroundNet, parseNetlist } from './netlist'
 import type { Netlist } from './types'
 
 /** What every fixture below describes: R1 from VCC to OUT, C1 from OUT to GND. */
@@ -76,5 +76,12 @@ describe('parseNetlist', () => {
   it('refuses text in no known format, and a netlist without parts', () => {
     expect(() => parseNetlist('hello')).toThrow('Unrecognized netlist format')
     expect(() => parseNetlist('{}')).toThrow('Netlist contains no components.')
+  })
+})
+
+describe('isGroundNet', () => {
+  it('knows the usual names for ground, in any case', () => {
+    expect(['GND', 'agnd', 'DGND', 'PGND', 'VSS', '0', '0V', 'Earth', 'GROUND'].every(isGroundNet)).toBe(true)
+    expect(['VCC', 'GND2', 'N$1', '00'].some(isGroundNet)).toBe(false)
   })
 })
