@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { importedProject, reimportedProject } from './netlistImport'
+import { pinsWithOtherNet, projectSchematicNets } from './schematic'
 import type { Project } from './types'
 
 const SETTINGS = { snap: 1, isolation: 0.5, buildStyle: 'manhattan' as const }
@@ -21,10 +22,39 @@ describe('importing a netlist', () => {
 
     expect(imported.guid).toBe('kept-guid')
     expect(imported.settings).toEqual(SETTINGS)
-    expect(imported.schematic).toBeUndefined()
     expect(imported.layout.placements.map((p) => p.ref)).toEqual(['R1'])
     expect(imported.layout.islands.map((i) => i.net)).toEqual(['A', 'B'])
     expect(imported.definitions?.[imported.netlist.components[0].definition!]).toBeDefined()
+  })
+
+  it('starts the schematic with every part placed and every connected pin labelled with its net', () => {
+    const imported = importedProject(netlistText({ R1: { value: '10k', nets: ['A', 'GND'] }, R2: { value: '1k', nets: ['A', ''] } }), 'g', SETTINGS)
+
+    expect(imported.schematic.placements.map((p) => p.ref)).toEqual(['R1', 'R2'])
+    expect(imported.schematic.wires).toEqual([])
+    expect(imported.schematic.labels.map((l) => [l.name, l.symbol])).toEqual([
+      ['A', 'net'],
+      ['GND', 'ground'],
+      ['A', 'net'],
+    ])
+    expect(pinsWithOtherNet(imported.netlist, projectSchematicNets(imported).netlist)).toEqual([])
+  })
+
+  it('keeps where the symbols were on a re-import, and starts wires and labels over from the new nets', () => {
+    const current = importedProject(netlistText({ R1: { value: '10k', nets: ['A', 'B'] } }), 'guid', SETTINGS)
+    const moved = { ...current.schematic.placements[0], x: 50.8, y: 25.4 }
+    const edited: Project = {
+      ...current,
+      schematic: { placements: [moved], wires: [{ x1: 0, y1: 0, x2: 2.54, y2: 0 }], labels: [{ x: 0, y: 0, name: 'OLD', symbol: 'net' }] },
+    }
+
+    const reimported = reimportedProject(netlistText({ R1: { value: '10k', nets: ['A', 'C'] }, R2: { value: '1k', nets: ['C', 'D'] } }), edited)
+
+    expect(reimported.schematic.placements.map((p) => p.ref)).toEqual(['R1', 'R2'])
+    expect(reimported.schematic.placements[0]).toEqual(moved)
+    expect(reimported.schematic.wires).toEqual([])
+    expect(reimported.schematic.labels.map((l) => l.name)).toEqual(['A', 'C', 'C', 'D'])
+    expect(pinsWithOtherNet(reimported.netlist, projectSchematicNets(reimported).netlist)).toEqual([])
   })
 
   it('keeps a value typed in the editor that the new netlist leaves empty, and where the part was', () => {

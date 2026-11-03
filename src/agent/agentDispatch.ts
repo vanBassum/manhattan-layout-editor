@@ -25,14 +25,12 @@ import {
   labelsFromAgent,
   pinsWithOtherNet,
   placedParts,
-  projectSchematic,
   projectSchematicNets,
   wiresFromPolylines,
   withPlacementChanges,
   withSchematicNets,
-  type FullSchematic,
 } from '../model/schematic'
-import type { BuiltProject, Layout, Netlist, Project, Rect } from '../model/types'
+import type { BuiltProject, Layout, Netlist, Project, Rect, Schematic } from '../model/types'
 import { snapshotOf, type Snapshot } from '../model/undoHistory'
 
 /** What every edit returns: the problems left in the PCB. */
@@ -71,7 +69,7 @@ export function agentTargetId(tabs: { id: string; name: string }[], shownId: str
 
 /** What an agent needs to draw wires: every pin end with its schematic net, the wires and labels, shorts, and what the PCB does not have yet. */
 function describeSchematic(project: Project) {
-  const schematic = projectSchematic(project)
+  const { schematic } = project
   const { netlist, conflicts } = projectSchematicNets(project)
   const built = buildNetlist(netlist, project.layout.placements, project.definitions)
   return {
@@ -106,9 +104,9 @@ const layoutEdit =
 
 /** The schematic with one part of it replaced, as an undoable change; the agent gets the result as get_schematic does. */
 const schematicEdit =
-  (edit: (project: Project, args: Args) => Partial<FullSchematic>) =>
+  (edit: (project: Project, args: Args) => Partial<Schematic>) =>
   (tab: AgentTab, args: Args) => {
-    const schematic = { ...projectSchematic(tab.project), ...edit(tab.project, args) }
+    const schematic = { ...tab.project.schematic, ...edit(tab.project, args) }
     return describeSchematic(tab.change({ schematic }))
   }
 
@@ -137,7 +135,7 @@ const COMMANDS: Record<string, (tab: AgentTab, args: Args) => unknown> = {
 
   get_schematic: (tab) => describeSchematic(tab.project),
   set_schematic: schematicEdit((project, args) =>
-    withPlacementChanges(projectSchematic(project), builtProject(project).netlist, agentPlacements(project.netlist, args.placements)),
+    withPlacementChanges(project.schematic, builtProject(project).netlist, agentPlacements(project.netlist, args.placements)),
   ),
   set_wires: schematicEdit((_, args) => ({ wires: wiresFromPolylines(args.wires) })),
   set_labels: schematicEdit((_, args) => ({ labels: labelsFromAgent(args.labels) })),

@@ -20,7 +20,6 @@ import {
   SCHEMATIC_GRID,
   snapPoint,
   withTidyWires,
-  type FullSchematic,
   type SchematicNets,
 } from '../../model/schematic'
 import {
@@ -35,7 +34,7 @@ import {
   toggleSchematicItem,
   type SchematicItem,
 } from '../../model/selection'
-import type { BuiltComponent, BuiltNetlist, Point, Rect, SchematicPlacement, Selection } from '../../model/types'
+import type { BuiltComponent, BuiltNetlist, Point, Rect, Schematic, SchematicPlacement, Selection } from '../../model/types'
 import { layerClasses, layerOpacities, type SchematicLayers } from '../layers'
 import {
   CLICK_TOLERANCE_PX,
@@ -95,7 +94,7 @@ type Drag =
       keepConnections: boolean
       start: Point
       moving: Selection
-      base: FullSchematic
+      base: Schematic
       delta: Point
       moved: boolean
     }
@@ -112,9 +111,9 @@ const TEXT_STEP = SCHEMATIC_GRID / 4
 interface Props {
   /** As built, with the nets the schematic gives. */
   netlist: BuiltNetlist
-  schematic: FullSchematic
+  schematic: Schematic
   nets: SchematicNets
-  onChange: (next: FullSchematic) => void
+  onChange: (next: Schematic) => void
   /** Called once per edit, just before its first change, so it can be undone as a whole. */
   onBeginEdit: () => void
   selection: Selection

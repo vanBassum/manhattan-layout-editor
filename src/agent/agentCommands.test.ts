@@ -3,7 +3,7 @@ import example from '../examples/Astable multivibrator.json?raw'
 import { addComponent } from './agentCommands'
 import { projectFromFile } from '../documents/projectFormat'
 import { buildNetlist } from '../model/definitions'
-import { completeSchematic, deriveNets, pinsWithOtherNet, placedParts } from '../model/schematic'
+import { CELL_HEIGHT, deriveNets, pinsWithOtherNet, placedParts } from '../model/schematic'
 import type { Project } from '../model/types'
 
 const exampleProject = () => projectFromFile(example)
@@ -11,7 +11,7 @@ const exampleProject = () => projectFromFile(example)
 /** Pins whose net differs between the PCB and what the schematic draws. */
 function pinsOutOfSync(project: Project): string[] {
   const built = buildNetlist(project.netlist, project.layout.placements, project.definitions)
-  const schematic = completeSchematic(built, project.schematic)
+  const { schematic } = project
   const nets = deriveNets(project.netlist, placedParts(schematic.placements, built), schematic)
   return pinsWithOtherNet(project.netlist, nets.netlist)
 }
@@ -24,6 +24,20 @@ describe('addComponent', () => {
     expect(pinsOutOfSync(added)).toEqual(before)
     expect(added.netlist.nets).toContain('NEW')
     expect(added.layout.islands.some((i) => i.net === 'NEW')).toBe(true)
+  })
+
+  it('without x/y puts the symbol below the others, in netlist order, with its pins labelled', () => {
+    const project = exampleProject()
+    const added = { ...project, ...addComponent(project, { ref: 'C3', pins: [{ number: '1', net: 'VCC' }, { number: '2', net: 'GND' }] }) }
+
+    expect(added.schematic.placements.map((p) => p.ref)).toEqual(added.netlist.components.map((c) => c.ref))
+    const lowest = Math.max(...project.schematic.placements.map((p) => p.y))
+    expect(added.schematic.placements.find((p) => p.ref === 'C3')).toEqual({ ref: 'C3', x: 0, y: lowest + CELL_HEIGHT, rotation: 0 })
+    expect(added.schematic.labels.slice(project.schematic.labels.length).map((l) => [l.name, l.symbol])).toEqual([
+      ['VCC', 'power'],
+      ['GND', 'ground'],
+    ])
+    expect(pinsOutOfSync(added)).toEqual(pinsOutOfSync(project))
   })
 
   it('places a part that uses a definition with that definition on the PCB', () => {

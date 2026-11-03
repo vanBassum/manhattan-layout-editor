@@ -23,6 +23,7 @@ const cutLineProject = (): Project => ({
     },
     freeCopper: [],
   } as Layout,
+  schematic: { placements: [], wires: [], labels: [] },
   settings: { ...SETTINGS, strategy: 'knife-cuts' } as unknown as Settings,
 })
 

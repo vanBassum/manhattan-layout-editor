@@ -28,14 +28,6 @@ export const SCHEMATIC_GRID = 2.54
 export const CELL_WIDTH = 10 * SCHEMATIC_GRID
 export const CELL_HEIGHT = 7 * SCHEMATIC_GRID
 
-/** A schematic with nothing left to fill in. */
-export interface FullSchematic {
-  /** One per component, in netlist order. */
-  placements: SchematicPlacement[]
-  wires: Wire[]
-  labels: NetLabel[]
-}
-
 /** Map key of a point; coordinates are on the grid, so rounding only removes float noise. */
 export const pointKey = (p: Point) => `${Math.round(p.x * 1000) / 1000},${Math.round(p.y * 1000) / 1000}`
 
@@ -91,11 +83,11 @@ export function placedParts(placements: SchematicPlacement[], built: BuiltNetlis
 export const pinKeysOf = (parts: PlacedPart[]): Set<string> => new Set(parts.flatMap(({ pins }) => pins.map(pointKey)))
 
 /**
- * A placement for every component, in netlist order: stored ones as they are, the rest on a grid
+ * A placement for every component, in netlist order: the given ones as they are, the rest on a grid
  * below them. Placements of components no longer in the netlist are left out.
  */
-function completePlacements(netlist: Netlist, schematic: Schematic | undefined): SchematicPlacement[] {
-  const stored = new Map((schematic?.placements ?? []).map((p) => [p.ref, p]))
+export function completePlacements(netlist: Netlist, placements: SchematicPlacement[]): SchematicPlacement[] {
+  const stored = new Map(placements.map((p) => [p.ref, p]))
   const missing = netlist.components.filter((c) => !stored.has(c.ref))
   const columns = Math.max(1, Math.ceil(Math.sqrt(missing.length)))
   const storedYs = netlist.components.flatMap((c) => stored.get(c.ref)?.y ?? [])
@@ -109,22 +101,24 @@ function completePlacements(netlist: Netlist, schematic: Schematic | undefined):
   return netlist.components.map((c) => stored.get(c.ref) ?? added.get(c.ref)!)
 }
 
+/** A label with its net on every connected pin of `parts`. */
+export function pinLabels(parts: PlacedPart[]): NetLabel[] {
+  return parts.flatMap(({ component, pins }) =>
+    pins.flatMap((end, k) => {
+      const { net } = component.pins[k]
+      return isRealNet(net) ? [{ x: end.x, y: end.y, name: net, symbol: labelSymbolForName(net) }] : []
+    }),
+  )
+}
+
 /**
- * The schematic with every component placed. Until it has labels of its own, every connected pin
- * gets a label with its net, so the schematic says exactly what the imported netlist says.
- * `built` is the netlist with footprint choices applied: a transistor's pins depend on its package.
+ * A schematic that says exactly what the netlist says: every component placed (the given placements
+ * kept), no wires, and every connected pin labelled with its net. `built` is the netlist with
+ * footprint choices applied: a transistor's pins depend on its package.
  */
-export function completeSchematic(built: BuiltNetlist, schematic: Schematic | undefined): FullSchematic {
-  const placements = completePlacements(built, schematic)
-  const labels =
-    schematic?.labels ??
-    placedParts(placements, built).flatMap(({ component, pins }) =>
-      pins.flatMap((end, k) => {
-        const { net } = component.pins[k]
-        return isRealNet(net) ? [{ x: end.x, y: end.y, name: net, symbol: labelSymbolForName(net) }] : []
-      }),
-    )
-  return { placements, wires: schematic?.wires ?? [], labels }
+export function netlistSchematic(built: BuiltNetlist, placements: SchematicPlacement[]): Schematic {
+  const complete = completePlacements(built, placements)
+  return { placements: complete, wires: [], labels: pinLabels(placedParts(complete, built)) }
 }
 
 const isPowerName = (name: string) => /^(V\+|V-|VCC|VDD|VEE|[+-]?\d+(\.\d+)?V)$/i.test(name)
@@ -178,7 +172,7 @@ export interface SchematicNets {
  * after its label; an unlabelled net of two or more pins after its first pin (e.g. "R4.2"), and a
  * pin connected to nothing gets no net. Every pin of `netlist` must be among the placed `parts`.
  */
-export function deriveNets(netlist: Netlist, parts: PlacedPart[], wiring: Pick<FullSchematic, 'wires' | 'labels'>): SchematicNets {
+export function deriveNets(netlist: Netlist, parts: PlacedPart[], wiring: Pick<Schematic, 'wires' | 'labels'>): SchematicNets {
   const { find, union } = unionFind()
   const { wires, labels } = wiring
   const pins = parts.flatMap(({ component, pins: ends }) =>
@@ -302,7 +296,7 @@ type PointMoves = Map<string, { from: Point; to: Point }>
 type Follow = (p: Point) => Point | undefined
 
 /** Every point that `move` moves, from where it was to where it goes. Pins win over wiring on the same spot. */
-function movingPoints(schematic: FullSchematic, parts: PlacedPart[], move: SchematicMove): PointMoves {
+function movingPoints(schematic: Schematic, parts: PlacedPart[], move: SchematicMove): PointMoves {
   const { wiring, delta } = move
   const moves: PointMoves = new Map()
   const movingWires = schematic.wires.filter((_, i) => wiring.wires.includes(i))
@@ -323,7 +317,7 @@ function movingPoints(schematic: FullSchematic, parts: PlacedPart[], move: Schem
  * by the same shift. Such a wire moves as a whole, so whatever is joined to its middle (a T-join, a
  * label) goes along too.
  */
-function follower(schematic: FullSchematic, selectedWires: ReadonlySet<number>, moves: PointMoves, delta: Point): Follow {
+function follower(schematic: Schematic, selectedWires: ReadonlySet<number>, moves: PointMoves, delta: Point): Follow {
   const movingWires = schematic.wires.filter((_, i) => selectedWires.has(i))
   const attachedTo = (p: Point): Point | undefined =>
     moves.get(pointKey(p))?.to ?? (movingWires.some((w) => onWireInterior(p, w)) ? shifted(p, delta) : undefined)
@@ -348,7 +342,7 @@ function follower(schematic: FullSchematic, selectedWires: ReadonlySet<number>, 
  * shift by `delta`. With `follow` (a drag), unselected wires attached to what moves stretch along,
  * staying horizontal and vertical; without it (a move), they stay where they are.
  */
-function stretchedWires(schematic: FullSchematic, parts: PlacedPart[], selectedWires: ReadonlySet<number>, delta: Point, follow?: Follow): Wire[] {
+function stretchedWires(schematic: Schematic, parts: PlacedPart[], selectedWires: ReadonlySet<number>, delta: Point, follow?: Follow): Wire[] {
   // Things that can sit on the middle of a wire and must stay connected to it when it bends.
   const attachmentPoints = [...schematic.labels, ...schematic.wires.flatMap(wireEnds), ...parts.flatMap(({ pins }) => pins)]
   const inPlace: Wire[] = []
@@ -379,7 +373,7 @@ function stretchedWires(schematic: FullSchematic, parts: PlacedPart[], selectedW
  * Wires that bridge the gap where something moves away from what stays put and cannot stretch
  * along: a pin of a part that does not move (`fixedPins`), or the middle of a wire that stays.
  */
-function bridgingWires(schematic: FullSchematic, fixedPins: ReadonlySet<string>, selectedWires: ReadonlySet<number>, moves: PointMoves, follow: Follow): Wire[] {
+function bridgingWires(schematic: Schematic, fixedPins: ReadonlySet<string>, selectedWires: ReadonlySet<number>, moves: PointMoves, follow: Follow): Wire[] {
   const staysPut = (p: Point) =>
     fixedPins.has(pointKey(p)) ||
     schematic.wires.some((w, i) => !selectedWires.has(i) && onWireInterior(p, w) && !wireEnds(w).every((end) => follow(end)))
@@ -390,7 +384,7 @@ function bridgingWires(schematic: FullSchematic, fixedPins: ReadonlySet<string>,
  * The schematic after a move or drag. Every wire stays at its index, so a selection of wires still
  * names the same wires; wires that a drag adds (bends, bridges) come after them.
  */
-export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist, move: SchematicMove): FullSchematic {
+export function withSchematicMoved(schematic: Schematic, built: BuiltNetlist, move: SchematicMove): Schematic {
   const { wiring, delta, keepConnections } = move
   const parts = placedParts(schematic.placements, built)
   const selectedWires = new Set(wiring.wires)
@@ -418,7 +412,7 @@ export function withSchematicMoved(schematic: FullSchematic, built: BuiltNetlist
  * The schematic with some parts moved or rotated, dragging the wiring along: wire ends and labels on
  * their pins go with them and wires stay horizontal and vertical.
  */
-export function withPlacementChanges(schematic: FullSchematic, built: BuiltNetlist, changed: SchematicPlacement[]): FullSchematic {
+export function withPlacementChanges(schematic: Schematic, built: BuiltNetlist, changed: SchematicPlacement[]): Schematic {
   return withSchematicMoved(schematic, built, { placements: changed, wiring: NO_WIRING, delta: { x: 0, y: 0 }, keepConnections: true })
 }
 
@@ -427,13 +421,13 @@ export function withPlacementChanges(schematic: FullSchematic, built: BuiltNetli
  * by `turnLabel`; wires and labels on the parts' pins go along.
  */
 function withTurned(
-  schematic: FullSchematic,
+  schematic: Schematic,
   built: BuiltNetlist,
   refs: string[],
   labelIndexes: number[],
   turnPart: (p: SchematicPlacement) => SchematicPlacement,
   turnLabel: (rotation: number) => number,
-): FullSchematic {
+): Schematic {
   const turnedParts = schematic.placements.filter((p) => refs.includes(p.ref)).map(turnPart)
   const next = withPlacementChanges(schematic, built, turnedParts)
   const labels = next.labels.map((l, i) => (labelIndexes.includes(i) ? { ...l, rotation: turnLabel(l.rotation ?? 0) } : l))
@@ -441,7 +435,7 @@ function withTurned(
 }
 
 /** Parts `refs` and labels `labelIndexes` each turned in place, clockwise by `degrees`. */
-export function rotatedSelection(schematic: FullSchematic, built: BuiltNetlist, refs: string[], labelIndexes: number[], degrees: number): FullSchematic {
+export function rotatedSelection(schematic: Schematic, built: BuiltNetlist, refs: string[], labelIndexes: number[], degrees: number): Schematic {
   // Symbols only turn in quarter turns, so their pins stay on the grid.
   const quarterTurns = Math.max(1, Math.round(degrees / 90)) * 90
   return withTurned(
@@ -456,19 +450,19 @@ export function rotatedSelection(schematic: FullSchematic, built: BuiltNetlist, 
 
 /** Parts `refs` and labels `labelIndexes` each mirrored in place. */
 export function flippedSelection(
-  schematic: FullSchematic,
+  schematic: Schematic,
   built: BuiltNetlist,
   refs: string[],
   labelIndexes: number[],
   axis: 'horizontal' | 'vertical',
-): FullSchematic {
+): Schematic {
   // A ground or power symbol is symmetric, so mirroring it only changes which way it points.
   const turn = axis === 'horizontal' ? 360 : 540
   return withTurned(schematic, built, refs, labelIndexes, (p) => flipped(p, axis), (rotation) => (turn - rotation) % 360)
 }
 
 /** The schematic with label `index` changed. */
-export function withLabelChanged(schematic: FullSchematic, index: number, changes: Partial<NetLabel>): FullSchematic {
+export function withLabelChanged(schematic: Schematic, index: number, changes: Partial<NetLabel>): Schematic {
   return { ...schematic, labels: schematic.labels.map((l, i) => (i === index ? { ...l, ...changes } : l)) }
 }
 
@@ -530,13 +524,13 @@ function looseEnds(wires: Wire[], connectionPoints: Set<string>): Point[] {
 }
 
 /** Pin ends and labels: what a wire end can connect to besides other wires. */
-function connectionPoints(schematic: FullSchematic, built: BuiltNetlist): Set<string> {
+function connectionPoints(schematic: Schematic, built: BuiltNetlist): Set<string> {
   const pins = placedParts(schematic.placements, built).flatMap((part) => part.pins)
   return new Set([...pins, ...schematic.labels].map(pointKey))
 }
 
 /** The schematic's wire ends that connect to nothing. */
-export function looseWireEnds(schematic: FullSchematic, built: BuiltNetlist): Point[] {
+export function looseWireEnds(schematic: Schematic, built: BuiltNetlist): Point[] {
   return looseEnds(schematic.wires, connectionPoints(schematic, built))
 }
 
@@ -548,11 +542,11 @@ export function looseWireEnds(schematic: FullSchematic, built: BuiltNetlist): Po
  * itself or was left behind.
  */
 export function withTidyWires(
-  schematic: FullSchematic,
+  schematic: Schematic,
   built: BuiltNetlist,
   selectedWires: number[],
   allowedLooseEnds?: Point[],
-): { schematic: FullSchematic; selectedWires: number[]; changed: boolean } {
+): { schematic: Schematic; selectedWires: number[]; changed: boolean } {
   const rounded = schematic.wires.map((w) => ({
     x1: withoutFloatNoise(w.x1),
     y1: withoutFloatNoise(w.y1),
@@ -636,14 +630,10 @@ export function labelsFromAgent(labels: unknown): NetLabel[] {
   })
 }
 
-/** The project's schematic with every part placed. */
-export const projectSchematic = (project: Project): FullSchematic => completeSchematic(buildProjectNetlist(project), project.schematic)
-
 /** The nets the project's schematic gives, which the PCB does not use until it is updated. */
 export function projectSchematicNets(project: Project): SchematicNets {
-  const built = buildProjectNetlist(project)
-  const schematic = completeSchematic(built, project.schematic)
-  return deriveNets(project.netlist, placedParts(schematic.placements, built), schematic)
+  const { schematic } = project
+  return deriveNets(project.netlist, placedParts(schematic.placements, buildProjectNetlist(project)), schematic)
 }
 
 /** The project with the PCB brought in line with the schematic: its nets, and islands that follow them. */
@@ -750,7 +740,7 @@ const wireTouches = (w: Wire, r: Rect) =>
  * stretches when the selection is dragged; ends on a pin follow that pin instead.
  */
 export function marqueeSelection(
-  schematic: FullSchematic,
+  schematic: Schematic,
   parts: PlacedPart[],
   area: Rect,
   crossing: boolean,
@@ -788,7 +778,7 @@ export const snapPoint = (p: Point): Point => ({ x: snapToGrid(p.x, SCHEMATIC_GR
  */
 export interface SchematicDrag {
   moving: Selection
-  base: FullSchematic
+  base: Schematic
   keepConnections: boolean
 }
 
@@ -810,7 +800,7 @@ export function alongDragAxis(drag: SchematicDrag, d: Point): Point {
  * The drag's base with its selection shifted by `delta`. Parts keep a rotation or flip made mid-drag,
  * which only `current`, the schematic as it is now, has.
  */
-export function draggedSchematic(current: FullSchematic, built: BuiltNetlist, drag: SchematicDrag, delta: Point): FullSchematic {
+export function draggedSchematic(current: Schematic, built: BuiltNetlist, drag: SchematicDrag, delta: Point): Schematic {
   const refs = selectedRefs(drag.moving)
   const now = new Map(current.placements.map((p) => [p.ref, p]))
   const placements = drag.base.placements

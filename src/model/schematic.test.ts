@@ -16,23 +16,21 @@ import {
   pinEnds,
   pinsWithOtherNet,
   placedParts,
-  projectSchematic,
   rotatedSelection,
   unconnectedPins,
   withLabelChanged,
   withPlacementChanges,
   withSchematicMoved,
   withTidyWires,
-  type FullSchematic,
 } from './schematic'
 import { NO_WIRING } from './selection'
-import type { BuiltNetlist, Netlist, Point, WiringSelection } from './types'
+import type { BuiltNetlist, Netlist, Point, Schematic, WiringSelection } from './types'
 
 /** The example project's schematic with its part R1 and R1's first pin end. */
 function exampleWithR1() {
   const project = projectFromFile(example)
   const built = buildProjectNetlist(project)
-  const schematic = projectSchematic(project)
+  const schematic = project.schematic
   const parts = placedParts(schematic.placements, built)
   const r1 = parts.find((p) => p.component.ref === 'R1')!
   return { built, schematic, parts, r1, pin: r1.pins[0] }
@@ -66,7 +64,7 @@ describe('withPlacementChanges', () => {
   it('moves a label on a moved pin to the new pin end, and gives it no other fields', () => {
     const project = projectFromFile(example)
     const built = buildProjectNetlist(project)
-    const schematic = projectSchematic(project)
+    const schematic = project.schematic
     const index = built.components.findIndex((c) => c.ref === 'R1')
     const placement = schematic.placements[index]
     const [end] = pinEnds(built.components[index], placement)
@@ -83,7 +81,7 @@ describe('withPlacementChanges', () => {
 describe('deriveNets', () => {
   const project = projectFromFile(example)
   const built = buildProjectNetlist(project)
-  const schematic = projectSchematic(project)
+  const schematic = project.schematic
 
   it('matches pins by reference, whatever order the parts are in', () => {
     const inOrder = deriveNets(project.netlist, placedParts(schematic.placements, built), schematic)
@@ -109,7 +107,7 @@ describe('withSchematicMoved', () => {
   })
 
   it('stretches a wire along when its end moves along it', () => {
-    const schematic: FullSchematic = { placements: [], wires: [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }], labels: [] }
+    const schematic: Schematic = { placements: [], wires: [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }], labels: [] }
 
     const after = withSchematicMoved(schematic, noParts, move({ points: [{ x: 10.16, y: 0 }] }, { x: 5.08, y: 0 }))
 
@@ -117,7 +115,7 @@ describe('withSchematicMoved', () => {
   })
 
   it('bends a wire whose end moves sideways into a Z, one grid step before the moved end', () => {
-    const schematic: FullSchematic = { placements: [], wires: [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }], labels: [] }
+    const schematic: Schematic = { placements: [], wires: [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }], labels: [] }
 
     const after = withSchematicMoved(schematic, noParts, move({ points: [{ x: 10.16, y: 0 }] }, { x: 0, y: 5.08 }))
 
@@ -129,7 +127,7 @@ describe('withSchematicMoved', () => {
   })
 
   it('carries a wire whose two ends both move, with a label on its middle', () => {
-    const schematic: FullSchematic = {
+    const schematic: Schematic = {
       placements: [],
       wires: [{ x1: 0, y1: 0, x2: 10.16, y2: 0 }],
       labels: [{ x: 5.08, y: 0, name: 'A', symbol: 'net' }],
@@ -143,7 +141,7 @@ describe('withSchematicMoved', () => {
   })
 
   it('bridges the gap where a dragged wire leaves the middle of a wire that stays', () => {
-    const schematic: FullSchematic = {
+    const schematic: Schematic = {
       placements: [],
       wires: [
         { x1: 0, y1: 0, x2: 20.32, y2: 0 },
@@ -183,7 +181,7 @@ describe('withSchematicMoved', () => {
 
 describe('withTidyWires', () => {
   const noParts: BuiltNetlist = { components: [], nets: [] }
-  const wiresOnly = (wires: FullSchematic['wires'], labels: FullSchematic['labels'] = []): FullSchematic => ({ placements: [], wires, labels })
+  const wiresOnly = (wires: Schematic['wires'], labels: Schematic['labels'] = []): Schematic => ({ placements: [], wires, labels })
 
   it('splits wires lying over each other into pieces that meet end to end', () => {
     const schematic = wiresOnly([
@@ -257,10 +255,10 @@ describe('unconnectedPins', () => {
 describe('turning the selection', () => {
   const project = projectFromFile(example)
   const built = buildProjectNetlist(project)
-  const exampleSchematic = projectSchematic(project)
+  const exampleSchematic = project.schematic
   const r1 = built.components.findIndex((c) => c.ref === 'R1')
   // Two ground symbols away from every pin, one of them already turned.
-  const schematic: FullSchematic = {
+  const schematic: Schematic = {
     ...exampleSchematic,
     labels: [
       ...exampleSchematic.labels,
@@ -269,7 +267,7 @@ describe('turning the selection', () => {
     ],
   }
   const [straight, turned] = [schematic.labels.length - 2, schematic.labels.length - 1]
-  const rotations = (s: FullSchematic) => [s.labels[straight].rotation, s.labels[turned].rotation]
+  const rotations = (s: Schematic) => [s.labels[straight].rotation, s.labels[turned].rotation]
 
   it('rotates a part and labels by quarter turns, rounding to at least one', () => {
     const after = rotatedSelection(schematic, built, ['R1'], [straight, turned], 15)
@@ -299,7 +297,7 @@ describe('turning the selection', () => {
 
 describe('withLabelChanged', () => {
   it('changes only the given label', () => {
-    const schematic: FullSchematic = {
+    const schematic: Schematic = {
       placements: [],
       wires: [],
       labels: [
@@ -332,7 +330,7 @@ describe('grabAt', () => {
 })
 
 describe('marqueeSelection', () => {
-  const schematic: FullSchematic = {
+  const schematic: Schematic = {
     placements: [],
     wires: [
       { x1: 0, y1: 0, x2: 5.08, y2: 0 },
@@ -373,7 +371,7 @@ describe('marqueeSelection', () => {
 })
 
 describe('alongDragAxis', () => {
-  const base: FullSchematic = {
+  const base: Schematic = {
     placements: [],
     wires: [
       { x1: 0, y1: 0, x2: 10.16, y2: 0 },

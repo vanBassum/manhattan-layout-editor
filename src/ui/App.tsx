@@ -24,7 +24,6 @@ import { shareLinkOf, takeSharedProject } from '../documents/shareLink'
 import { selectedRefs, selectedWiring, selectionOf } from '../model/selection'
 import { screenshotHidden } from './pcb/hiddenScreenshot'
 import {
-  completeSchematic,
   deriveNets,
   flippedSelection,
   pinsWithOtherNet,
@@ -33,10 +32,9 @@ import {
   unconnectedPins,
   withLabelChanged,
   withSchematicNets,
-  type FullSchematic,
 } from '../model/schematic'
 import { SchematicView, type SchematicTool } from './schematic/SchematicView'
-import type { Layout, NetLabel, Placement, Project, Selection, Settings } from '../model/types'
+import type { Layout, NetLabel, Placement, Project, Schematic, Selection, Settings } from '../model/types'
 import { ProjectTabs } from './ProjectTabs'
 import { AppMenu } from './AppMenu'
 import { CanvasBanners } from './CanvasBanners'
@@ -75,7 +73,7 @@ const layoutUpdate =
 
 /** A project update that replaces the schematic. It leaves the PCB alone: "Update PCB" takes its nets over when the user is ready. */
 const schematicUpdate =
-  (schematic: FullSchematic) =>
+  (schematic: Schematic) =>
   (project: Project): Project => ({ ...project, schematic })
 
 export function App() {
@@ -142,12 +140,11 @@ export function App() {
   const [schematicGrid, setSchematicGrid] = usePreference(SCHEMATIC_GRID_KEY, (stored) =>
     parseGridLinesPerMajor(stored, DEFAULT_SCHEMATIC_GRID_LINES_PER_MAJOR),
   )
-  const { netlist, layout, settings } = project
+  const { netlist, layout, schematic, settings } = project
   const builtNetlist = useMemo(() => buildNetlist(netlist, layout.placements, project.definitions), [netlist, layout.placements, project.definitions])
-  const fullSchematic = useMemo(() => completeSchematic(builtNetlist, project.schematic), [builtNetlist, project.schematic])
   const schematicNets = useMemo(
-    () => deriveNets(netlist, placedParts(fullSchematic.placements, builtNetlist), fullSchematic),
-    [netlist, builtNetlist, fullSchematic],
+    () => deriveNets(netlist, placedParts(schematic.placements, builtNetlist), schematic),
+    [netlist, builtNetlist, schematic],
   )
   /** The schematic's own nets, drawn in the schematic; the PCB keeps `builtNetlist` until it is updated. */
   const schematicNetlist = useMemo(
@@ -275,7 +272,7 @@ export function App() {
   // The canvases call onBeginEdit once when a drag starts and then send every update of it here, so
   // the whole drag is one undo step. An action done in one go is a commitEdit instead.
   const updateLayout = (update: (layout: Layout) => Layout) => updateProject(layoutUpdate(update))
-  const updateSchematic = (next: FullSchematic) => updateProject(schematicUpdate(next))
+  const updateSchematic = (next: Schematic) => updateProject(schematicUpdate(next))
 
   const setSettings = (changes: Partial<Settings>) =>
     updateProject((p) => ({ ...p, settings: { ...p.settings, ...changes } }))
@@ -338,7 +335,7 @@ export function App() {
   const rotateSelected = (degrees: number, pane: Pane) => {
     if (pane === 'schematic') {
       if (!canTurnSchematic) return
-      commitEdit(schematicUpdate(rotatedSelection(fullSchematic, builtNetlist, refsToEdit, labelsToTurn, degrees)))
+      commitEdit(schematicUpdate(rotatedSelection(schematic, builtNetlist, refsToEdit, labelsToTurn, degrees)))
       return
     }
     editPlacements(refsToEdit, (p) => ({ ...p, rotation: (p.rotation + degrees) % 360 }))
@@ -347,10 +344,10 @@ export function App() {
   /** Mirrors each selected symbol in place; wires and labels on its pins go along. */
   const flipSelected = (axis: 'horizontal' | 'vertical') => {
     if (!canTurnSchematic) return
-    commitEdit(schematicUpdate(flippedSelection(fullSchematic, builtNetlist, refsToEdit, labelsToTurn, axis)))
+    commitEdit(schematicUpdate(flippedSelection(schematic, builtNetlist, refsToEdit, labelsToTurn, axis)))
   }
 
-  const changeLabel = (index: number, changes: Partial<NetLabel>) => commitEdit(schematicUpdate(withLabelChanged(fullSchematic, index, changes)))
+  const changeLabel = (index: number, changes: Partial<NetLabel>) => commitEdit(schematicUpdate(withLabelChanged(schematic, index, changes)))
 
   const resetLeads = () => editPlacements(refsToEdit, (p) => ({ ...p, leads: undefined }))
 
@@ -362,7 +359,7 @@ export function App() {
     commitEdit((p) => ({ ...p, netlist: withValues(p.netlist, [{ ref, value }]) }))
 
   const selectAll = () => {
-    const wiring = { wires: fullSchematic.wires.map((_, i) => i), labels: fullSchematic.labels.map((_, i) => i), points: [] }
+    const wiring = { wires: schematic.wires.map((_, i) => i), labels: schematic.labels.map((_, i) => i), points: [] }
     setSelection(selectionOf(layout.placements.map((p) => p.ref), layout.islands.map((i) => i.net), wiring))
   }
 
@@ -514,7 +511,7 @@ export function App() {
             <Section title="Properties">
               <PartProperties
                 netlist={schematicNetlist}
-                labels={fullSchematic.labels}
+                labels={schematic.labels}
                 selection={selection}
                 onValueChange={changeValue}
                 onLabelChange={changeLabel}
@@ -564,7 +561,7 @@ export function App() {
                 <div className="canvas-frame">
                   <SchematicView
                     netlist={schematicNetlist}
-                    schematic={fullSchematic}
+                    schematic={schematic}
                     nets={schematicNets}
                     onChange={updateSchematic}
                     onBeginEdit={beginEdit}

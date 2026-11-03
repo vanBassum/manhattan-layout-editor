@@ -1,10 +1,10 @@
 // A saved project file: what a file on this computer, a Google Drive document, a share link and a
 // recovery copy hold, and the file name a project is saved under.
 
-import { checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from '../model/definitions'
+import { buildProjectNetlist, checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from '../model/definitions'
 import { withoutCutLines } from '../model/migrations/migrateCutLayout'
-import { labelSymbolForName } from '../model/schematic'
-import type { LabelSymbol, NetLabel, Project, Settings } from '../model/types'
+import { completePlacements, labelSymbolForName, netlistSchematic } from '../model/schematic'
+import type { BuiltNetlist, LabelSymbol, NetLabel, Project, Schematic, SchematicPlacement, Settings, Wire } from '../model/types'
 import { BUILD_STYLES, findBuildStyle } from '../model/buildStyles'
 
 export const DEFAULT_SETTINGS: Settings = { snap: 0.5, isolation: 0.4, buildStyle: BUILD_STYLES[0].id }
@@ -31,10 +31,31 @@ type StoredLabel = Omit<NetLabel, 'symbol'> & { symbol?: LabelSymbol }
 
 const checkedLabel = (label: StoredLabel): NetLabel => ({ ...label, symbol: label.symbol ?? labelSymbolForName(label.name) })
 
-export const emptyProject =(settings: Settings = DEFAULT_SETTINGS): Project => ({
+/**
+ * A schematic as older versions stored it: none before the schematic view, placements only for
+ * parts that were moved, and wires and labels only once the schematic was edited.
+ */
+interface StoredSchematic {
+  placements: SchematicPlacement[]
+  wires?: Wire[]
+  labels?: StoredLabel[]
+}
+
+/**
+ * The stored schematic as older versions drew it: every part placed, and until it was edited, every
+ * pin labelled with its net.
+ */
+function checkedSchematic(stored: StoredSchematic | undefined, built: BuiltNetlist): Schematic {
+  const placements = stored === undefined ? [] : stored.placements
+  if (stored?.labels === undefined) return netlistSchematic(built, placements)
+  return { placements: completePlacements(built, placements), wires: stored.wires ?? [], labels: stored.labels.map(checkedLabel) }
+}
+
+export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
   guid: crypto.randomUUID(),
   netlist: { components: [], nets: [] },
   layout: { islands: [], placements: [] },
+  schematic: { placements: [], wires: [], labels: [] },
   settings,
 })
 
@@ -42,25 +63,29 @@ export const emptyProject =(settings: Settings = DEFAULT_SETTINGS): Project => (
  * A project read from storage or a file; projects from before guids get one here, parts without a
  * component definition get one from the built-in templates, and a cut-line layout becomes islands.
  * The name older versions stored is dropped, an old strategy becomes a build style, and the
- * optimizer's settings are dropped. Throws without a netlist or layout, for an invalid component
- * definition, naming it, and for an unknown build style.
+ * optimizer's settings are dropped. The schematic is completed as older versions drew it. Throws
+ * without a netlist or layout, for an invalid component definition, naming it, and for an unknown
+ * build style.
  */
 export function checkedProject(data: unknown): Project {
-  const project = { ...(data as Partial<Project> & { name?: unknown }) }
-  if (!project?.netlist?.components || !project.layout?.islands) throw new Error('the project is damaged: netlist or layout is missing')
-  delete project.name
+  const { name: _name, schematic: storedSchematic, ...project } = (data ?? {}) as Partial<Omit<Project, 'schematic'>> & {
+    name?: unknown
+    schematic?: StoredSchematic
+  }
+  if (!project.netlist?.components || !project.layout?.islands) throw new Error('the project is damaged: netlist or layout is missing')
   const definitions = checkedDefinitions(project.definitions)
   const checked = withoutCutLines(
     withDefinitions({
-      ...(project as Project),
+      ...(project as Omit<Project, 'schematic'>),
       guid: project.guid || crypto.randomUUID(),
       // Recovery copies from before definitions were checked may still refer to one a re-import made unfit.
       netlist: withoutUnfitDefinitions(project.netlist, definitions),
+      // Completed below, once the parts are built.
+      schematic: { placements: [], wires: [], labels: [] },
       definitions,
     }),
   )
-  const labels = (checked.schematic?.labels as StoredLabel[] | undefined)?.map(checkedLabel)
-  const schematic = checked.schematic && (labels ? { ...checked.schematic, labels } : checked.schematic)
+  const schematic = checkedSchematic(storedSchematic, buildProjectNetlist(checked))
   return { ...checked, schematic, settings: checkedSettings(checked.settings) }
 }
 

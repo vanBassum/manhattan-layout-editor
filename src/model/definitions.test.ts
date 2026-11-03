@@ -54,6 +54,7 @@ const projectWith = (components: NetComponent[], definitions?: Record<string, Co
   guid: 'test',
   netlist: { components, nets: ['A', 'B'] },
   layout: { islands: [], placements: components.map((c) => ({ ref: c.ref, x: 0, y: 0, rotation: 0 })) },
+  schematic: { placements: [], wires: [], labels: [] },
   definitions,
   settings: { snap: 0.5, isolation: 0.4, buildStyle: 'knife' },
 })

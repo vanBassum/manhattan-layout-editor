@@ -3,16 +3,19 @@
 import { buildNetlist, withDefinitions, withoutUnfitDefinitions } from './definitions'
 import { createLayout } from './layout'
 import { parseNetlist } from './netlist'
+import { netlistSchematic } from './schematic'
 import type { Project, Settings } from './types'
 
-/** A project that starts over from netlist `text`, on a fresh grid with no schematic yet. */
+/** A project that starts over from netlist `text`, on a fresh grid, with a schematic that labels every pin with its net. */
 export function importedProject(text: string, guid: string, settings: Settings): Project {
   const netlist = parseNetlist(text)
+  // Without definitions every part builds with the template withDefinitions then stores for it.
+  const built = buildNetlist(netlist, [], undefined)
   return withDefinitions({
     guid,
     netlist,
-    layout: createLayout(buildNetlist(netlist, [], undefined)),
-    schematic: undefined,
+    layout: createLayout(built),
+    schematic: netlistSchematic(built, []),
     definitions: undefined,
     settings,
   })
@@ -39,11 +42,12 @@ export function reimportedProject(text: string, current: Project): Project {
     },
     current.definitions,
   )
+  const built = buildNetlist(netlist, current.layout.placements, current.definitions)
   return withDefinitions({
     guid: current.guid,
     netlist,
-    layout: createLayout(buildNetlist(netlist, current.layout.placements, current.definitions), current.layout),
-    schematic: current.schematic ? { placements: current.schematic.placements } : undefined,
+    layout: createLayout(built, current.layout),
+    schematic: netlistSchematic(built, current.schematic.placements),
     definitions: current.definitions,
     settings: current.settings,
   })

@@ -202,11 +202,12 @@ export interface NetLabel {
 
 export type LabelSymbol = 'net' | 'ground' | 'power' | 'terminal'
 
+/** The schematic's wires and labels decide which pins share a net; the PCB takes them over on "Update PCB". */
 export interface Schematic {
+  /** One per component, in netlist order. */
   placements: SchematicPlacement[]
-  wires?: Wire[]
-  /** Missing until the schematic is first edited: then every pin gets a label with its net from the imported netlist. */
-  labels?: NetLabel[]
+  wires: Wire[]
+  labels: NetLabel[]
 }
 
 /** A project is called by its file's name (or its tab's, before it is saved); it holds no name itself. */
@@ -215,8 +216,7 @@ export interface Project {
   guid: string
   netlist: Netlist
   layout: Layout
-  /** Missing in projects from before the schematic view, and for components not moved yet: those get a grid spot. */
-  schematic?: Schematic
+  schematic: Schematic
   /** The project's own component definitions, keyed by the id in each component's `definition`. */
   definitions?: Record<string, ComponentDefinition>
   settings: Settings

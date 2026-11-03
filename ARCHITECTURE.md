@@ -45,6 +45,8 @@ Rules that follow from the table:
   `documents` writes a recovery copy of each change to IndexedDB and tells other browser tabs.
 - A part's drawn geometry and symbol come from `model/definitions.ts` (`buildNetlist`); the
   stored netlist never holds them.
-- The schematic has its own nets; the PCB only takes them over on "Update PCB".
+- The schematic has its own nets; the PCB only takes them over on "Update PCB". A project's
+  schematic is always complete (a placement per part, its wires and labels): it is completed where
+  parts come in (loading, netlist import, an agent's `add_component`), never while drawing.
 - An agent command runs on any open tab: `agent` gets that tab's project and functions to change
   it, undo, and take a screenshot, and never reaches into React state itself.
