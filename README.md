@@ -27,13 +27,15 @@ pnpm install
 pnpm dev
 ```
 
-## Google Drive sync (optional)
+## Google Drive (optional)
 
-Menu → **Sync tabs with Google Drive** keeps the open tabs, unsaved changes included, in a hidden
-folder of your Google Drive, so another computer gets them back after signing in. Without it the
-editor works as before and loads nothing from Google.
+A project is saved either on this computer or in Google Drive; the tab's icon shows which. Saving a
+new project asks where. Projects in Google Drive go to the editor's own hidden folder there, save
+themselves a moment after each change, and open from any computer through **Open…**. Nothing is
+copied between the two: **Save as…** makes a copy elsewhere. Without Google the editor works as
+before and loads nothing from Google.
 
-The option only shows in builds with a Google OAuth client id:
+Google Drive is only offered in builds with a Google OAuth client id:
 
 1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Google Drive API**.
 2. Set up the OAuth consent screen (External) with the scope `.../auth/drive.appdata`, and publish it.

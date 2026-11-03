@@ -1,15 +1,13 @@
 // The open projects (one per tab) live in IndexedDB as recovery copies: every change lands there,
-// so a crash or reload loses nothing. The project file on disk only changes on an explicit save.
-// Each record keeps the file content as last saved or opened, which tells whether the tab has
-// unsaved changes and whether the file changed on disk since.
+// so a crash or reload loses nothing. The open tabs are this computer's own work session; where a
+// project is saved is its location: a file on this computer, a document in Google Drive, or none
+// yet. Each record keeps the content as last saved or opened, which tells whether the tab has
+// unsaved changes and whether the saved document changed since.
 //
 // The editor reads and writes a copy in memory, loaded once before it starts; IndexedDB is written
 // behind it. Other browser tabs hear about changes over a BroadcastChannel. Each browser tab
 // remembers its own active project in sessionStorage, so two browser tabs can work on different
 // projects without overwriting each other.
-//
-// Drive sync (driveSync.ts) follows every change through onStoreChange, and brings in changes from
-// other computers as if another browser tab made them.
 
 import { checkedDefinitions, withDefinitions } from './definitions'
 import { errorText } from './errorText'
@@ -23,16 +21,28 @@ export interface ProjectTab {
   name: string
 }
 
-/** Where a tab's project stands against its file. */
+/**
+ * Where a project is saved: a file on this computer, or a document in the editor's folder in
+ * Google Drive. `version` is Drive's version of the document as last saved or opened here.
+ */
+export type ProjectLocation = { kind: 'local'; handle: FileSystemFileHandle } | { kind: 'drive'; fileId: string; version: string }
+
+/** Where a tab's project stands against its saved document. */
 export interface ProjectFile {
-  /** The linked file; none for a project that was never saved (or saved by download). */
-  handle?: FileSystemFileHandle
-  /** File content as last saved or opened. */
+  /** None for a project that was never saved (or saved by download). */
+  location?: ProjectLocation
+  /** Document content as last saved or opened. */
   savedContent: string
   /** The project differs from `savedContent`. */
   dirty: boolean
-  /** The file on disk was compared with `savedContent` in this session. Always true without a file. */
+  /** The saved document was compared with `savedContent` in this session. Always true without a location. */
   checked: boolean
+}
+
+/** A document opened or saved lately, for the Open dialog. */
+export interface RecentDocument {
+  name: string
+  location: ProjectLocation
 }
 
 interface OpenProject extends ProjectFile {
@@ -45,6 +55,8 @@ interface OpenProject extends ProjectFile {
 interface StoredProject {
   project: Project
   savedContent: string
+  location?: ProjectLocation
+  /** Before locations: the linked file. */
   handle?: FileSystemFileHandle
 }
 
@@ -59,6 +71,8 @@ const DB_NAME = 'manhattan-layout-editor'
 const PROJECTS_STORE = 'projects'
 const META_STORE = 'meta'
 const TABS_RECORD = 'tabs'
+const RECENT_RECORD = 'recent'
+const MAX_RECENT = 8
 const ACTIVE_TAB_KEY = 'manhattan-layout-editor/active-tab'
 
 /** Why tabs from the last session could not be opened again; the editor shows them once it is up. */
@@ -66,10 +80,10 @@ export const restoreErrors: string[] = []
 
 const openProjects = new Map<string, OpenProject>()
 let openTabs: ProjectTab[] = []
+let recent: RecentDocument[] = []
 let db: IDBDatabase | null = null
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(DB_NAME)
 const fileListeners = new Set<() => void>()
-const storeListeners = new Set<() => void>()
 const remoteListeners = new Set<(change: RemoteChange) => void>()
 
 export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
@@ -157,7 +171,7 @@ function tell(message: Message) {
   } catch {}
 }
 
-const storedOf = (open: OpenProject): StoredProject => ({ project: open.project, savedContent: open.savedContent, handle: open.handle })
+const storedOf = (open: OpenProject): StoredProject => ({ project: open.project, savedContent: open.savedContent, location: open.location })
 
 function persist(id: string) {
   const open = openProjects.get(id)
@@ -165,7 +179,6 @@ function persist(id: string) {
   const stored = storedOf(open)
   put(PROJECTS_STORE, id, stored)
   tell({ kind: 'project', id, stored })
-  notifyStore()
 }
 
 function remember(id: string, stored: StoredProject, checked: boolean) {
@@ -174,12 +187,11 @@ function remember(id: string, stored: StoredProject, checked: boolean) {
     ...stored,
     content,
     dirty: content !== stored.savedContent,
-    checked: checked || !stored.handle,
+    checked: checked || !stored.location,
   })
 }
 
 const notifyFiles = () => fileListeners.forEach((listener) => listener())
-const notifyStore = () => storeListeners.forEach((listener) => listener())
 
 // --- Before IndexedDB: localStorage --------------------------------------------------------------
 
@@ -243,9 +255,11 @@ export async function openProjectStore() {
         continue
       }
       if (!project) continue
-      remember(tab.id, { ...stored, project }, false)
+      const location: ProjectLocation | undefined = stored.location ?? (stored.handle && { kind: 'local', handle: stored.handle })
+      remember(tab.id, { project, savedContent: stored.savedContent, location }, false)
       openTabs.push(tab)
     }
+    recent = ((await request(db.transaction(META_STORE).objectStore(META_STORE).get(RECENT_RECORD))) as RecentDocument[] | undefined) ?? []
   } catch {
     // No IndexedDB (private window, disabled): work from memory for this session.
   }
@@ -269,7 +283,6 @@ export async function openProjectStore() {
       remoteListeners.forEach((listener) => listener({ kind: 'project', id: message.id, project: message.stored.project }))
     }
     notifyFiles()
-    notifyStore()
   })
 }
 
@@ -317,10 +330,10 @@ export function projectFile(id: string): ProjectFile {
   return openProjects.get(id) ?? { savedContent: '', dirty: false, checked: true }
 }
 
-/** A project that just opened in a tab, from `handle` or new; it starts without unsaved changes. */
-export function addProject(id: string, project: Project, handle?: FileSystemFileHandle) {
+/** A project that just opened in a tab, from `location` or new; it starts without unsaved changes. */
+export function addProject(id: string, project: Project, location?: ProjectLocation) {
   const content = projectToFile(project)
-  openProjects.set(id, { project, content, savedContent: content, handle, dirty: false, checked: true })
+  openProjects.set(id, { project, content, savedContent: content, location, dirty: false, checked: true })
   persist(id)
   notifyFiles()
 }
@@ -337,28 +350,31 @@ export function writeProject(id: string, project: Project) {
   if (open.dirty !== wasDirty) notifyFiles()
 }
 
-/** `project` is now in its file, as `handle`. */
-export function markSaved(id: string, project: Project, handle?: FileSystemFileHandle) {
+/** `project` is now saved at `location`. */
+export function markSaved(id: string, project: Project, location?: ProjectLocation) {
   const content = projectToFile(project)
-  openProjects.set(id, { project, content, savedContent: content, handle, dirty: false, checked: true })
+  openProjects.set(id, { project, content, savedContent: content, location, dirty: false, checked: true })
   persist(id)
   notifyFiles()
 }
 
-/** The file holds `fileContent`; the tab keeps its own project, which may now count as unsaved. */
-export function acceptFileContent(id: string, fileContent: string) {
+/**
+ * The saved document, now at `location`, holds `savedContent`; the tab keeps its own project, which
+ * may now count as unsaved.
+ */
+export function acceptSavedContent(id: string, savedContent: string, location: ProjectLocation) {
   const open = openProjects.get(id)
   if (!open) return
-  Object.assign(open, { savedContent: fileContent, dirty: open.content !== fileContent, checked: true })
+  Object.assign(open, { savedContent, location, dirty: open.content !== savedContent, checked: true })
   persist(id)
   notifyFiles()
 }
 
-/** The file is gone or unreadable: the tab keeps its project, unsaved, and Save asks for a new file. */
-export function unlinkFile(id: string) {
+/** The document is gone or unreadable: the tab keeps its project, unsaved, and Save asks for a new location. */
+export function unlinkLocation(id: string) {
   const open = openProjects.get(id)
   if (!open) return
-  Object.assign(open, { handle: undefined, savedContent: '', dirty: true, checked: true })
+  Object.assign(open, { location: undefined, savedContent: '', dirty: true, checked: true })
   persist(id)
   notifyFiles()
 }
@@ -367,14 +383,45 @@ export function writeTabs(tabs: ProjectTab[]) {
   openTabs = tabs
   put(META_STORE, TABS_RECORD, tabs)
   tell({ kind: 'tabs', tabs })
-  notifyStore()
 }
 
 export function removeProject(id: string) {
   openProjects.delete(id)
   remove(PROJECTS_STORE, id)
   tell({ kind: 'removed', id })
-  notifyStore()
+}
+
+export const recentDocuments = () => recent
+
+async function isSameLocation(a: ProjectLocation, b: ProjectLocation): Promise<boolean> {
+  if (a.kind === 'drive') return b.kind === 'drive' && a.fileId === b.fileId
+  if (b.kind === 'drive') return false
+  return a.handle.isSameEntry(b.handle)
+}
+
+/** Puts the document at `location` first in the recent documents. */
+export async function rememberRecent(name: string, location: ProjectLocation) {
+  const others: RecentDocument[] = []
+  for (const document of recent) if (!(await isSameLocation(document.location, location))) others.push(document)
+  recent = [{ name, location }, ...others].slice(0, MAX_RECENT)
+  put(META_STORE, RECENT_RECORD, recent)
+}
+
+/** Takes a document off the recent list, for one that cannot be opened anymore. */
+export async function forgetRecent(location: ProjectLocation) {
+  const kept: RecentDocument[] = []
+  for (const document of recent) if (!(await isSameLocation(document.location, location))) kept.push(document)
+  recent = kept
+  put(META_STORE, RECENT_RECORD, recent)
+}
+
+/** The open tab showing the document at `location`, if any. */
+export async function tabShowing(location: ProjectLocation): Promise<string | undefined> {
+  for (const tab of openTabs) {
+    const open = openProjects.get(tab.id)?.location
+    if (open && (await isSameLocation(open, location))) return tab.id
+  }
+  return undefined
 }
 
 export function rememberActiveTab(id: string) {
@@ -393,36 +440,4 @@ export function onFileChange(listener: () => void) {
 export function onRemoteChange(listener: (change: RemoteChange) => void) {
   remoteListeners.add(listener)
   return () => void remoteListeners.delete(listener)
-}
-
-/** Called after any change to the tabs or a project, from this browser tab or another. Returns the unsubscribe. */
-export function onStoreChange(listener: () => void) {
-  storeListeners.add(listener)
-  return () => void storeListeners.delete(listener)
-}
-
-// --- Drive sync ----------------------------------------------------------------------------------
-
-export const currentTabs = () => openTabs
-
-/** Tab `id`'s project as file content; undefined for a tab this browser does not have. */
-export const projectContent = (id: string): string | undefined => openProjects.get(id)?.content
-
-/**
- * Tab `id`'s project as another device left it, shown as if another browser tab changed it. A file
- * link stays: it belongs to this device, and so does what was last saved to that file.
- */
-export function applySyncedProject(id: string, project: Project) {
-  const open = openProjects.get(id)
-  remember(id, { project, savedContent: open?.savedContent ?? projectToFile(project), handle: open?.handle }, open?.checked ?? true)
-  persist(id)
-  remoteListeners.forEach((listener) => listener({ kind: 'project', id, project }))
-  notifyFiles()
-}
-
-/** The tabs as another device left them; projects of tabs that are gone are dropped. */
-export function applySyncedTabs(tabs: ProjectTab[]) {
-  for (const tab of openTabs) if (!tabs.some((t) => t.id === tab.id)) removeProject(tab.id)
-  writeTabs(tabs)
-  remoteListeners.forEach((listener) => listener({ kind: 'tabs', tabs }))
 }

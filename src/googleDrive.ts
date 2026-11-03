@@ -1,16 +1,18 @@
-// Google sign-in and the editor's hidden folder in the user's Google Drive (the app data folder),
-// over plain fetch. Nothing is loaded from Google until someone chooses to sync: the sign-in script
-// is only added to the page on the first sign-in.
+// Google sign-in and the editor's own folder in the user's Google Drive (the hidden app data
+// folder), over plain fetch. Each project saved there is one document. Nothing is loaded from
+// Google until someone chooses Google Drive: the sign-in script is only added on the first sign-in.
 
 const CLIENT_ID: string | undefined = import.meta.env.VITE_GOOGLE_CLIENT_ID
-/** Drive sync is only offered by builds that have a Google OAuth client id. */
+/** Google Drive is only offered by builds that have a Google OAuth client id. */
 export const driveConfigured = Boolean(CLIENT_ID)
 
 // Only the app data folder: the editor sees nothing else in the user's Drive.
 const SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
 const SIGN_IN_SCRIPT = 'https://accounts.google.com/gsi/client'
 const API = 'https://www.googleapis.com'
-export const TOKEN_KEY = 'manhattan-layout-editor/drive-token'
+const TOKEN_KEY = 'manhattan-layout-editor/drive-token'
+const DOCUMENT_SUFFIX = '.manhattan.json'
+const SIGN_IN_CHECK_MS = 30_000
 
 interface TokenResponse {
   access_token?: string
@@ -50,15 +52,35 @@ function readToken(): StoredToken | null {
 }
 
 /** The access token, or null when signed out or expired. */
-export function accessToken(): string | null {
+function accessToken(): string | null {
   const token = readToken()
   return token && token.expiresAt > Date.now() ? token.accessToken : null
+}
+
+export const isSignedIn = () => accessToken() !== null
+
+const signInListeners = new Set<() => void>()
+const notifySignIn = () => signInListeners.forEach((listener) => listener())
+let watchingSignIn = false
+
+/** Called when the sign-in may have changed: here, in another browser tab, or by running out. Returns the unsubscribe. */
+export function onSignInChange(listener: () => void) {
+  if (!watchingSignIn) {
+    watchingSignIn = true
+    window.addEventListener('storage', (e) => {
+      if (e.key === TOKEN_KEY) notifySignIn()
+    })
+    setInterval(notifySignIn, SIGN_IN_CHECK_MS)
+  }
+  signInListeners.add(listener)
+  return () => void signInListeners.delete(listener)
 }
 
 function forgetToken() {
   try {
     localStorage.removeItem(TOKEN_KEY)
   } catch {}
+  notifySignIn()
 }
 
 let signInScript: Promise<GoogleOAuth> | null = null
@@ -78,7 +100,7 @@ function loadSignInScript(): Promise<GoogleOAuth> {
   return signInScript
 }
 
-/** Asks Google for access to the app data folder. Call it from a click: it opens Google's sign-in window. */
+/** Asks Google for access to the editor's folder. Call it from a click: it opens Google's sign-in window. */
 export async function signIn() {
   if (!CLIENT_ID) throw new Error('this build has no Google client id')
   const oauth = await loadSignInScript()
@@ -93,9 +115,10 @@ export async function signIn() {
       .requestAccessToken(),
   )
   if (!response.access_token || !response.expires_in) throw new Error(response.error_description ?? response.error ?? 'Google gave no access')
-  // A minute early, so a sync never starts with a token that runs out halfway.
+  // A minute early, so a save never starts with a token that runs out halfway.
   const token: StoredToken = { accessToken: response.access_token, expiresAt: Date.now() + (response.expires_in - 60) * 1000 }
   localStorage.setItem(TOKEN_KEY, JSON.stringify(token))
+  notifySignIn()
 }
 
 /** Forgets the token here and tells Google to revoke it. */
@@ -105,75 +128,95 @@ export function signOut() {
   if (token) fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: 'POST' }).catch(() => {})
 }
 
-/** Google no longer accepts the token; syncing waits for the user to sign in again. */
-export class SignInNeeded extends Error {}
+/** Google no longer accepts the token: the user has to sign in again. */
+export class SignInNeeded extends Error {
+  constructor() {
+    super('Sign in with Google first')
+  }
+}
 
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
   const token = accessToken()
-  if (!token) throw new SignInNeeded('Google sign-in expired')
+  if (!token) throw new SignInNeeded()
   const response = await fetch(`${API}${path}`, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } })
   if (response.status === 401) {
     forgetToken()
-    throw new SignInNeeded('Google sign-in expired')
+    throw new SignInNeeded()
   }
+  if (response.status === 404) throw new Error('the document is no longer in Google Drive')
   if (!response.ok) throw new Error(`Google Drive answered ${response.status}: ${(await response.text()).slice(0, 200)}`)
   return response
 }
 
-/** A file in the app data folder; `version` goes up with every change to it. */
-export interface DriveFile {
+/** A project document in the editor's folder; `version` goes up with every change to it. */
+export interface DriveDocument {
   id: string
   name: string
   version: string
+  modifiedTime: string
 }
 
-/** The app data folder, as the sync uses it; tests stand in a folder in memory. */
-export interface AppFolder {
-  list(): Promise<DriveFile[]>
-  read(id: string): Promise<string>
-  /** Writes `text` to file `id`, or to a new file `name` without an id. */
-  write(name: string, text: string, id?: string): Promise<DriveFile>
-  remove(id: string): Promise<void>
+/** A file as Drive lists it; a document's file name is its name plus the suffix. */
+type DriveFile = DriveDocument
+
+const FILE_FIELDS = 'id,name,version,modifiedTime'
+const documentName = (fileName: string) => fileName.replace(/\.manhattan\.json$/i, '')
+const asDocument = (file: DriveFile): DriveDocument => ({ ...file, name: documentName(file.name) })
+
+/** Every file in the editor's folder, documents or not. */
+export async function listFiles(): Promise<DriveFile[]> {
+  const files: DriveFile[] = []
+  let pageToken = ''
+  do {
+    const query = new URLSearchParams({ spaces: 'appDataFolder', fields: `nextPageToken,files(${FILE_FIELDS})`, pageSize: '1000', orderBy: 'modifiedTime desc' })
+    if (pageToken) query.set('pageToken', pageToken)
+    const page = (await (await call(`/drive/v3/files?${query}`)).json()) as { files: DriveFile[]; nextPageToken?: string }
+    files.push(...page.files)
+    pageToken = page.nextPageToken ?? ''
+  } while (pageToken)
+  return files
 }
 
-const FILE_FIELDS = 'id,name,version'
+/** The project documents in the editor's folder, most recently changed first. */
+export async function listDocuments(): Promise<DriveDocument[]> {
+  const files = await listFiles()
+  return files.filter((file) => file.name.endsWith(DOCUMENT_SUFFIX)).map(asDocument)
+}
 
-export const googleAppFolder: AppFolder = {
-  async list() {
-    const files: DriveFile[] = []
-    let pageToken = ''
-    do {
-      const query = new URLSearchParams({ spaces: 'appDataFolder', fields: `nextPageToken,files(${FILE_FIELDS})`, pageSize: '1000' })
-      if (pageToken) query.set('pageToken', pageToken)
-      const page = (await (await call(`/drive/v3/files?${query}`)).json()) as { files: DriveFile[]; nextPageToken?: string }
-      files.push(...page.files)
-      pageToken = page.nextPageToken ?? ''
-    } while (pageToken)
-    return files
-  },
+export async function readDocument(id: string): Promise<string> {
+  return (await call(`/drive/v3/files/${id}?alt=media`)).text()
+}
 
-  async read(id) {
-    return (await call(`/drive/v3/files/${id}?alt=media`)).text()
-  },
+/** Drive's current version of document `id`, to tell whether it changed since it was opened or saved here. */
+export async function documentVersion(id: string): Promise<string> {
+  return ((await (await call(`/drive/v3/files/${id}?fields=version`)).json()) as { version: string }).version
+}
 
-  async write(name, text, id) {
-    if (!id) {
-      const created = await call('/drive/v3/files?fields=id', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, parents: ['appDataFolder'] }),
-      })
-      id = ((await created.json()) as { id: string }).id
-    }
-    const written = await call(`/upload/drive/v3/files/${id}?uploadType=media&fields=${FILE_FIELDS}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: text,
-    })
-    return (await written.json()) as DriveFile
-  },
+/** Writes project `name` to document `id`, or to a new document without an id. The file name follows the project name. */
+export async function writeDocument(name: string, text: string, id?: string): Promise<DriveDocument> {
+  // Drive takes the name and the content in one multipart request.
+  const boundary = `manhattan-${crypto.randomUUID()}`
+  const metadata = id ? { name: `${name}${DOCUMENT_SUFFIX}` } : { name: `${name}${DOCUMENT_SUFFIX}`, parents: ['appDataFolder'] }
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${text}\r\n--${boundary}--`
+  const path = id ? `/upload/drive/v3/files/${id}` : '/upload/drive/v3/files'
+  const response = await call(`${path}?uploadType=multipart&fields=${FILE_FIELDS}`, {
+    method: id ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
+  })
+  return asDocument((await response.json()) as DriveFile)
+}
 
-  async remove(id) {
-    await call(`/drive/v3/files/${id}`, { method: 'DELETE' })
-  },
+export async function renameDocument(id: string, name: string) {
+  await call(`/drive/v3/files/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: `${name}${DOCUMENT_SUFFIX}` }),
+  })
+}
+
+export async function removeFile(id: string) {
+  await call(`/drive/v3/files/${id}`, { method: 'DELETE' })
 }

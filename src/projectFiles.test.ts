@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import example from './examples/multivibrator.manhattan.json?raw'
-import { compareWithFile, saveProjectFile } from './projectFiles'
+import { compareWithFile, saveLocalFile } from './projectFiles'
 import { projectFromFile, projectToFile, type ProjectFile } from './projectStore'
 
 /** A file with permission already granted; `written` collects what the editor writes to it. */
@@ -22,14 +22,14 @@ function fakeFile(content: string) {
 const asHandle = (file: ReturnType<typeof fakeFile>) => file as unknown as FileSystemFileHandle
 const project = projectFromFile(example)
 const saved = projectToFile(project)
-const linked = (file: ReturnType<typeof fakeFile>, dirty = false): ProjectFile => ({ handle: asHandle(file), savedContent: saved, dirty, checked: true })
+const linked = (file: ReturnType<typeof fakeFile>, dirty = false): ProjectFile => ({ location: { kind: 'local', handle: asHandle(file) }, savedContent: saved, dirty, checked: true })
 const changedElsewhere = projectToFile({ ...project, name: 'Changed elsewhere' })
 
-describe('saveProjectFile', () => {
+describe('saveLocalFile', () => {
   it('writes to the linked file without asking when it did not change on disk', async () => {
     const file = fakeFile(saved)
     const renamed = { ...project, name: 'Renamed' }
-    const handle = await saveProjectFile(renamed, linked(file), false, async () => {
+    const handle = await saveLocalFile(renamed, asHandle(file), saved, async () => {
       throw new Error('should not ask')
     })
     expect(handle).toBe(asHandle(file))
@@ -39,7 +39,7 @@ describe('saveProjectFile', () => {
   it('asks before overwriting a file that changed on disk, and writes nothing when refused', async () => {
     const file = fakeFile(changedElsewhere)
     const asked: string[] = []
-    const handle = await saveProjectFile(project, linked(file), false, async (name) => {
+    const handle = await saveLocalFile(project, asHandle(file), saved, async (name) => {
       asked.push(name)
       return false
     })

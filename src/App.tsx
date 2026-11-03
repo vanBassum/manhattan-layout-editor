@@ -3,8 +3,10 @@ import { connectAgentBridge } from './agentBridge'
 import { buildNetlist, buildProjectNetlist, withDefinitions } from './definitions'
 import { agentTargetId, runAgentCommand } from './agentDispatch'
 import { Canvas, DEFAULT_PCB_GRID_LINES_PER_MAJOR, type EditMode, type Layers, type LayerView, type MoveMode, type Tool } from './Canvas'
-import { connectDrive, disconnectDrive, driveConfigured, driveStatus, onDriveStatus, startDriveSync } from './driveSync'
+import { compareWithDrive, openDriveDocument, saveDriveDocument, type DriveLocation } from './driveDocuments'
 import { exportDxf } from './exportDxf'
+import { driveConfigured, isSignedIn, onSignInChange, signIn, signOut, SignInNeeded } from './googleDrive'
+import { OpenDialog } from './OpenDialog'
 import { errorText } from './errorText'
 import { downloadText, exportSvg } from './exportSvg'
 import { FootprintDialog } from './FootprintDialog'
@@ -38,13 +40,14 @@ import {
   Validation,
   type Question,
 } from './panels'
-import { canUseFiles, compareWithFile, fileLabel, mayUse, pickFileToOpen, readFile, saveProjectFile } from './projectFiles'
+import { canUseFiles, compareWithFile, fileLabel, mayUse, pickFileToOpen, readFile, saveLocalFile, type FileComparison } from './projectFiles'
 import {
-  acceptFileContent,
+  acceptSavedContent,
   addProject,
   DEFAULT_SETTINGS,
   emptyProject,
   EXAMPLES,
+  forgetRecent,
   loadTabs,
   markSaved,
   newTabId,
@@ -54,13 +57,18 @@ import {
   projectFromFile,
   projectToFile,
   readProject,
+  recentDocuments,
   rememberActiveTab,
+  rememberRecent,
   removeProject,
   restoreErrors,
-  unlinkFile,
+  tabShowing,
+  unlinkLocation,
   writeProject,
   writeTabs,
+  type ProjectLocation,
   type ProjectTab,
+  type RecentDocument,
 } from './projectStore'
 import { canvasToPng } from './screenshot'
 import { shareLinkOf, takeSharedProject } from './shareLink'
@@ -107,6 +115,7 @@ const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title
 ]
 
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
+const DRIVE_AUTOSAVE_MS = 2000
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
 const LAYERS_KEY = 'manhattan-layout-editor/layers'
 const SCHEMATIC_LAYERS_KEY = 'manhattan-layout-editor/schematic-layers'
@@ -405,22 +414,22 @@ export function App() {
     [],
   )
 
-  const [drive, setDrive] = useState(driveStatus)
-  useEffect(() => {
-    startDriveSync({ error: setError, notice: setNotice })
-    return onDriveStatus(() => setDrive(driveStatus()))
-  }, [])
+  const [signedIn, setSignedIn] = useState(isSignedIn)
+  useEffect(() => onSignInChange(() => setSignedIn(isSignedIn())), [])
 
-  const turnOnDrive = async () => {
+  /** Signs in with Google; call it from a click. False when it did not work out. */
+  const signInToGoogle = async (): Promise<boolean> => {
     try {
-      await connectDrive()
+      await signIn()
+      return true
     } catch (e) {
       setError(`Could not sign in with Google: ${errorText(e)}`)
+      return false
     }
   }
 
-  // Re-render when a tab gets or loses unsaved changes, or its file is checked.
-  const [, setFileStatusVersion] = useState(0)
+  // Re-render when a tab gets or loses unsaved changes, or its saved document is checked.
+  const [fileStatusVersion, setFileStatusVersion] = useState(0)
   useEffect(() => onFileChange(() => setFileStatusVersion((n) => n + 1)), [])
 
   useEffect(() => {
@@ -469,9 +478,10 @@ export function App() {
     if (id !== activeId) showTab(id, readProject(id))
   }
 
-  const openInNewTab = (opened: Project, handle?: FileSystemFileHandle) => {
+  const openInNewTab = (opened: Project, location?: ProjectLocation) => {
     const id = newTabId()
-    addProject(id, opened, handle)
+    addProject(id, opened, location)
+    if (location) rememberRecent(opened.name, location)
     const next = [...tabsRef.current, { id, name: opened.name }]
     setTabs(next)
     writeTabs(next)
@@ -519,28 +529,54 @@ export function App() {
       }),
     )
 
-  const confirmOverwrite = async (fileName: string) => {
+  const confirmOverwrite = async (name: string) => {
     const answer = await ask({
-      title: `Overwrite "${fileName}"?`,
-      text: 'The file changed on disk since it was opened or saved here.',
+      title: `Overwrite "${name}"?`,
+      text: 'It changed elsewhere since it was opened or saved here.',
       choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'overwrite', label: 'Overwrite' }],
       cancel: 'cancel',
     })
     return answer === 'overwrite'
   }
 
-  /** Saves tab `id` to its file, or asks for one; false when nothing was saved. */
+  /** Asks where to save a project that has no location yet, or a copy of it; null when cancelled. */
+  const chooseLocation = async (name: string): Promise<ProjectLocation['kind'] | null> => {
+    if (!driveConfigured) return 'local'
+    const answer = await ask({
+      title: `Save "${name}"`,
+      text: 'Where should it be saved?',
+      choices: [{ answer: 'cancel', label: 'Cancel' }, { answer: 'local', label: 'This computer' }, { answer: 'drive', label: 'Google Drive' }],
+      cancel: 'cancel',
+    })
+    return answer === 'cancel' ? null : answer
+  }
+
+  /**
+   * Saves tab `id` to its location; a project without one, or with `saveAs`, asks where to. Save as
+   * leaves the original as it was. False when nothing was saved.
+   */
   const saveTab = async (id: string, saveAs = false): Promise<boolean> => {
     const toSave = shownProject(id)
+    const file = projectFile(id)
+    const current = saveAs ? undefined : file.location
     try {
-      if (!canUseFiles) {
+      const kind = current?.kind ?? (await chooseLocation(toSave.name))
+      if (!kind) return false
+      let saved: ProjectLocation | null
+      if (kind === 'drive') {
+        if (!isSignedIn() && !(await signInToGoogle())) return false
+        saved = await saveDriveDocument(toSave, current?.kind === 'drive' ? current : undefined, file.savedContent, confirmOverwrite)
+      } else if (canUseFiles) {
+        const handle = await saveLocalFile(toSave, current?.kind === 'local' ? current.handle : undefined, file.savedContent, confirmOverwrite)
+        saved = handle && { kind: 'local', handle }
+      } else {
         downloadText(`${toSave.name}.manhattan.json`, projectToFile(toSave), 'application/json')
         markSaved(id, toSave)
         return true
       }
-      const handle = await saveProjectFile(toSave, projectFile(id), saveAs, confirmOverwrite)
-      if (!handle) return false
-      markSaved(id, toSave, handle)
+      if (!saved) return false
+      markSaved(id, toSave, saved)
+      rememberRecent(toSave.name, saved)
       return true
     } catch (e) {
       setError(`Could not save: ${errorText(e)}`)
@@ -548,67 +584,143 @@ export function App() {
     }
   }
 
+  const [showOpen, setShowOpen] = useState(false)
+
+  /** Opens the document at `location` in a new tab, or shows the tab that already has it. */
+  const openLocation = async (location: ProjectLocation) => {
+    const shown = await tabShowing(location)
+    if (shown) return switchTab(shown)
+    if (location.kind === 'local') {
+      if (!(await mayUse(location.handle, true))) throw new Error(`no permission to open "${location.handle.name}"`)
+      return openInNewTab(projectFromFile(await readFile(location.handle)), location)
+    }
+    if (!isSignedIn() && !(await signInToGoogle())) return
+    const opened = await openDriveDocument(location.fileId)
+    openInNewTab(opened.project, opened.location)
+  }
+
+  const openDriveDocumentById = async (fileId: string) => {
+    setShowOpen(false)
+    try {
+      await openLocation({ kind: 'drive', fileId, version: '' })
+    } catch (e) {
+      setError(`Could not open the document: ${errorText(e)}`)
+    }
+  }
+
+  const openRecent = async (recent: RecentDocument) => {
+    setShowOpen(false)
+    try {
+      await openLocation(recent.location)
+    } catch (e) {
+      forgetRecent(recent.location)
+      setError(`Could not open "${recent.name}" (${errorText(e)}); it is taken off the recent documents.`)
+    }
+  }
+
   const openProjectFile = async () => {
+    setShowOpen(false)
     if (!canUseFiles) {
       projectFileInputRef.current!.click()
       return
     }
     try {
       const handle = await pickFileToOpen()
-      if (!handle) return
-      for (const tab of tabs) {
-        const open = projectFile(tab.id).handle
-        if (open && (await open.isSameEntry(handle))) return switchTab(tab.id)
-      }
-      openInNewTab(projectFromFile(await readFile(handle)), handle)
+      if (handle) await openLocation({ kind: 'local', handle })
     } catch (e) {
       setError(errorText(e))
     }
   }
 
   /**
-   * After a reload the tab shows its recovery copy. Compares the file with it: an unchanged file
-   * needs nothing, a file changed elsewhere replaces a copy without unsaved changes, and with
-   * changes on both sides the user picks. Without permission yet (`askPermission` false) it waits for a click.
+   * After a reload the tab shows its recovery copy. Compares the saved document with it: an
+   * unchanged document needs nothing, one changed elsewhere replaces a copy without unsaved changes,
+   * and with changes on both sides the user picks. Without permission or sign-in yet (`ask` false)
+   * it waits for a click.
    */
-  const [fileConflict, setFileConflict] = useState<{ id: string; project: Project; content: string } | null>(null)
-  const checkFile = async (id: string, askPermission: boolean) => {
+  const [fileConflict, setFileConflict] = useState<{ id: string; project: Project; content: string; location: ProjectLocation } | null>(null)
+  const checkSaved = async (id: string, ask: boolean) => {
     const file = projectFile(id)
-    if (!file.handle || file.checked) return
+    const location = file.location
+    if (!location || file.checked) return
     try {
-      if (!(await mayUse(file.handle, askPermission))) return
-      const comparison = await compareWithFile(file.handle, file)
-      if (id !== activeIdRef.current) return
-      if (comparison.kind === 'unchanged') acceptFileContent(id, comparison.content)
-      else if (comparison.kind === 'newer') loadFileVersion(id, comparison.project, file.handle)
-      else setFileConflict({ id, project: comparison.project, content: comparison.content })
+      if (location.kind === 'local') {
+        if (!(await mayUse(location.handle, ask))) return
+        showComparison(id, await compareWithFile(location.handle, file), location)
+      } else {
+        if (!isSignedIn() && !(ask && (await signInToGoogle()))) return
+        const checked = await compareWithDrive(location, file)
+        showComparison(id, checked.comparison, checked.location)
+      }
     } catch (e) {
-      // Moved, deleted or damaged: keep working on the recovery copy; Save asks for a new file.
-      setError(`Could not read "${file.handle.name}" (${errorText(e)}). Showing the recovery copy.`)
-      unlinkFile(id)
+      if (e instanceof SignInNeeded) return
+      // Moved, deleted or damaged: keep working on the recovery copy; Save asks for a new location.
+      setError(`Could not read "${tabLabel({ id, name: readProject(id).name })}" (${errorText(e)}). Showing the recovery copy.`)
+      unlinkLocation(id)
     }
   }
 
-  const loadFileVersion = (id: string, fromFile: Project, handle: FileSystemFileHandle) => {
+  const showComparison = (id: string, comparison: FileComparison, location: ProjectLocation) => {
+    if (id !== activeIdRef.current) return
+    if (comparison.kind === 'unchanged') acceptSavedContent(id, comparison.content, location)
+    else if (comparison.kind === 'newer') loadSavedVersion(id, comparison.project, location)
+    else setFileConflict({ id, project: comparison.project, content: comparison.content, location })
+  }
+
+  const loadSavedVersion = (id: string, saved: Project, location: ProjectLocation) => {
     rememberEdit()
-    showProject(fromFile)
-    markSaved(id, fromFile, handle)
+    showProject(saved)
+    markSaved(id, saved, location)
     setFileConflict(null)
   }
 
-  const keepRecoveryCopy = (id: string, fileContent: string) => {
-    acceptFileContent(id, fileContent)
+  const keepRecoveryCopy = (id: string, savedContent: string, location: ProjectLocation) => {
+    acceptSavedContent(id, savedContent, location)
     setFileConflict(null)
   }
 
-  // Only on showing a tab; later checks come from the banner's button.
+  // On showing a tab, and on signing in; later checks come from the banner's button.
   useEffect(() => {
-    checkFile(activeId, false)
-  }, [activeId])
+    checkSaved(activeId, false)
+  }, [activeId, signedIn])
+
+  // A Google Drive document saves itself a moment after the last change. One that changed in Drive
+  // meanwhile is not overwritten: the tab shows both versions to pick from.
+  const autosaving = useRef(new Set<string>())
+  useEffect(() => {
+    if (!signedIn) return
+    const timer = setTimeout(() => {
+      for (const tab of tabsRef.current) {
+        const file = projectFile(tab.id)
+        if (file.location?.kind === 'drive' && file.dirty && file.checked && fileConflict?.id !== tab.id) autosave(tab.id, file.location)
+      }
+    }, DRIVE_AUTOSAVE_MS)
+    return () => clearTimeout(timer)
+  }, [project, fileStatusVersion, signedIn, fileConflict])
+
+  const autosave = async (id: string, location: DriveLocation) => {
+    if (autosaving.current.has(id)) return
+    autosaving.current.add(id)
+    const toSave = shownProject(id)
+    const file = projectFile(id)
+    try {
+      const saved = await saveDriveDocument(toSave, location, file.savedContent, async () => false)
+      // Changes made while saving stay unsaved, and save in turn.
+      if (saved) acceptSavedContent(id, projectToFile(toSave), saved)
+      else {
+        const { comparison, location: inDrive } = await compareWithDrive(location, file)
+        if (comparison.kind !== 'unchanged') setFileConflict({ id, project: comparison.project, content: comparison.content, location: inDrive })
+      }
+    } catch (e) {
+      if (!(e instanceof SignInNeeded)) setError(`Could not save "${toSave.name}" to Google Drive: ${errorText(e)}`)
+    } finally {
+      autosaving.current.delete(id)
+    }
+  }
 
   const tabLabel = (tab: ProjectTab) => {
-    const handle = projectFile(tab.id).handle
-    return handle ? fileLabel(handle) : tab.name
+    const location = projectFile(tab.id).location
+    return location?.kind === 'local' ? fileLabel(location.handle) : tab.name
   }
 
   const closeTab = async (id: string) => {
@@ -908,7 +1020,7 @@ export function App() {
       case 's':
         return () => saveTab(activeId, shift)
       case 'o':
-        return openProjectFile
+        return () => setShowOpen(true)
       case 'n':
         return newProject
     }
@@ -984,7 +1096,7 @@ export function App() {
                 <button onClick={newProject} title="An empty project in a new tab">
                   <Icon name="plus" />New project<kbd>Ctrl+N</kbd>
                 </button>
-                <button onClick={openProjectFile} title="Open a project file in a new tab">
+                <button onClick={() => setShowOpen(true)} title="Open a project from Google Drive or this computer in a new tab">
                   <Icon name="open" />Open…<kbd>Ctrl+O</kbd>
                 </button>
                 {/* Opens on hover, or on a click (keyboard, touch), which must not close the menu. */}
@@ -1000,29 +1112,19 @@ export function App() {
                     ))}
                   </div>
                 </div>
-                <button onClick={() => saveTab(activeId)} title="Save this tab's project to its file">
+                <button onClick={() => saveTab(activeId)} title="Save this tab's project where it is saved; a new project asks where">
                   <Icon name="save" />Save<kbd>Ctrl+S</kbd>
                 </button>
-                <button onClick={() => saveTab(activeId, true)} title="Save this tab's project to another file">
+                <button onClick={() => saveTab(activeId, true)} title="Save a copy somewhere else; the original stays as it is">
                   <Icon name="save" />Save as…<kbd>Ctrl+Shift+S</kbd>
                 </button>
                 <button onClick={copyShareLink} title="Copy a link that holds this whole project; opening it gives a copy in a new tab">
                   <Icon name="link" />Copy share link
                 </button>
-                {driveConfigured && (
-                  <>
-                    <hr />
-                    <span className="menu-heading">Google Drive</span>
-                    {drive === 'off' ? (
-                      <button onClick={turnOnDrive} title="Keep the open tabs in your Google Drive, to continue on another computer">
-                        <Icon name="cloud" />Sync tabs with Google Drive…
-                      </button>
-                    ) : (
-                      <button onClick={disconnectDrive} title="Stop syncing on this computer; the tabs here and in Google Drive stay as they are">
-                        <Icon name="cloud" />Stop syncing with Google Drive
-                      </button>
-                    )}
-                  </>
+                {driveConfigured && signedIn && (
+                  <button onClick={signOut} title="Google Drive documents stay open here; they save again after signing in">
+                    <Icon name="cloud" />Sign out of Google
+                  </button>
                 )}
                 <hr />
                 <span className="menu-heading">Import and export</span>
@@ -1047,13 +1149,13 @@ export function App() {
               </div>
             )}
           </div>
-          {drive === 'signed-out' && (
+          {!signedIn && tabs.some((tab) => projectFile(tab.id).location?.kind === 'drive') && (
             <button
               className="header-button"
-              onClick={turnOnDrive}
-              title="The Google sign-in ran out; changes stay here until you sign in again"
+              onClick={signInToGoogle}
+              title="Google Drive documents are open; they save again after signing in, and changes stay here until then"
             >
-              <Icon name="cloud" />Sign in to sync
+              <Icon name="cloud" />Sign in to Google Drive
             </button>
           )}
           {/* Outside the menu, so they stay mounted while the file dialog is open. */}
@@ -1073,7 +1175,12 @@ export function App() {
           />
         </div>
         <ProjectTabs
-          tabs={tabs.map((tab) => ({ id: tab.id, label: tabLabel(tab), unsaved: projectFile(tab.id).dirty }))}
+          tabs={tabs.map((tab) => ({
+            id: tab.id,
+            label: tabLabel(tab),
+            unsaved: projectFile(tab.id).dirty,
+            location: projectFile(tab.id).location?.kind ?? 'none',
+          }))}
           activeId={activeId}
           onSwitch={switchTab}
           onClose={closeTab}
@@ -1145,22 +1252,36 @@ export function App() {
             )}
             {fileConflict?.id === activeId ? (
               <div className="sync-banner" role="alert">
-                <span>"{tabLabel({ id: activeId, name: project.name })}" changed on disk, and this tab has changes that were not saved.</span>
-                <button className="header-button" onClick={() => loadFileVersion(activeId, fileConflict.project, projectFile(activeId).handle!)} title="Show the file; the recovered changes stay reachable with Undo">
-                  Use file
+                <span>
+                  "{tabLabel({ id: activeId, name: project.name })}" changed {fileConflict.location.kind === 'drive' ? 'in Google Drive' : 'on disk'},
+                  and this tab has changes that were not saved.
+                </span>
+                <button className="header-button" onClick={() => loadSavedVersion(activeId, fileConflict.project, fileConflict.location)} title="Show the saved version; the changes here stay reachable with Undo">
+                  Use saved version
                 </button>
-                <button className="header-button" onClick={() => keepRecoveryCopy(activeId, fileConflict.content)} title="Keep editing the recovered changes; Save overwrites the file">
-                  Keep recovered changes
+                <button className="header-button" onClick={() => keepRecoveryCopy(activeId, fileConflict.content, fileConflict.location)} title="Keep editing the changes here; saving overwrites the saved version">
+                  Keep changes here
                 </button>
               </div>
             ) : (
-              projectFile(activeId).handle &&
+              projectFile(activeId).location &&
               !projectFile(activeId).checked && (
                 <div className="sync-banner" role="status">
-                  <span>Showing the recovery copy of "{tabLabel({ id: activeId, name: project.name })}"; the file itself was not checked yet.</span>
-                  <button className="header-button" onClick={() => checkFile(activeId, true)} title="Allow access to the file and compare it with the recovery copy">
-                    <Icon name="open" />Check file
-                  </button>
+                  {projectFile(activeId).location?.kind === 'drive' ? (
+                    <>
+                      <span>Showing the recovery copy of "{project.name}"; sign in to compare it with Google Drive and save it there.</span>
+                      <button className="header-button" onClick={() => checkSaved(activeId, true)}>
+                        <Icon name="cloud" />Sign in to Google Drive
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span>Showing the recovery copy of "{tabLabel({ id: activeId, name: project.name })}"; the file itself was not checked yet.</span>
+                      <button className="header-button" onClick={() => checkSaved(activeId, true)} title="Allow access to the file and compare it with the recovery copy">
+                        <Icon name="open" />Check file
+                      </button>
+                    </>
+                  )}
                 </div>
               )
             )}
@@ -1419,6 +1540,17 @@ export function App() {
 
       {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
       {showAiHelp && <AiHelpDialog agentConnected={agentConnected} onClose={() => setShowAiHelp(false)} />}
+      {showOpen && (
+        <OpenDialog
+          signedIn={signedIn}
+          recent={recentDocuments()}
+          onSignIn={signInToGoogle}
+          onOpenDrive={openDriveDocumentById}
+          onOpenLocal={openProjectFile}
+          onOpenRecent={openRecent}
+          onClose={() => setShowOpen(false)}
+        />
+      )}
       {question && <QuestionDialog question={question.question} onAnswer={question.answer} />}
       {footprintDialogRefs && (
         <FootprintDialog

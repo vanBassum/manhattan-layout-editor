@@ -12,6 +12,7 @@ const ICON_PATHS = {
   chevronRight: 'M10 7l5 5-5 5',
   menu: 'M4 6h16 M4 12h16 M4 18h16',
   file: 'M6 3h8l4 4v14H6z M14 3v4h4',
+  newFile: 'M6 3h8l4 4v14H6z M14 3v4h4 M12 10v7 M8.5 13.5h7',
   open: 'M3 7h6l2 2h10v10H3z M3 7V5h6',
   save: 'M5 4h11l3 3v13H5z M8 4v5h7V4 M8 20v-6h8v6',
   sample: 'M4 6h16v12H4z M8 10h8 M8 14h5',

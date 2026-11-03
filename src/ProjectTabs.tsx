@@ -6,7 +6,15 @@ export interface TabInfo {
   label: string
   /** Shown as a dot; closing the tab asks to save first. */
   unsaved: boolean
+  /** Where the project is saved, shown as the tab's icon. */
+  location: 'drive' | 'local' | 'none'
 }
+
+const LOCATIONS = {
+  drive: { icon: 'cloud', label: 'Google Drive' },
+  local: { icon: 'file', label: 'This computer' },
+  none: { icon: 'newFile', label: 'Not saved yet' },
+} as const
 
 /** Matches .project-tabs gap and the .icon-button width of the overflow menu button in index.css. */
 const GAP = 4
@@ -35,7 +43,7 @@ function tabsThatFit(tabs: TabInfo[], widths: Map<string, number>, activeId: str
 function TabContent({ tab }: { tab: TabInfo }) {
   return (
     <>
-      <Icon name="file" />
+      <Icon name={LOCATIONS[tab.location].icon} />
       <span className="tab-label">{tab.label}</span>
       {tab.unsaved && <span className="unsaved-dot" aria-label="unsaved changes">●</span>}
     </>
@@ -66,7 +74,7 @@ export function ProjectTabs({ tabs, activeId, onSwitch, onClose }: ProjectTabsPr
   }, [])
 
   // The tabs array is new on every render of the editor; measure only when what is drawn changes.
-  const drawn = tabs.map((tab) => `${tab.id} ${tab.unsaved} ${tab.label}`).join('\n')
+  const drawn = tabs.map((tab) => `${tab.id} ${tab.unsaved} ${tab.location} ${tab.label}`).join('\n')
   // Hidden tabs stay rendered (invisible, out of the flow), so every tab's width can be measured here.
   useLayoutEffect(() => {
     const widths = new Map([...tabElements.current].map(([id, element]) => [id, element.offsetWidth]))
@@ -84,7 +92,8 @@ export function ProjectTabs({ tabs, activeId, onSwitch, onClose }: ProjectTabsPr
 
   const isShown = (tab: TabInfo) => shown === null || shown.has(tab.id)
   const overflowing = tabs.filter((tab) => !isShown(tab))
-  const titleOf = (tab: TabInfo) => (tab.unsaved ? `${tab.label} (unsaved changes)` : tab.label)
+  const titleOf = (tab: TabInfo) =>
+    [LOCATIONS[tab.location].label, tab.label, tab.unsaved ? 'Unsaved changes' : tab.location !== 'none' && 'Saved'].filter(Boolean).join(' · ')
 
   return (
     <div className="project-tabs" role="tablist" ref={stripRef}>
