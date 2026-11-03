@@ -4,7 +4,7 @@ import type { SpiceVector } from './spiceNetlist'
 // ngspice compiled to WebAssembly. It is about 20 MB, so it is only loaded on the first run.
 
 /** How long loading or one run may take before it counts as stuck. */
-const STEP_TIMEOUT_MS = 60_000
+const STEP_TIMEOUT_MS = 5_000
 
 let engine: Promise<Simulation> | undefined
 /** One engine holds one netlist at a time, so runs wait for each other. */
