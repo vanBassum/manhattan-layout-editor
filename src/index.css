@@ -34,6 +34,9 @@
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
+  /* Probe tags in the schematic: voltages green, currents violet. */
+  --probe-current: #6250d6;
+  --probe-current-soft: #efedfc;
 }
 
 :root[data-theme='dark'] {
@@ -41,6 +44,8 @@
   --series-1: #3987e5;
   --series-2: #d95926;
   --series-3: #199e70;
+  --probe-current: #9085e9;
+  --probe-current-soft: #2a2645;
   --bg: #131518;
   --panel: #1c1f24;
   --panel-muted: #252930;
@@ -1693,6 +1698,89 @@ details.card > summary.card-title {
   display: flex;
   flex: 1;
   min-width: 0;
+}
+
+/* Probe tags: the operating point on the schematic. */
+.probe-tag line {
+  stroke: var(--ok);
+}
+
+.probe-tag rect {
+  fill: var(--ok-soft);
+  stroke: var(--ok);
+}
+
+.probe-tag text {
+  fill: var(--ok);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.probe-tag.current line,
+.probe-tag.current rect {
+  stroke: var(--probe-current);
+}
+
+.probe-tag.current rect {
+  fill: var(--probe-current-soft);
+}
+
+.probe-tag.current text {
+  fill: var(--probe-current);
+}
+
+.schematic.tool-probe .sch-part {
+  cursor: help;
+}
+
+.probe-popup {
+  position: absolute;
+  z-index: 2;
+  min-width: 190px;
+  padding: 8px 10px;
+  border: 1px solid var(--probe-current);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 4px 14px var(--backdrop);
+}
+
+.probe-popup-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.probe-popup-title .icon-button {
+  width: 24px;
+  height: 24px;
+}
+
+.probe-readings {
+  margin: 0;
+}
+
+.probe-readings div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.probe-readings dt {
+  color: var(--text-muted);
+}
+
+.probe-readings dd {
+  margin: 0;
+}
+
+.probe-problems {
+  margin: 0;
+  font-size: 12px;
 }
 
 .schematic {

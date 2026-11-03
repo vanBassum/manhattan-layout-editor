@@ -22,6 +22,12 @@ const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title
       'Ending on a pin, a wire end or the middle of a wire connects; crossing wires do not',
   },
   { id: 'label', icon: 'label', label: 'Label', title: 'Label (L): click a point to name its net; labels with the same name are connected. Double-click a label to rename it' },
+  {
+    id: 'probe',
+    icon: 'probe',
+    label: 'Probe',
+    title: 'Probe: shows the DC voltage of every net and each transistor\'s current, running the operating point when needed. Click a part for its readings',
+  },
 ]
 
 interface SchematicToolRailProps {

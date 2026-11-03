@@ -61,6 +61,13 @@ export interface SimulationSession {
   /** Whether the tab shown can run now. */
   canRun: boolean
   runTab: () => void
+  /** The operating point of the circuit as it is now; missing until one ran for it. */
+  operatingPoint: OperatingPoint | undefined
+  /**
+   * Runs the operating point unless it already ran (or failed) for the circuit as it is now, or is
+   * running; returns why it cannot when the circuit has problems.
+   */
+  ensureOperatingPoint: () => string[] | undefined
 }
 
 /**
@@ -103,6 +110,11 @@ export function useSimulation(netlist: Netlist, definitions: Record<string, Comp
   }
 
   const canRun = !('problems' in circuit) && netlistFor(tab, circuit.circuit) !== undefined
+  const lastPoint = runs['operating point']
+  const operatingPoint =
+    lastPoint && 'point' in lastPoint && !('problems' in circuit) && operatingPointNetlist(circuit.circuit) === lastPoint.netlist
+      ? lastPoint.point
+      : undefined
   return {
     tab,
     setTab,
@@ -112,6 +124,12 @@ export function useSimulation(netlist: Netlist, definitions: Record<string, Comp
     canRun,
     runTab: () => {
       if (!('problems' in circuit)) runAnalysis(tab, circuit.circuit)
+    },
+    operatingPoint,
+    ensureOperatingPoint: () => {
+      if ('problems' in circuit) return circuit.problems
+      if (!running && lastPoint?.netlist !== operatingPointNetlist(circuit.circuit)) runAnalysis('operating point', circuit.circuit)
+      return undefined
     },
   }
 }

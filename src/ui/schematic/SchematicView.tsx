@@ -47,13 +47,16 @@ import {
   type MarqueeDrag,
   type PanDrag,
 } from '../viewport'
+import type { OperatingPoint } from '../../simulation/spiceNetlist'
+import { ProbePopup, ProbeTags } from './ProbeOverlay'
 import { LabelMark, SchematicPart, textOffsetOf } from './SchematicDrawing'
 
 /**
  * Select: drag parts; drag from a pin end to draw a wire; drag a wire end to move it, or a wire
  * sideways to shift it. Wire: drag for one wire, or click corner by corner. Label: click to name a point.
+ * Probe: shows the operating point on the schematic; click a part for its readings.
  */
-export type SchematicTool = 'select' | 'wire' | 'label'
+export type SchematicTool = 'select' | 'wire' | 'label' | 'probe'
 
 /** How close (screen pixels) the pointer must be to grab a pin end or wire end. */
 const GRAB_RADIUS_PX = 8
@@ -123,6 +126,8 @@ interface Props {
   layers: SchematicLayers
   /** Fine grid steps (0.1 inch, where pins sit) between two solid grid lines. */
   gridLinesPerMajor: number
+  /** The schematic's current DC operating point, shown by the probe tool; missing when none has run for it. */
+  operatingPoint?: OperatingPoint
 }
 
 export function SchematicView({
@@ -137,6 +142,7 @@ export function SchematicView({
   fitRequest,
   layers,
   gridLinesPerMajor,
+  operatingPoint,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -155,8 +161,14 @@ export function SchematicView({
   const pinKeys = pinKeysOf(parts)
   const grabRadius = Math.min(GRAB_RADIUS_PX / view.scale, MAX_GRAB_RADIUS_MM)
 
-  // A draft belongs to the tool it was started in.
-  useEffect(() => setDraft(null), [tool])
+  const [probed, setProbed] = useState<string | null>(null)
+  // A draft belongs to the tool it was started in, and so do the readings opened with the probe.
+  useEffect(() => {
+    setDraft(null)
+    setProbed(null)
+  }, [tool])
+  const probing = tool === 'probe' && operatingPoint !== undefined
+  const probedPart = parts.find((p) => p.placement.ref === probed)
 
   const toWorld = (e: { clientX: number; clientY: number }): Point => screenToWorld(svgRef.current!, view, e)
 
@@ -275,6 +287,13 @@ export function SchematicView({
       delta: { x: 0, y: 0 },
       moved: false,
     })
+  }
+
+  /** In the probe tool, a press on a part opens its readings instead of selecting it. */
+  const probe = (e: ReactPointerEvent, ref: string) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    setProbed(ref)
   }
 
   /** Pressing a part's text selects the part; dragging moves only the text. */
@@ -460,7 +479,7 @@ export function SchematicView({
               placement={placement}
               pins={pins}
               selected={highlightedRefs.has(placement.ref)}
-              onPointerDown={(e) => pressItem(e, { kind: 'part', ref: placement.ref })}
+              onPointerDown={(e) => (tool === 'probe' ? probe(e, placement.ref) : pressItem(e, { kind: 'part', ref: placement.ref }))}
               onTextPointerDown={(e) => pressPartText(e, component, placement)}
             />
           ))}
@@ -484,6 +503,7 @@ export function SchematicView({
               />
             )
           })}
+          {probing && <ProbeTags parts={parts} point={operatingPoint} px={px} />}
           {preview && <polyline className="sch-wire preview" points={preview.map((q) => `${q.x},${q.y}`).join(' ')} />}
           {marquee && (
             <rect
@@ -506,6 +526,15 @@ export function SchematicView({
         </div>
       )}
       {parts.length === 0 && <p className="schematic-empty">Import a netlist to see its schematic.</p>}
+      {probing && probedPart && (
+        <ProbePopup
+          part={probedPart}
+          point={operatingPoint}
+          at={{ x: view.ox + probedPart.placement.x * view.scale, y: view.oy + probedPart.placement.y * view.scale }}
+          viewWidth={size.width}
+          onClose={() => setProbed(null)}
+        />
+      )}
     </div>
   )
 }

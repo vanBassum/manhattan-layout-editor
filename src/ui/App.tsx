@@ -158,6 +158,13 @@ export function App() {
   const simulation = project.simulation ?? NO_SIMULATION
   // The schematic is what gets simulated; runs belong to the tab's project.
   const simulationSession = useSimulation(schematicNets.netlist, project.definitions, simulation, activeId)
+  // The probe shows the operating point, so it keeps one for the schematic as it is now.
+  const ensureOperatingPoint = useRef(simulationSession.ensureOperatingPoint)
+  ensureOperatingPoint.current = simulationSession.ensureOperatingPoint
+  useEffect(() => {
+    if (schematicTool === 'probe') ensureOperatingPoint.current()
+  }, [schematicTool, simulationSession.circuit, simulationSession.running])
+  const probeProblems = schematicTool === 'probe' && 'problems' in simulationSession.circuit ? simulationSession.circuit.problems : undefined
   const schematicOpenPins = useMemo(() => unconnectedPins(schematicNets.netlist), [schematicNets])
 
   const stepShownTab = (direction: UndoDirection) => {
@@ -562,8 +569,14 @@ export function App() {
                   fitRequest={fitRequest}
                   layers={schematicLayers}
                   gridLinesPerMajor={schematicGrid}
+                  operatingPoint={simulationSession.operatingPoint}
                 />
               </div>
+              {probeProblems && (
+                <p className="probe-problems warn" role="status">
+                  The probe needs a simulation: {probeProblems.join('; ')}. Set it up under Simulation.
+                </p>
+              )}
             </section>
             <PaneDivider share={split} onChange={setSplit} />
             {rightPane === 'simulation' ? (
