@@ -1,4 +1,4 @@
-import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid } from '../geometry'
+import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid, withoutFloatNoise } from '../geometry'
 import { onCopper, solderPoint, toLocal, toWorld } from '../layout'
 import { isGroundNet, isRealNet, naturalCompare } from '../netlist'
 import type { BuiltNetlist, Island, Point, Rect, Settings } from '../types'
@@ -117,7 +117,7 @@ function gridOutward(r: Rect, step: number): Rect {
   const top = Math.floor(r.y / step) * step
   const right = Math.ceil((r.x + r.w) / step) * step
   const bottom = Math.ceil((r.y + r.h) / step) * step
-  return { x: snapToGrid(left, 0), y: snapToGrid(top, 0), w: snapToGrid(right - left, 0), h: snapToGrid(bottom - top, 0) }
+  return { x: withoutFloatNoise(left), y: withoutFloatNoise(top), w: withoutFloatNoise(right - left), h: withoutFloatNoise(bottom - top) }
 }
 
 /** Bends a lead onto its pad, or returns null when it already lands there. */

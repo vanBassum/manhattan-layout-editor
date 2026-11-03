@@ -1,9 +1,7 @@
-import { insetOutline } from './geometry'
+import { formatMm, insetOutline } from './geometry'
 import type { Island, Point } from './types'
 
 const LAYER = 'ISOLATION'
-
-const fmt = (v: number) => String(Math.round(v * 1e4) / 1e4)
 
 /**
  * The area to burn away, for laser software that fills closed contours with a hatch (EzCad):
@@ -27,7 +25,7 @@ export function exportDxf(islands: Island[], isolation: number): string {
 
 function polyline(loop: Point[]): (string | number)[] {
   const codes: (string | number)[] = [0, 'POLYLINE', 8, LAYER, 66, 1, 10, 0, 20, 0, 30, 0, 70, 1]
-  for (const p of loop) codes.push(0, 'VERTEX', 8, LAYER, 10, fmt(p.x), 20, fmt(-p.y), 30, 0)
+  for (const p of loop) codes.push(0, 'VERTEX', 8, LAYER, 10, formatMm(p.x), 20, formatMm(-p.y), 30, 0)
   codes.push(0, 'SEQEND', 8, LAYER)
   return codes
 }

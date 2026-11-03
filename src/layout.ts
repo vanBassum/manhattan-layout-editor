@@ -1,4 +1,4 @@
-import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint, snapToGrid } from './geometry'
+import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint, snapToGrid, withoutFloatNoise } from './geometry'
 import { footprintPinCount } from './footprints'
 import { isRealNet } from './netlist'
 import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
@@ -64,7 +64,7 @@ export function replaceRect(layout: Layout, net: string, rectIndex: number, rect
 }
 
 export const moveRects = (rects: Rect[], dx: number, dy: number) =>
-  rects.map((r) => ({ ...r, x: snapToGrid(r.x + dx, 0), y: snapToGrid(r.y + dy, 0) }))
+  rects.map((r) => ({ ...r, x: withoutFloatNoise(r.x + dx), y: withoutFloatNoise(r.y + dy) }))
 
 /** The delta that puts the first rectangle's top-left corner on the snap grid; the rest follow it. */
 export function gridDelta(rects: Rect[], dx: number, dy: number, snap: number): Point {

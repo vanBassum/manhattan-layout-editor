@@ -23,11 +23,22 @@ export function rectContains(r: Rect, p: Point): boolean {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
 }
 
+/**
+ * The value rounded to a millionth of a mm. Sums like 10.16 + 12.7 give 22.860000000000003; a wire
+ * end or edge with that noise is no longer exactly in line with one at 22.86.
+ */
+export const withoutFloatNoise = (v: number) => Math.round(v * 1e6) / 1e6
+
 /** Nearest multiple of `step` (any value when step is 0), without floating point fuzz like 0.30000000000000004. */
 export function snapToGrid(v: number, step: number): number {
-  const snapped = step > 0 ? Math.round(v / step) * step : v
-  return Math.round(snapped * 1e6) / 1e6
+  return withoutFloatNoise(step > 0 ? Math.round(v / step) * step : v)
 }
+
+/** Rounded to a ten-thousandth of a mm: finer than any cutter, coarse enough to hide float noise. */
+const roundMm = (v: number) => Math.round(v * 1e4) / 1e4
+
+/** A length in mm as written into an exported file. */
+export const formatMm = (v: number) => String(roundMm(v))
 
 /**
  * True when the square of half-size `half` around `p` lies entirely within the union of `rects`.
@@ -108,16 +119,14 @@ export function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
   return d1 * d2 < 0 && d3 * d4 < 0
 }
 
-const roundKey = (v: number) => Math.round(v * 1e4) / 1e4
-
 /**
  * Outline of the union of axis-aligned rectangles, as closed loops of corner points.
  * Works on the grid formed by all rectangle edges: every covered grid cell contributes
  * the sides that border an uncovered cell, and those sides are chained into loops.
  */
 export function unionOutline(rects: Rect[]): Point[][] {
-  const xs = [...new Set(rects.flatMap((r) => [r.x, r.x + r.w].map(roundKey)))].sort((a, b) => a - b)
-  const ys = [...new Set(rects.flatMap((r) => [r.y, r.y + r.h].map(roundKey)))].sort((a, b) => a - b)
+  const xs = [...new Set(rects.flatMap((r) => [r.x, r.x + r.w].map(roundMm)))].sort((a, b) => a - b)
+  const ys = [...new Set(rects.flatMap((r) => [r.y, r.y + r.h].map(roundMm)))].sort((a, b) => a - b)
   const columns = xs.length - 1
   const rows = ys.length - 1
   const coveredCells: boolean[] = []
@@ -190,10 +199,8 @@ export function insetOutline(rects: Rect[], inset: number): Point[][] {
   )
 }
 
-const fmt = (v: number) => String(Math.round(v * 1e4) / 1e4)
-
 export function outlinePath(rects: Rect[], inset = 0): string {
   return insetOutline(rects, inset)
-    .map((loop) => 'M' + loop.map((p) => `${fmt(p.x)} ${fmt(p.y)}`).join('L') + 'Z')
+    .map((loop) => 'M' + loop.map((p) => `${formatMm(p.x)} ${formatMm(p.y)}`).join('L') + 'Z')
     .join('')
 }

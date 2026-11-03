@@ -1,4 +1,4 @@
-import { snapToGrid } from '../geometry'
+import { snapToGrid, withoutFloatNoise } from '../geometry'
 import { naturalCompare } from '../netlist'
 import type { BuiltNetlist, Island, Netlist, Settings } from '../types'
 import type { Strategy } from './strategy'
@@ -69,7 +69,7 @@ function knifeLayout(netlist: BuiltNetlist, settings: Settings) {
     ordered.forEach((net, k) => {
       used += cellWidth(net)
       const right = k === ordered.length - 1 ? boardWidth : snapToGrid((used / rowWidth) * boardWidth, settings.snap)
-      islands.push({ net, rects: [{ x, y, w: snapToGrid(right - x, 0), h: ROW_HEIGHT }] })
+      islands.push({ net, rects: [{ x, y, w: withoutFloatNoise(right - x), h: ROW_HEIGHT }] })
       x = right
     })
     y += ROW_HEIGHT

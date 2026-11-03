@@ -1,10 +1,8 @@
-import { boundsOf, inflate, outlinePath } from './geometry'
+import { boundsOf, formatMm, inflate, outlinePath } from './geometry'
 import type { Island } from './types'
 
 const escapeXml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-
-const fmt = (v: number) => String(Math.round(v * 1e4) / 1e4)
 
 /**
  * One closed contour per island along its outline, stroked with width = isolation. Islands touch,
@@ -20,9 +18,9 @@ export function exportSvg(islands: Island[], isolation: number): string {
     .join('\n')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(view.w)}mm" height="${fmt(view.h)}mm" viewBox="${fmt(view.x)} ${fmt(view.y)} ${fmt(view.w)} ${fmt(view.h)}">
-  <!-- Isolation cuts, centered on the island outlines. Stroke width = isolation (${fmt(isolation)} mm). -->
-  <g id="isolation" fill="none" stroke="#000000" stroke-width="${fmt(isolation)}" stroke-linejoin="miter" stroke-linecap="square">
+<svg xmlns="http://www.w3.org/2000/svg" width="${formatMm(view.w)}mm" height="${formatMm(view.h)}mm" viewBox="${formatMm(view.x)} ${formatMm(view.y)} ${formatMm(view.w)} ${formatMm(view.h)}">
+  <!-- Isolation cuts, centered on the island outlines. Stroke width = isolation (${formatMm(isolation)} mm). -->
+  <g id="isolation" fill="none" stroke="#000000" stroke-width="${formatMm(isolation)}" stroke-linejoin="miter" stroke-linecap="square">
 ${paths}
   </g>
 </svg>

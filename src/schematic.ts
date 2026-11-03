@@ -1,5 +1,5 @@
 import { buildNetlist, buildProjectNetlist } from './definitions'
-import { boundsOf, inflate, rectContains, rectsOverlap, rotatePoint, samePoint, snapToGrid } from './geometry'
+import { boundsOf, inflate, rectContains, rectsOverlap, rotatePoint, samePoint, snapToGrid, withoutFloatNoise } from './geometry'
 import { followNetlist } from './layout'
 import { isGroundNet, isRealNet, naturalCompare } from './netlist'
 import { NO_WIRING, selectedRefs, selectedWiring } from './selection'
@@ -38,12 +38,6 @@ export interface FullSchematic {
 
 /** Map key of a point; coordinates are on the grid, so rounding only removes float noise. */
 export const pointKey = (p: Point) => `${Math.round(p.x * 1000) / 1000},${Math.round(p.y * 1000) / 1000}`
-
-/**
- * The value rounded to a millionth of a mm. Sums like 10.16 + 12.7 give 22.860000000000003; a wire
- * end with that noise is no longer exactly in line with one at 22.86, and stops being straight.
- */
-const withoutFloatNoise = (v: number) => Math.round(v * 1e6) / 1e6
 
 export const wireEnds = (w: Wire): [Point, Point] => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]
 const isHorizontal = (w: Wire) => w.y1 === w.y2 && w.x1 !== w.x2
