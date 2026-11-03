@@ -228,10 +228,12 @@ forward('move_island', "Shifts a net's whole island by dx, dy (mm).", { net: z.s
 
 forward(
   'run_optimizer',
-  'Replaces the whole layout with the result of a built-in strategy: "knife" or "manhattan" ' +
-    '(manhattan places the parts where the schematic has them). ' +
+  'Replaces the whole layout: places the parts, then makes the copper for them. ' +
+    'buildStyle is how the copper is made: "knife" (a copper board cut into islands, one per net) or ' +
+    '"manhattan" (pads glued on a ground plane). placement is where the parts go: "schematic" (where ' +
+    'the schematic has them). Each defaults to the project\'s own setting. ' +
     'Useful as a starting point to refine by hand. Can be undone.',
-  { strategy: z.enum(['knife', 'manhattan']) },
+  { buildStyle: z.enum(['knife', 'manhattan']).optional(), placement: z.enum(['schematic']).optional() },
 )
 
 forward(

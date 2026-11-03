@@ -1,8 +1,7 @@
 import { snapToGrid, withoutFloatNoise } from '../model/geometry'
 import { naturalCompare, pinsByNet } from '../model/netlist'
 import type { BuiltNetlist, Island, Netlist, Settings } from '../model/types'
-import type { Strategy } from './strategy'
-import { componentNets, placeOnIslands } from './common'
+import { componentNets, placeOnIslands, type PlacedPart } from './common'
 
 /** Generous strips: room for parts, their clearance and a soldering iron. */
 const ROW_HEIGHT = 14
@@ -102,11 +101,5 @@ function chainNets(netlist: Netlist, nets: string[]): string[] {
   return chain
 }
 
-export const knifeStrategy: Strategy = {
-  id: 'knife',
-  label: 'Knife – polygons',
-  description: 'Rectangular strips with straight edge-to-edge cuts, parts placed collision-free on top',
-  // An island is a polygon of many strips; handles on its strips would only get in the way.
-  rectHandles: false,
-  run: knifeLayout,
-}
+// Temporary: still lays out its own strips and places the parts on them, ignoring `parts`.
+export const knifeCopper = (netlist: BuiltNetlist, _parts: PlacedPart[], settings: Settings) => knifeLayout(netlist, settings)

@@ -4,9 +4,29 @@
 import { checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from '../model/definitions'
 import { withoutCutLines } from '../model/migrations/migrateCutLayout'
 import type { Project, Settings } from '../model/types'
-import { findStrategy, STRATEGIES } from '../optimize'
+import { BUILD_STYLES, findBuildStyle, findPlacement, PLACEMENTS } from '../optimize'
 
-export const DEFAULT_SETTINGS: Settings = { snap: 0.5, isolation: 0.4, strategy: STRATEGIES[0].id, clearance: 3, maxLead: 10 }
+export const DEFAULT_SETTINGS: Settings = {
+  snap: 0.5,
+  isolation: 0.4,
+  buildStyle: BUILD_STYLES[0].id,
+  placement: PLACEMENTS[0].id,
+  clearance: 3,
+  maxLead: 10,
+}
+
+/** Settings as stored before v8: one `strategy` named both how the copper is made and where the parts go. */
+type StoredSettings = Partial<Settings> & { strategy?: string }
+
+/**
+ * Stored settings with the missing ones defaulted. Settings from before v8 get their build style
+ * from their strategy; placement had no choice then. Throws for an unknown build style or placement.
+ */
+function checkedSettings(stored: StoredSettings | undefined): Settings {
+  const { strategy, ...current } = stored ?? {}
+  const settings = { ...DEFAULT_SETTINGS, ...(strategy === undefined ? {} : { buildStyle: strategy }), ...current }
+  return { ...settings, buildStyle: findBuildStyle(settings.buildStyle).id, placement: findPlacement(settings.placement).id }
+}
 
 export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
   guid: crypto.randomUUID(),
@@ -18,8 +38,9 @@ export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => 
 /**
  * A project read from storage or a file; projects from before guids get one here, parts without a
  * component definition get one from the built-in templates, and a cut-line layout becomes islands.
- * The name older versions stored is dropped. Throws without a netlist or layout, and for an invalid
- * component definition, naming it.
+ * The name older versions stored is dropped, and an old strategy becomes a build style. Throws
+ * without a netlist or layout, for an invalid component definition, naming it, and for an unknown
+ * build style or placement.
  */
 export function checkedProject(data: unknown): Project {
   const project = { ...(data as Partial<Project> & { name?: unknown }) }
@@ -33,17 +54,17 @@ export function checkedProject(data: unknown): Project {
       // Recovery copies from before definitions were checked may still refer to one a re-import made unfit.
       netlist: withoutUnfitDefinitions(project.netlist, definitions),
       definitions,
-      settings: { ...DEFAULT_SETTINGS, ...project.settings },
     }),
   )
-  return { ...checked, settings: { ...checked.settings, strategy: findStrategy(checked.settings.strategy).id } }
+  return { ...checked, settings: checkedSettings(checked.settings) }
 }
 
 // Bump the version when the stored layout changes meaning, and convert older files in projectFromFile.
 // v6: component definitions (symbol and footprints) are stored in the project.
 // v7: no name inside: a project is called by its file's name.
+// v8: settings hold a build style and a placement instead of one strategy.
 const FILE_FORMAT = 'manhattan-layout-editor'
-const FILE_VERSION = 7
+const FILE_VERSION = 8
 
 export function projectToFile(project: Project): string {
   return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, project: withDefinitions(project) }, null, 2)

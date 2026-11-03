@@ -2,10 +2,7 @@ import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid, withoutFloat
 import { onCopper, solderPoint, toLocal, toWorld } from '../model/layout'
 import { isGroundNet, isRealNet, naturalCompare, pinsByNet } from '../model/netlist'
 import type { BuiltNetlist, Island, Layout, Point, Rect, Settings } from '../model/types'
-import type { FullSchematic } from '../model/schematic'
-import type { Strategy } from './strategy'
 import { leadCost, leadLimit, spiralOffsets, type PlacedPart } from './common'
-import { placeFromSchematic } from './fromSchematic'
 
 /** Standard square pad sizes (mm) and how many leads each takes with room to solder and probe. */
 const PAD_SIZES: [side: number, leads: number][] = [
@@ -55,19 +52,12 @@ const median = (values: number[]) => {
 
 /**
  * Glued-pad Manhattan: the copper-clad board is the ground net, every other net gets exactly one
- * standard pad glued on top, shared by all its leads. Components go where the schematic has them;
- * the copper follows them.
+ * standard pad glued on top, shared by all its leads. The copper follows the parts: each pad goes
+ * where its leads reach it most easily without touching other leads or pads, and leads are bent
+ * onto their pad. Ground leads solder straight to the board, which reaches a margin beyond every
+ * part and pad.
  */
-function manhattanLayout(netlist: BuiltNetlist, settings: Settings, schematic: FullSchematic): Layout {
-  return manhattanCopper(netlist, placeFromSchematic(netlist, settings, schematic), settings)
-}
-
-/**
- * The copper for parts that are already placed: each pad goes where its leads reach it most easily
- * without touching other leads or pads, and leads are bent onto their pad. Ground leads solder
- * straight to the board, which reaches a margin beyond every part and pad.
- */
-function manhattanCopper(netlist: BuiltNetlist, parts: PlacedPart[], settings: Settings): Layout {
+export function manhattanCopper(netlist: BuiltNetlist, parts: PlacedPart[], settings: Settings): Layout {
   const pinsOnNet = pinsByNet(netlist)
   const pinCount = (net: string) => pinsOnNet.get(net)?.length ?? 0
   const busiest = [...netlist.nets].sort((a, b) => pinCount(b) - pinCount(a))[0]
@@ -157,12 +147,4 @@ function groundEnd(lead: Lead, pads: Island[]): Point | null {
     if (!onPad(p)) return p
   }
   return null
-}
-
-export const manhattanStrategy: Strategy = {
-  id: 'manhattan',
-  label: 'Manhattan – pads on a ground plane',
-  description: 'One standard pad per net glued onto the board, which itself is ground; parts go where the schematic has them',
-  rectHandles: true,
-  run: manhattanLayout,
 }

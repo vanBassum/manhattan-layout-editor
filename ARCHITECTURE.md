@@ -10,9 +10,9 @@ is being refactored, not all at once.
 | Domain | Folder | What it is | May import |
 | --- | --- | --- | --- |
 | model | `src/model/` | The project's data and every pure rule about it: types, geometry, netlist parsing, footprints, definitions, layout, schematic, selection, undo history, and migrations of old stored data. No React, DOM, storage or network. | model |
-| optimize | `src/optimize/` | Layout strategies that build a complete layout from a netlist. | model |
+| optimize | `src/optimize/` | A complete layout from a netlist, in two independent steps: a placement puts the parts (`PLACEMENTS`; for now only following the schematic), then a build style makes the copper for them (`BUILD_STYLES`: Knife cuts a board into one island per net, Manhattan glues one pad per net on a ground plane). `optimizedLayout` runs both, as the settings choose. | model |
 | export | `src/export/` | Pure conversions of a layout to files to cut with (SVG, DXF). Returns text; saving it is up to the caller. | model |
-| documents | `src/documents/` | Where projects live: the project file format, the recovery copies and open tabs in IndexedDB, files on this computer, Google Drive, share links. | model, optimize (only to validate and default the chosen strategy) |
+| documents | `src/documents/` | Where projects live: the project file format, the recovery copies and open tabs in IndexedDB, files on this computer, Google Drive, share links. | model, optimize (only to validate and default the chosen build style and placement) |
 | agent | `src/agent/` | The page side of the MCP bridge: the WebSocket connection and the commands an agent can run on a project. Gets the project and its effects (change, undo, screenshot) passed in. | model, optimize |
 | ui | `src/ui/` | React components, from `App` down; the only place that renders, reads the DOM or wires the other domains together. Sub-folders per view: `ui/pcb/`, `ui/schematic/`, `ui/dialogs/`. | everything |
 

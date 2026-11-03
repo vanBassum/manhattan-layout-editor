@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { withoutCutLines } from './migrateCutLayout'
 import type { Layout, Project, Settings } from '../types'
 
-const SETTINGS: Settings = { snap: 0.5, isolation: 0.4, strategy: 'knife', clearance: 1, maxLead: 10 }
+const SETTINGS: Settings = { snap: 0.5, isolation: 0.4, buildStyle: 'knife', placement: 'schematic', clearance: 1, maxLead: 10 }
 
 /** R1 lies across a board cut at x = 10 and x = 18; its leads end at x = 4.92 and x = 15.08. */
 const cutLineProject = (): Project => ({
@@ -30,7 +30,7 @@ describe('withoutCutLines', () => {
   it('turns the pieces the cuts made into islands of the nets whose leads end there, leaving out copper no lead reaches', () => {
     const migrated = withoutCutLines(cutLineProject())
 
-    expect(migrated.settings.strategy).toBe('knife')
+    expect(migrated.settings).toHaveProperty('strategy', 'knife')
     expect(migrated.layout).toEqual({
       islands: [
         { net: 'A', rects: [{ x: 0, y: 0, w: 10, h: 10 }] },

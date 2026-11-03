@@ -55,7 +55,7 @@ const projectWith = (components: NetComponent[], definitions?: Record<string, Co
   netlist: { components, nets: ['A', 'B'] },
   layout: { islands: [], placements: components.map((c) => ({ ref: c.ref, x: 0, y: 0, rotation: 0 })) },
   definitions,
-  settings: { snap: 0.5, isolation: 0.4, strategy: 'knife', clearance: 3, maxLead: 10 },
+  settings: { snap: 0.5, isolation: 0.4, buildStyle: 'knife', placement: 'schematic', clearance: 3, maxLead: 10 },
 })
 
 const build = (project: Project) => buildNetlist(project.netlist, project.layout.placements, project.definitions)
@@ -129,10 +129,10 @@ describe('projectFromFile', () => {
     expect(() => projectFromFile(file)).toThrow('R1: definition "gone" does not exist')
   })
 
-  it('refuses an unknown optimizer strategy', () => {
-    const project = { ...projectWith([resistor()]), settings: { ...projectWith([]).settings, strategy: 'teleport' } }
-    const file = JSON.stringify({ format: 'manhattan-layout-editor', version: 7, project })
-    expect(() => projectFromFile(file)).toThrow('Unknown strategy "teleport"')
+  it('refuses an unknown build style', () => {
+    const project = { ...projectWith([resistor()]), settings: { ...projectWith([]).settings, buildStyle: 'teleport' } }
+    const file = JSON.stringify({ format: 'manhattan-layout-editor', version: 8, project })
+    expect(() => projectFromFile(file)).toThrow('Unknown build style "teleport"')
   })
 })
 

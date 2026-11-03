@@ -7,7 +7,7 @@ import { buildNetlist } from '../definitions'
 import { defaultLeadEnds, toWorld } from '../layout'
 import { isRealNet } from '../netlist'
 import { cellsToRects, columns, indexOf, oriented, rows, uniqueSorted, type Axis, type Grid } from '../raster'
-import type { Island, Layout, Point, Project, Rect } from '../types'
+import type { Island, Layout, Point, Project, Rect, Settings } from '../types'
 
 const CUT_LINES_STRATEGY = 'knife-cuts'
 const EPS = 1e-6
@@ -30,10 +30,10 @@ type CutLineLayout = Layout & { knife?: CutBoard; freeCopper?: unknown }
 
 export function withoutCutLines(project: Project): Project {
   const { knife, freeCopper: _derived, ...layout } = project.layout as CutLineLayout
-  // Settings come straight from the stored project here: the strategy may still be the old one.
-  const stored: string = project.settings.strategy
-  const strategy = stored === CUT_LINES_STRATEGY ? 'knife' : project.settings.strategy
-  const settings = { ...project.settings, strategy }
+  // Settings come straight from the stored project here: they may still hold the strategy files had
+  // before v8, which projectFormat turns into a build style afterwards.
+  const stored = project.settings as Settings & { strategy?: string }
+  const settings = stored.strategy === CUT_LINES_STRATEGY ? { ...stored, strategy: 'knife' } : project.settings
   if (!knife) return { ...project, settings }
 
   const netlist = buildNetlist(project.netlist, layout.placements, project.definitions)

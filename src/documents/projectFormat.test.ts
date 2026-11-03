@@ -1,12 +1,43 @@
 import { describe, expect, it } from 'vitest'
 import example from '../examples/Astable multivibrator.json?raw'
-import { projectFileName, projectFromFile, projectNameOf, projectToFile, readSavedProject } from './projectFormat'
+import { checkedProject, projectFileName, projectFromFile, projectNameOf, projectToFile, readSavedProject } from './projectFormat'
 
 describe('projectFromFile', () => {
   it('drops the name older files stored: a project is called by its file name', () => {
     expect(JSON.parse(example).project.name).toBe('Astable multivibrator')
     expect(projectFromFile(example)).not.toHaveProperty('name')
     expect(JSON.parse(projectToFile(projectFromFile(example))).project).not.toHaveProperty('name')
+  })
+})
+
+describe('checkedProject settings', () => {
+  const stored = JSON.parse(example).project
+  const settingsOf = (settings: object) => checkedProject({ ...stored, settings }).settings
+
+  it('turns the strategy of files before v8 into a build style, placing from the schematic', () => {
+    expect(stored.settings.strategy).toBe('knife')
+    const knife = settingsOf({ ...stored.settings })
+    expect(knife).toMatchObject({ buildStyle: 'knife', placement: 'schematic' })
+    expect(knife).not.toHaveProperty('strategy')
+    expect(settingsOf({ ...stored.settings, strategy: 'manhattan' }).buildStyle).toBe('manhattan')
+    expect(settingsOf({ ...stored.settings, strategy: 'knife-cuts' }).buildStyle).toBe('knife')
+  })
+
+  it('keeps a build style and placement as stored', () => {
+    expect(settingsOf({ buildStyle: 'manhattan', placement: 'schematic' })).toMatchObject({ buildStyle: 'manhattan', placement: 'schematic' })
+  })
+
+  it('refuses an unknown build style or placement', () => {
+    expect(() => settingsOf({ strategy: 'teleport' })).toThrow('Unknown build style "teleport"')
+    expect(() => settingsOf({ buildStyle: 'glue' })).toThrow('Unknown build style "glue"')
+    expect(() => settingsOf({ placement: 'random' })).toThrow('Unknown placement "random"')
+  })
+
+  it('writes the build style and placement, and no strategy', () => {
+    const saved = JSON.parse(projectToFile(projectFromFile(example)))
+    expect(saved.version).toBe(8)
+    expect(saved.project.settings).toMatchObject({ buildStyle: 'knife', placement: 'schematic' })
+    expect(saved.project.settings).not.toHaveProperty('strategy')
   })
 })
 

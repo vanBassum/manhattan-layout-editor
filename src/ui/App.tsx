@@ -13,7 +13,7 @@ import { FootprintDialog } from './FootprintDialog'
 import { boundsOf } from '../model/geometry'
 import { changeFootprints, createLayout, findPinIssues, findSpacingViolations, findSplitNets, keepFootprintChoices } from '../model/layout'
 import { withValues } from '../model/netlist'
-import { findStrategy } from '../optimize'
+import { findBuildStyle, findPlacement, optimizedLayout } from '../optimize'
 import { AiHelpDialog, HelpDialog, QuestionDialog, type Question } from './dialogs'
 import { Icon } from './icons'
 import { ComponentList, PartProperties, SchematicCheck, Section, SelectionDetails, Validation } from './panels'
@@ -400,11 +400,13 @@ export function App() {
     commitEdit(layoutUpdate((l) => changeFootprints(netlist, l, refs, footprint)))
 
   const optimize = async () => {
-    const strategy = findStrategy(settings.strategy)
-    if (!(await confirm('Optimize', `Replace the current layout with a new ${strategy.label} layout? This can be undone.`, 'Replace layout'))) return
+    const buildStyle = findBuildStyle(settings.buildStyle).label
+    const placement = findPlacement(settings.placement).label
+    const question = `Replace the current layout with a new one? Placement: ${placement}. Build style: ${buildStyle}. This can be undone.`
+    if (!(await confirm('Optimize', question, 'Replace layout'))) return
     let optimized: Layout
     try {
-      optimized = strategy.run(builtNetlist, settings, fullSchematic)
+      optimized = optimizedLayout(builtNetlist, settings, fullSchematic)
     } catch (e) {
       setError(errorText(e))
       return
@@ -627,7 +629,7 @@ export function App() {
                     layers={layers}
                     tool={tool}
                     moveMode={moveMode}
-                    rectHandles={findStrategy(settings.strategy).rectHandles}
+                    rectHandles={findBuildStyle(settings.buildStyle).rectHandles}
                     gridLinesPerMajor={pcbGrid}
                   />
                 </div>

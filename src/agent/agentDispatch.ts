@@ -20,7 +20,7 @@ import {
 import { buildNetlist, builtProject, checkedDefinition, withAssignedDefinition } from '../model/definitions'
 import { chooseResistors, keepFootprintChoices } from '../model/layout'
 import { withValues } from '../model/netlist'
-import { findStrategy } from '../optimize'
+import { findBuildStyle, findPlacement, optimizedLayout } from '../optimize'
 import {
   agentPlacements,
   completeSchematic,
@@ -132,7 +132,12 @@ const COMMANDS: Record<string, (tab: AgentTab, args: Args) => unknown> = {
   move_island: layoutEdit(moveIsland),
   batch: layoutEdit(applyBatch),
   run_optimizer: layoutEdit((current, args) => {
-    const optimized = findStrategy(stringArg(args, 'strategy')).run(current.netlist, current.settings, completeSchematic(current.netlist, current.schematic))
+    const settings = {
+      ...current.settings,
+      buildStyle: args.buildStyle === undefined ? current.settings.buildStyle : findBuildStyle(stringArg(args, 'buildStyle')).id,
+      placement: args.placement === undefined ? current.settings.placement : findPlacement(stringArg(args, 'placement')).id,
+    }
+    const optimized = optimizedLayout(current.netlist, settings, completeSchematic(current.netlist, current.schematic))
     return keepFootprintChoices(optimized, current.layout)
   }),
   set_resistor_footprint: layoutEdit((current, args, imported) => {

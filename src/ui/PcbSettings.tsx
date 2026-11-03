@@ -1,4 +1,4 @@
-import { findStrategy, STRATEGIES } from '../optimize'
+import { BUILD_STYLES, findBuildStyle, findPlacement, PLACEMENTS } from '../optimize'
 import { Icon } from './icons'
 import { Section } from './panels'
 import type { Rect, Settings } from '../model/types'
@@ -33,26 +33,35 @@ interface PcbSettingsProps {
 
 /** The PCB panel's Optimizer and Board settings sections. */
 export function PcbSettings({ settings, onChange, onOptimize, onResetToGrid, boardSize }: PcbSettingsProps) {
-  const strategy = findStrategy(settings.strategy)
+  const buildStyle = findBuildStyle(settings.buildStyle)
+  const placement = findPlacement(settings.placement)
   return (
     <>
       <Section title="Optimizer">
         <div className="settings">
-          <label title={strategy.description}>
-            Mode
-            <select value={settings.strategy} onChange={(e) => onChange({ strategy: findStrategy(e.target.value).id })}>
-              {STRATEGIES.map((s) => (
-                <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
+          <label title={placement.description}>
+            Placement
+            <select value={settings.placement} title={placement.description} onChange={(e) => onChange({ placement: findPlacement(e.target.value).id })}>
+              {PLACEMENTS.map((p) => (
+                <option key={p.id} value={p.id} title={p.description}>{p.label}</option>
               ))}
             </select>
           </label>
-          <button className="optimize-button" onClick={onOptimize} title={strategy.description}>
+          <button className="optimize-button" onClick={onOptimize} title={`Places the parts (${placement.label}) and makes new copper (${buildStyle.label}), replacing the layout`}>
             <Icon name="optimize" />Optimize
           </button>
         </div>
       </Section>
       <Section title="Board settings">
         <div className="settings">
+          <label title={buildStyle.description}>
+            Build style
+            <select value={settings.buildStyle} title={buildStyle.description} onChange={(e) => onChange({ buildStyle: findBuildStyle(e.target.value).id })}>
+              {BUILD_STYLES.map((s) => (
+                <option key={s.id} value={s.id} title={s.description}>{s.label}</option>
+              ))}
+            </select>
+          </label>
           <label>
             Snap
             <select value={settings.snap} onChange={(e) => onChange({ snap: Number(e.target.value) })}>

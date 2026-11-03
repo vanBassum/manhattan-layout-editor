@@ -7,7 +7,7 @@ import { analyzeLeads, bodyBounds, defaultLeadEnds } from '../model/layout'
 import { isRealNet } from '../model/netlist'
 import { completeSchematic, projectSchematic, type FullSchematic } from '../model/schematic'
 import type { BuiltNetlist, Layout, NetComponent, Settings } from '../model/types'
-import { STRATEGIES } from './index'
+import { BUILD_STYLES, optimizedLayout } from './index'
 
 const part = (ref: string, value: string, footprint: string, nets: string[]): NetComponent => ({
   ref,
@@ -41,8 +41,8 @@ const inputs: { name: string; netlist: BuiltNetlist; settings: Settings; schemat
 ]
 
 describe.each(inputs)('$name', ({ netlist, settings, schematic }) => {
-  describe.each(STRATEGIES)('$id', (strategy) => {
-    const layout: Layout = strategy.run(netlist, settings, schematic)
+  describe.each(BUILD_STYLES)('$id', (buildStyle) => {
+    const layout: Layout = optimizedLayout(netlist, { ...settings, buildStyle: buildStyle.id, placement: 'schematic' }, schematic)
     const componentOf = (ref: string) => netlist.components.find((c) => c.ref === ref)!
 
     it('places every part', () => {
