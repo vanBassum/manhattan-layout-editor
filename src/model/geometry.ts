@@ -109,16 +109,6 @@ export function rotatePoint(p: Point, degrees: number): Point {
   return { x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos }
 }
 
-/** True when segments ab and cd cross somewhere other than at a shared endpoint. */
-export function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
-  const side = (p: Point, q: Point, r: Point) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
-  const d1 = side(c, d, a)
-  const d2 = side(c, d, b)
-  const d3 = side(a, b, c)
-  const d4 = side(a, b, d)
-  return d1 * d2 < 0 && d3 * d4 < 0
-}
-
 /**
  * Outline of the union of axis-aligned rectangles, as closed loops of corner points.
  * Works on the grid formed by all rectangle edges: every covered grid cell contributes

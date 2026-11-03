@@ -1,4 +1,4 @@
-import { boundsOf, inflate, rectsOverlap, segmentsCross } from '../model/geometry'
+import { inflate, rectsOverlap } from '../model/geometry'
 import { bodyBounds, defaultLeadEnds, onCopper, solderPoint, toLocal, toWorld } from '../model/layout'
 import { isRealNet, naturalCompare, pinsByNet } from '../model/netlist'
 import type { BuiltComponent, BuiltNetlist, Geometry, Island, NetComponent, Placement, Point, Rect, Settings } from '../model/types'
@@ -48,7 +48,6 @@ interface Spot {
 
 /** Lead ends of different nets stay this far apart: room for two pads, solder and a probe tip. */
 const MIN_END_SPACING = 2.5
-const CROSSING_PENALTY = 15
 /** Small pull toward the target; deliberately weak, since a roomy board is easier to build. */
 const COMPACTNESS = 0.05
 const ROTATIONS = [0, 45, 90, 135, 180, 225, 270, 315]
@@ -86,52 +85,9 @@ function placementOrder(netlist: BuiltNetlist): BuiltComponent[] {
 }
 
 /**
- * Places components before any copper exists. Each part goes where its leads end up closest to
- * already placed leads of the same nets (those will share an island), with a penalty for every
- * crossing of those connections. Bodies plus leads never overlap and keep `settings.clearance`
- * apart; the search radius grows until a free spot is found, so that always holds.
- */
-export function placeComponents(netlist: BuiltNetlist, settings: Settings): PlacedPart[] {
-  const placed: PlacedPart[] = []
-  const netEnds = new Map<string, Point[]>()
-  const connections: [Point, Point][] = []
-
-  for (const component of placementOrder(netlist)) {
-    const nets = leadNets(component)
-    const target = placementTarget(nets, netEnds, placed)
-
-    const { part, spot } = findBestSpot(component, target, placed, settings, (_placement, ends, offset) => {
-      let cost = COMPACTNESS * Math.hypot(offset.x, offset.y)
-      // Lines from this part's leads to the nearest placed lead of the same net.
-      const edges: [Point, Point][] = []
-      ends.forEach((end, k) => {
-        const net = nets[k]
-        const others = net === null ? undefined : netEnds.get(net)
-        if (!others) return
-        const nearest = nearestPoint(others, end)
-        cost += Math.hypot(nearest.x - end.x, nearest.y - end.y)
-        edges.push([end, nearest])
-      })
-      for (const [a, b] of edges) {
-        for (const [c, d] of connections) if (segmentsCross(a, b, c, d)) cost += CROSSING_PENALTY
-      }
-      return { cost, ends, edges }
-    })
-
-    placed.push(part)
-    connections.push(...spot.edges)
-    part.ends.forEach((end, k) => {
-      const net = nets[k]
-      if (net !== null) netEnds.set(net, [...(netEnds.get(net) ?? []), end])
-    })
-  }
-  return placed
-}
-
-/**
  * Places components onto islands that already exist (for strategies that must lay out the copper
- * first). Same collision rules as placeComponents; each lead that misses its island is bent onto
- * it, and a lead may never end on another net's copper.
+ * first). Bodies plus leads never overlap and keep `settings.clearance` apart; each lead that misses
+ * its island is bent onto it, and a lead may never end on another net's copper.
  */
 export function placeOnIslands(netlist: BuiltNetlist, islands: Island[], settings: Settings): Placement[] {
   const islandsByNet = new Map(islands.map((i) => [i.net, i]))
@@ -245,23 +201,6 @@ function islandsMeetingPoint(islands: Island[]): Point {
     x: points.reduce((s, p) => s + p.x, 0) / points.length,
     y: points.reduce((s, p) => s + p.y, 0) / points.length,
   }
-}
-
-function nearestPoint(points: Point[], p: Point): Point {
-  return points.reduce((a, b) => (Math.hypot(b.x - p.x, b.y - p.y) < Math.hypot(a.x - p.x, a.y - p.y) ? b : a))
-}
-
-/** Centroid of already placed leads on the same nets; unconnected parts go to the right of the rest. */
-function placementTarget(nets: (string | null)[], netEnds: Map<string, Point[]>, placed: PlacedPart[]): Point {
-  const related = nets.flatMap((net) => (net === null ? [] : (netEnds.get(net) ?? [])))
-  if (related.length > 0) {
-    return {
-      x: Math.round(related.reduce((s, p) => s + p.x, 0) / related.length),
-      y: Math.round(related.reduce((s, p) => s + p.y, 0) / related.length),
-    }
-  }
-  const bounds = boundsOf(placed.map((p) => p.keepOut))
-  return bounds ? { x: Math.round(bounds.x + bounds.w + 10), y: Math.round(bounds.y) } : { x: 0, y: 0 }
 }
 
 function endsTooClose(ends: Point[], nets: (string | null)[], placed: PlacedPart[]): boolean {

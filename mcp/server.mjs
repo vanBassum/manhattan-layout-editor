@@ -228,7 +228,8 @@ forward('move_island', "Shifts a net's whole island by dx, dy (mm).", { net: z.s
 
 forward(
   'run_optimizer',
-  'Replaces the whole layout with the result of a built-in strategy: "knife" or "manhattan". ' +
+  'Replaces the whole layout with the result of a built-in strategy: "knife" or "manhattan" ' +
+    '(manhattan places the parts where the schematic has them). ' +
     'Useful as a starting point to refine by hand. Can be undone.',
   { strategy: z.enum(['knife', 'manhattan']) },
 )

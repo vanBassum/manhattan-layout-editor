@@ -2,8 +2,10 @@ import { boundsOf, inflate, rectContains, rectsOverlap, snapToGrid, withoutFloat
 import { onCopper, solderPoint, toLocal, toWorld } from '../model/layout'
 import { isGroundNet, isRealNet, naturalCompare, pinsByNet } from '../model/netlist'
 import type { BuiltNetlist, Island, Layout, Point, Rect, Settings } from '../model/types'
+import type { FullSchematic } from '../model/schematic'
 import type { Strategy } from './strategy'
-import { leadCost, leadLimit, placeComponents, spiralOffsets, type PlacedPart } from './common'
+import { leadCost, leadLimit, spiralOffsets, type PlacedPart } from './common'
+import { placeFromSchematic } from './fromSchematic'
 
 /** Standard square pad sizes (mm) and how many leads each takes with room to solder and probe. */
 const PAD_SIZES: [side: number, leads: number][] = [
@@ -53,11 +55,11 @@ const median = (values: number[]) => {
 
 /**
  * Glued-pad Manhattan: the copper-clad board is the ground net, every other net gets exactly one
- * standard pad glued on top, shared by all its leads. Components are placed first; the copper
- * follows them.
+ * standard pad glued on top, shared by all its leads. Components go where the schematic has them;
+ * the copper follows them.
  */
-function manhattanLayout(netlist: BuiltNetlist, settings: Settings): Layout {
-  return manhattanCopper(netlist, placeComponents(netlist, settings), settings)
+function manhattanLayout(netlist: BuiltNetlist, settings: Settings, schematic: FullSchematic): Layout {
+  return manhattanCopper(netlist, placeFromSchematic(netlist, settings, schematic), settings)
 }
 
 /**
@@ -159,8 +161,8 @@ function groundEnd(lead: Lead, pads: Island[]): Point | null {
 
 export const manhattanStrategy: Strategy = {
   id: 'manhattan',
-  label: 'Manhattan (glued pads)',
-  description: 'Parts first, then one standard pad per net glued onto the board; the board itself is ground',
+  label: 'Manhattan – pads on a ground plane',
+  description: 'One standard pad per net glued onto the board, which itself is ground; parts go where the schematic has them',
   rectHandles: true,
   run: manhattanLayout,
 }
