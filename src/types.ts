@@ -209,10 +209,10 @@ export interface Schematic {
   labels?: NetLabel[]
 }
 
+/** A project is called by its file's name (or its tab's, before it is saved); it holds no name itself. */
 export interface Project {
   /** Given once at creation and kept through renames, saves and reopening, so a project can be traced. */
   guid: string
-  name: string
   netlist: Netlist
   layout: Layout
   /** Missing in projects from before the schematic view, and for components not moved yet: those get a grid spot. */

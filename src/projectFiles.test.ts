@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import example from './examples/multivibrator.manhattan.json?raw'
+import example from './examples/Astable multivibrator.manhattan.json?raw'
 import { compareWithFile, saveLocalFile } from './projectFiles'
 import { projectFromFile, projectToFile, type ProjectFile } from './projectStore'
 
@@ -23,23 +23,23 @@ const asHandle = (file: ReturnType<typeof fakeFile>) => file as unknown as FileS
 const project = projectFromFile(example)
 const saved = projectToFile(project)
 const linked = (file: ReturnType<typeof fakeFile>, dirty = false): ProjectFile => ({ location: { kind: 'local', handle: asHandle(file) }, savedContent: saved, dirty, checked: true })
-const changedElsewhere = projectToFile({ ...project, name: 'Changed elsewhere' })
+const changedElsewhere = projectToFile({ ...project, settings: { ...project.settings, snap: 1 } })
 
 describe('saveLocalFile', () => {
   it('writes to the linked file without asking when it did not change on disk', async () => {
     const file = fakeFile(saved)
-    const renamed = { ...project, name: 'Renamed' }
-    const handle = await saveLocalFile(renamed, asHandle(file), saved, async () => {
+    const changed = { ...project, settings: { ...project.settings, snap: 1 } }
+    const handle = await saveLocalFile(changed, 'amp', asHandle(file), saved, async () => {
       throw new Error('should not ask')
     })
     expect(handle).toBe(asHandle(file))
-    expect(file.written).toEqual([projectToFile(renamed)])
+    expect(file.written).toEqual([projectToFile(changed)])
   })
 
   it('asks before overwriting a file that changed on disk, and writes nothing when refused', async () => {
     const file = fakeFile(changedElsewhere)
     const asked: string[] = []
-    const handle = await saveLocalFile(project, asHandle(file), saved, async (name) => {
+    const handle = await saveLocalFile(project, 'amp', asHandle(file), saved, async (name) => {
       asked.push(name)
       return false
     })
@@ -60,5 +60,13 @@ describe('compareWithFile', () => {
   it('refuses a file that is no project anymore', async () => {
     const file = fakeFile('hello')
     await expect(compareWithFile(asHandle(file), linked(file))).rejects.toThrow('not a Manhattan project')
+  })
+})
+
+describe('projectFromFile', () => {
+  it('drops the name older files stored: a project is called by its file name', () => {
+    expect(JSON.parse(example).project.name).toBe('Astable multivibrator')
+    expect(projectFromFile(example)).not.toHaveProperty('name')
+    expect(JSON.parse(projectToFile(projectFromFile(example))).project).not.toHaveProperty('name')
   })
 })

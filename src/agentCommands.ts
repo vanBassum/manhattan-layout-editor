@@ -60,7 +60,7 @@ export function layoutBounds(project: BuiltProject): Rect | null {
 export function describeProject(project: BuiltProject) {
   const { netlist, layout, settings } = project
   return {
-    project: { guid: project.guid, name: project.name },
+    project: { guid: project.guid },
     units: 'mm; x to the right, y down; rotation in degrees clockwise',
     islands:
       'Islands of different nets touch edge to edge; their shared edge is where the isolation is cut. ' +

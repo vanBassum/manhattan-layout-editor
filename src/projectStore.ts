@@ -88,7 +88,6 @@ const remoteListeners = new Set<(change: RemoteChange) => void>()
 
 export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
   guid: crypto.randomUUID(),
-  name: 'Untitled',
   netlist: { components: [], nets: [] },
   layout: { islands: [], placements: [] },
   settings,
@@ -99,11 +98,13 @@ export const newTabId = () => Math.random().toString(36).slice(2, 10)
 /**
  * A project read from storage or a file; projects from before guids get one here, parts without a
  * component definition get one from the built-in templates, and a cut-line layout becomes islands.
- * Null without a netlist or layout; an invalid component definition throws, naming it.
+ * The name older versions stored is dropped. Null without a netlist or layout; an invalid component
+ * definition throws, naming it.
  */
 function checkedProject(data: unknown): Project | null {
-  const project = data as Partial<Project> | null
+  const project = { ...(data as Partial<Project> & { name?: unknown }) }
   if (!project?.netlist?.components || !project.layout?.islands) return null
+  delete project.name
   return withoutCutLines(
     withDefinitions({
       ...(project as Project),
@@ -117,8 +118,9 @@ function checkedProject(data: unknown): Project | null {
 // A saved project file. Bump the version when the stored layout changes meaning, and convert
 // older files in projectFromFile.
 // v6: component definitions (symbol and footprints) are stored in the project.
+// v7: no name inside: a project is called by its file's name.
 const FILE_FORMAT = 'manhattan-layout-editor'
-const FILE_VERSION = 6
+const FILE_VERSION = 7
 
 export function projectToFile(project: Project): string {
   return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, project: withDefinitions(project) }, null, 2)
@@ -228,7 +230,7 @@ function readLegacyTabs(): { tabs: ProjectTab[]; projects: Map<string, Project> 
     const single = checkedProject(readLegacyJson(V3_PROJECT_PREFIX))
     if (single) {
       const id = newTabId()
-      tabs.push({ id, name: single.name })
+      tabs.push({ id, name: UNTITLED })
       projects.set(id, migrateGappedIslands(single))
     }
   }
@@ -286,9 +288,9 @@ export async function openProjectStore() {
   })
 }
 
-// Every project file in src/examples is offered under File > Examples.
+// Every project file in src/examples is offered under File > Examples, called by its file name.
 const EXAMPLE_FILES = import.meta.glob<string>('./examples/*.manhattan.json', { query: '?raw', import: 'default', eager: true })
-const FIRST_VISIT_EXAMPLE = './examples/multivibrator.manhattan.json'
+const FIRST_VISIT_EXAMPLE = './examples/Astable multivibrator.manhattan.json'
 
 export interface Example {
   name: string
@@ -296,22 +298,25 @@ export interface Example {
   open: () => Project
 }
 
-const exampleFrom = (text: string): Example => ({
-  name: projectFromFile(text).name,
+const exampleFrom = (path: string, text: string): Example => ({
+  name: path.replace(/^.*\//, '').replace(/\.manhattan\.json$/, ''),
   open: () => ({ ...projectFromFile(text), guid: crypto.randomUUID() }),
 })
 
-export const EXAMPLES: Example[] = Object.values(EXAMPLE_FILES)
-  .map(exampleFrom)
+export const EXAMPLES: Example[] = Object.entries(EXAMPLE_FILES)
+  .map(([path, text]) => exampleFrom(path, text))
   .sort((a, b) => a.name.localeCompare(b.name))
+
+/** A new, unsaved project's name until it is saved. */
+export const UNTITLED = 'Untitled'
 
 /** The open tabs and the one this browser tab shows; a browser that has never been here gets the example. */
 export function loadTabs(): { tabs: ProjectTab[]; activeId: string } {
   if (openTabs.length === 0) {
     const id = newTabId()
-    const project = exampleFrom(EXAMPLE_FILES[FIRST_VISIT_EXAMPLE]).open()
-    addProject(id, project)
-    openTabs = [{ id, name: project.name }]
+    const example = exampleFrom(FIRST_VISIT_EXAMPLE, EXAMPLE_FILES[FIRST_VISIT_EXAMPLE])
+    addProject(id, example.open())
+    openTabs = [{ id, name: example.name }]
     writeTabs(openTabs)
   }
   let remembered: string | null = null

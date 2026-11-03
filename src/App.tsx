@@ -48,6 +48,7 @@ import {
   addProject,
   DEFAULT_SETTINGS,
   emptyProject,
+  UNTITLED,
   EXAMPLES,
   forgetRecent,
   loadTabs,
@@ -119,6 +120,8 @@ const SCHEMATIC_TOOLS: { id: SchematicTool; icon: IconName; label: string; title
 
 const SNAP_OPTIONS = [0, 0.25, 0.5, 1, 1.27, 2.54]
 const DRIVE_AUTOSAVE_MS = 2000
+/** The name of a project opened from a share link, until it is saved. */
+const SHARED_PROJECT = 'Shared project'
 // Layer visibility is a per-browser view preference, deliberately not part of the project.
 const LAYERS_KEY = 'manhattan-layout-editor/layers'
 const SCHEMATIC_LAYERS_KEY = 'manhattan-layout-editor/schematic-layers'
@@ -201,7 +204,7 @@ const DEFAULT_SCHEMATIC_LAYERS: SchematicLayers = {
 }
 
 /** The tab's project with a new netlist; it stays the same project, so it keeps its guid. */
-function projectFromNetlist(name: string, text: string, current: Project, keepLayout: boolean): Project {
+function projectFromNetlist(text: string, current: Project, keepLayout: boolean): Project {
   const imported = parseNetlist(text)
   // A value typed in the editor survives a re-import that still has none (EasyEDA exports "{Value}"
   // as empty), and so does the part's definition; withDefinitions drops one that no longer fits.
@@ -220,7 +223,6 @@ function projectFromNetlist(name: string, text: string, current: Project, keepLa
   const definitions = keepLayout ? current.definitions : undefined
   return withDefinitions({
     guid: current.guid,
-    name,
     netlist,
     layout: createLayout(buildNetlist(netlist, previousLayout?.placements ?? [], definitions), previousLayout),
     // Symbols stay where they were; wires and labels start over from the imported nets.
@@ -447,14 +449,15 @@ export function App() {
     return () => window.removeEventListener('pagehide', flush)
   }, [])
 
-  // The tab shows the project name, which changes when a netlist is imported.
-  useEffect(() => {
-    const tab = tabs.find((t) => t.id === activeId)
-    if (!tab || tab.name === project.name) return
-    const renamed = tabs.map((t) => (t.id === activeId ? { ...t, name: project.name } : t))
+  /** The name of tab `id`'s project: its file's name, or before saving the name it started with. */
+  const tabName = (id: string) => tabsRef.current.find((t) => t.id === id)?.name ?? UNTITLED
+
+  const renameTab = (id: string, name: string) => {
+    const renamed = tabsRef.current.map((t) => (t.id === id ? { ...t, name } : t))
+    tabsRef.current = renamed
     setTabs(renamed)
     writeTabs(renamed)
-  }, [project.name, activeId, tabs])
+  }
 
   /** Saves the shown project and its undo history, then shows `id` with its own. */
   const showTab = (id: string, next: Project) => {
@@ -481,22 +484,22 @@ export function App() {
     if (id !== activeId) showTab(id, readProject(id))
   }
 
-  const openInNewTab = (opened: Project, location?: ProjectLocation) => {
+  const openInNewTab = (opened: Project, name: string, location?: ProjectLocation) => {
     const id = newTabId()
     addProject(id, opened, location)
-    if (location) rememberRecent(opened.name, location)
-    const next = [...tabsRef.current, { id, name: opened.name }]
+    if (location) rememberRecent(name, location)
+    const next = [...tabsRef.current, { id, name }]
     setTabs(next)
     writeTabs(next)
     showTab(id, opened)
   }
 
-  const newProject = () => openInNewTab(emptyProject(project.settings))
+  const newProject = () => openInNewTab(emptyProject(project.settings), UNTITLED)
 
   // A share link opens its project in a new tab once the editor is up.
   useEffect(() => {
     takeSharedProject()
-      .then((shared) => shared && openInNewTab(shared))
+      .then((shared) => shared && openInNewTab(shared, SHARED_PROJECT))
       .catch((e) => setError(`Could not open the shared project: ${errorText(e)}`))
   }, [])
 
@@ -559,66 +562,67 @@ export function App() {
     )
 
   /** Writes `project` where it is saved; null when nothing was saved. */
-  const saveToLocation = async (project: Project, file: ProjectFile, location: ProjectLocation): Promise<ProjectLocation | null> => {
+  const saveToLocation = async (project: Project, name: string, file: ProjectFile, location: ProjectLocation): Promise<ProjectLocation | null> => {
     if (location.kind === 'drive') {
       if (!isSignedIn() && !(await signInToGoogle())) return null
-      return saveDriveDocument(project, location, file.savedContent, confirmOverwrite)
+      return saveDriveDocument(project, name, location, file.savedContent, confirmOverwrite)
     }
-    const handle = await saveLocalFile(project, location.handle, file.savedContent, confirmOverwrite)
+    const handle = await saveLocalFile(project, name, location.handle, file.savedContent, confirmOverwrite)
     return handle && { kind: 'local', handle }
   }
 
-  /** Saves `project` in a Google Drive folder, or over a project, picked in Google's picker. */
-  const saveToNewDriveDocument = async (project: Project): Promise<{ project: Project; location: ProjectLocation } | null> => {
+  /** A saved project's new place, and the name it is saved under. */
+  type SavedAs = { name: string; location: ProjectLocation }
+
+  /** Saves `project` as `name` in a Google Drive folder, or over a project file, picked in Google's picker. */
+  const saveToNewDriveDocument = async (project: Project, name: string): Promise<SavedAs | null> => {
     if (!isSignedIn() && !(await signInToGoogle())) return null
     const picked = await pickDriveSaveTarget()
     if (!picked) return null
     if (isPickedFolder(picked)) {
-      const location = await saveInDriveFolder(project, picked.id, confirmOverwrite)
-      return location && { project, location }
+      const location = await saveInDriveFolder(project, name, picked.id, confirmOverwrite)
+      return location && { name, location }
     }
-    // A project picked to save over: it keeps its file name, and the project takes that name.
-    const named = { ...project, name: projectNameOf(picked.name) }
-    if (!(await confirmOverwrite(named.name))) return null
-    return { project: named, location: await replaceDriveFile(named, picked.id, picked.name) }
+    // A file picked to save over keeps its own name.
+    const pickedName = projectNameOf(picked.name)
+    if (!(await confirmOverwrite(pickedName))) return null
+    return { name: pickedName, location: await replaceDriveFile(project, picked.id) }
   }
 
-  /** Saves `project` to a file picked in the computer's own save dialog; the file's name becomes the project's. */
-  const saveToNewLocalFile = async (project: Project): Promise<{ project: Project; location: ProjectLocation } | null> => {
-    const handle = await saveLocalFile(project, undefined, '', confirmOverwrite)
-    return handle && { project: { ...project, name: fileLabel(handle) }, location: { kind: 'local', handle } }
+  /** Saves `project` to a file picked in the computer's own save dialog, offered as `name`. */
+  const saveToNewLocalFile = async (project: Project, name: string): Promise<SavedAs | null> => {
+    const handle = await saveLocalFile(project, name, undefined, '', confirmOverwrite)
+    return handle && { name: fileLabel(handle), location: { kind: 'local', handle } }
   }
 
   /**
    * Saves tab `id` where it is saved. A project without a location, or with `saveAs`, asks for a name
    * and a place; the computer's own save dialog or Google's picker then chooses the folder. The tab
-   * continues there, and the original stays as it was. False when nothing was saved.
+   * continues there, under the file's name, and the original stays as it was. False when nothing was saved.
    */
   const saveTab = async (id: string, saveAs = false): Promise<boolean> => {
     const file = projectFile(id)
     const current = shownProject(id)
     try {
-      let saved: { project: Project; location: ProjectLocation } | null
+      let saved: SavedAs | null
       if (file.location && !saveAs) {
-        const location = await saveToLocation(current, file, file.location)
-        saved = location && { project: current, location }
+        const location = await saveToLocation(current, tabName(id), file, file.location)
+        saved = location && { name: tabName(id), location }
       } else {
-        // The name the tab shows: a file's own name may differ from the project name inside it.
-        const choice = await askSaveAs(tabLabel({ id, name: current.name }), file.location?.kind ?? 'local')
+        const choice = await askSaveAs(tabName(id), file.location?.kind ?? 'local')
         if (!choice) return false
-        const named = { ...current, name: choice.name }
         if (choice.place === 'local' && !canUseFiles) {
-          downloadText(`${named.name}.manhattan.json`, projectToFile(named), 'application/json')
-          if (id === activeIdRef.current) showProject(named)
-          markSaved(id, named)
+          downloadText(`${choice.name}.manhattan.json`, projectToFile(current), 'application/json')
+          markSaved(id, current)
+          renameTab(id, choice.name)
           return true
         }
-        saved = choice.place === 'drive' ? await saveToNewDriveDocument(named) : await saveToNewLocalFile(named)
+        saved = choice.place === 'drive' ? await saveToNewDriveDocument(current, choice.name) : await saveToNewLocalFile(current, choice.name)
       }
       if (!saved) return false
-      if (id === activeIdRef.current) showProject(saved.project)
-      markSaved(id, saved.project, saved.location)
-      rememberRecent(saved.project.name, saved.location)
+      markSaved(id, current, saved.location)
+      renameTab(id, saved.name)
+      rememberRecent(saved.name, saved.location)
       return true
     } catch (e) {
       setError(`Could not save: ${errorText(e)}`)
@@ -632,11 +636,11 @@ export function App() {
     if (shown) return switchTab(shown)
     if (location.kind === 'local') {
       if (!(await mayUse(location.handle, true))) throw new Error(`no permission to open "${location.handle.name}"`)
-      return openInNewTab(projectFromFile(await readFile(location.handle)), location)
+      return openInNewTab(projectFromFile(await readFile(location.handle)), fileLabel(location.handle), location)
     }
     if (!isSignedIn() && !(await signInToGoogle())) return
     const opened = await openDriveDocument(location.fileId)
-    openInNewTab(opened.project, opened.location)
+    openInNewTab(opened.project, opened.name, opened.location)
   }
 
   const openRecent = async (recent: RecentDocument) => {
@@ -696,7 +700,7 @@ export function App() {
     } catch (e) {
       if (e instanceof SignInNeeded) return
       // Moved, deleted or damaged: keep working on the recovery copy; Save asks for a new location.
-      setError(`Could not read "${tabLabel({ id, name: readProject(id).name })}" (${errorText(e)}). Showing the recovery copy.`)
+      setError(`Could not read "${tabName(id)}" (${errorText(e)}). Showing the recovery copy.`)
       unlinkLocation(id)
     }
   }
@@ -745,7 +749,7 @@ export function App() {
     const toSave = shownProject(id)
     const file = projectFile(id)
     try {
-      const saved = await saveDriveDocument(toSave, location, file.savedContent, async () => false)
+      const saved = await saveDriveDocument(toSave, tabName(id), location, file.savedContent, async () => false)
       // Changes made while saving stay unsaved, and save in turn.
       if (saved) acceptSavedContent(id, projectToFile(toSave), saved)
       else {
@@ -753,15 +757,10 @@ export function App() {
         if (comparison.kind !== 'unchanged') setFileConflict({ id, project: comparison.project, content: comparison.content, location: inDrive })
       }
     } catch (e) {
-      if (!(e instanceof SignInNeeded)) setError(`Could not save "${toSave.name}" to Google Drive: ${errorText(e)}`)
+      if (!(e instanceof SignInNeeded)) setError(`Could not save "${tabName(id)}" to Google Drive: ${errorText(e)}`)
     } finally {
       autosaving.current.delete(id)
     }
-  }
-
-  const tabLabel = (tab: ProjectTab) => {
-    const location = projectFile(tab.id).location
-    return location?.kind === 'local' ? fileLabel(location.handle) : tab.name
   }
 
   const closeTab = async (id: string) => {
@@ -769,7 +768,7 @@ export function App() {
     if (!tab) return
     if (projectFile(id).dirty) {
       const choice = await ask({
-        title: `Save changes to "${tabLabel(tab)}"?`,
+        title: `Save changes to "${tab.name}"?`,
         text: 'Closing without saving throws the changes away.',
         choices: [{ answer: 'discard', label: "Don't save" }, { answer: 'cancel', label: 'Cancel' }, { answer: 'save', label: 'Save' }],
         cancel: 'cancel',
@@ -788,7 +787,7 @@ export function App() {
       // Always keep one tab: closing the last one leaves a fresh, empty project.
       const created = emptyProject(project.settings)
       addProject(id, created)
-      const fresh = [{ id, name: created.name }]
+      const fresh = [{ id, name: UNTITLED }]
       setTabs(fresh)
       writeTabs(fresh)
       history.current = NO_HISTORY
@@ -858,7 +857,9 @@ export function App() {
 
   const loadNetlist = (name: string, text: string, keepLayout: boolean) => {
     try {
-      updateProject((p) => projectFromNetlist(name, text, p, keepLayout))
+      updateProject((p) => projectFromNetlist(text, p, keepLayout))
+      // A project not saved yet takes the netlist's name; a saved one keeps its file's.
+      if (!projectFile(activeIdRef.current).location) renameTab(activeIdRef.current, name)
       // Old layouts belong to the old netlist.
       history.current = NO_HISTORY
       setSelection(null)
@@ -1023,15 +1024,15 @@ export function App() {
   }
 
   const exportLayout = () =>
-    downloadText(`${project.name}-isolation.svg`, exportSvg(layout.islands, settings.isolation), 'image/svg+xml')
+    downloadText(`${tabName(activeId)}-isolation.svg`, exportSvg(layout.islands, settings.isolation), 'image/svg+xml')
 
-  const exportLayoutDxf = () => downloadText(`${project.name}-isolation.dxf`, exportDxf(layout.islands, settings.isolation), 'application/dxf')
+  const exportLayoutDxf = () => downloadText(`${tabName(activeId)}-isolation.dxf`, exportDxf(layout.islands, settings.isolation), 'application/dxf')
 
   const onProjectFileChosen = async (file: File | undefined) => {
     if (!file) return
     projectFileInputRef.current!.value = ''
     try {
-      openInNewTab(projectFromFile(await file.text()))
+      openInNewTab(projectFromFile(await file.text()), projectNameOf(file.name))
     } catch (e) {
       setError(errorText(e))
     }
@@ -1148,7 +1149,7 @@ export function App() {
                 </button>
                 <MenuGroup icon="sample" label="Examples">
                   {EXAMPLES.map((example) => (
-                    <button key={example.name} onClick={() => openInNewTab(example.open())} title="A copy of this example in a new tab">
+                    <button key={example.name} onClick={() => openInNewTab(example.open(), example.name)} title="A copy of this example in a new tab">
                       {example.name}
                     </button>
                   ))}
@@ -1226,7 +1227,7 @@ export function App() {
         <ProjectTabs
           tabs={tabs.map((tab) => ({
             id: tab.id,
-            label: tabLabel(tab),
+            label: tab.name,
             unsaved: projectFile(tab.id).dirty,
             location: projectFile(tab.id).location?.kind ?? 'none',
           }))}
@@ -1302,7 +1303,7 @@ export function App() {
             {fileConflict?.id === activeId ? (
               <div className="sync-banner" role="alert">
                 <span>
-                  "{tabLabel({ id: activeId, name: project.name })}" changed {fileConflict.location.kind === 'drive' ? 'in Google Drive' : 'on disk'},
+                  "{tabName(activeId)}" changed {fileConflict.location.kind === 'drive' ? 'in Google Drive' : 'on disk'},
                   and this tab has changes that were not saved.
                 </span>
                 <button className="header-button" onClick={() => loadSavedVersion(activeId, fileConflict.project, fileConflict.location)} title="Show the saved version; the changes here stay reachable with Undo">
@@ -1318,14 +1319,14 @@ export function App() {
                 <div className="sync-banner" role="status">
                   {projectFile(activeId).location?.kind === 'drive' ? (
                     <>
-                      <span>Showing the recovery copy of "{project.name}"; sign in to compare it with Google Drive and save it there.</span>
+                      <span>Showing the recovery copy of "{tabName(activeId)}"; sign in to compare it with Google Drive and save it there.</span>
                       <button className="header-button" onClick={() => checkSaved(activeId, true)}>
                         <Icon name="cloud" />Sign in to Google Drive
                       </button>
                     </>
                   ) : (
                     <>
-                      <span>Showing the recovery copy of "{tabLabel({ id: activeId, name: project.name })}"; the file itself was not checked yet.</span>
+                      <span>Showing the recovery copy of "{tabName(activeId)}"; the file itself was not checked yet.</span>
                       <button className="header-button" onClick={() => checkSaved(activeId, true)} title="Allow access to the file and compare it with the recovery copy">
                         <Icon name="open" />Check file
                       </button>

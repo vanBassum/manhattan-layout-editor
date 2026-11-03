@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import server from '../mcp/server.mjs?raw'
 import { AGENT_COMMANDS, agentTargetId, runAgentCommand, type AgentTab } from './agentDispatch'
-import example from './examples/multivibrator.manhattan.json?raw'
+import example from './examples/Astable multivibrator.manhattan.json?raw'
 import { emptyProject, projectFromFile } from './projectStore'
 
 describe('agent commands', () => {

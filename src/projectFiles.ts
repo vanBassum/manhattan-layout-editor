@@ -92,12 +92,13 @@ export function readSavedProject(text: string): { project: Project | null; conte
 }
 
 /**
- * Writes `project` to `handle`, or to a file the user picks without one. A file that changed on
- * disk since `savedContent` is only overwritten when `confirmOverwrite` says so. Returns the file
- * written, or null when nothing was saved.
+ * Writes `project` to `handle`, or without one to a file the user picks, offered as `name`. A file
+ * that changed on disk since `savedContent` is only overwritten when `confirmOverwrite` says so.
+ * Returns the file written, or null when nothing was saved.
  */
 export async function saveLocalFile(
   project: Project,
+  name: string,
   handle: FileSystemFileHandle | undefined,
   savedContent: string,
   confirmOverwrite: (name: string) => Promise<boolean>,
@@ -108,7 +109,7 @@ export async function saveLocalFile(
     const changedOnDisk = onDisk !== null && onDisk.content !== savedContent
     if (changedOnDisk && !(await confirmOverwrite(handle.name))) return null
   } else {
-    handle = (await pickFileToSave(`${project.name}.manhattan.json`)) ?? undefined
+    handle = (await pickFileToSave(`${name}.manhattan.json`)) ?? undefined
     if (!handle) return null
   }
   await writeFile(handle, projectToFile(project))

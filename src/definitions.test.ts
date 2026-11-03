@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import example from './examples/multivibrator.manhattan.json?raw'
+import example from './examples/Astable multivibrator.manhattan.json?raw'
 import { buildNetlist, checkedDefinition, checkedDefinitions, withDefinitions } from './definitions'
 import { projectFromFile } from './projectStore'
 import type { ComponentDefinition, FootprintDefinition, NetComponent, Project, SymbolDefinition } from './types'
@@ -45,7 +45,6 @@ const definition = (footprints: Record<string, FootprintDefinition>): ComponentD
 
 const projectWith = (components: NetComponent[], definitions?: Record<string, ComponentDefinition>): Project => ({
   guid: 'test',
-  name: 'Test',
   netlist: { components, nets: ['A', 'B'] },
   layout: { islands: [], placements: components.map((c) => ({ ref: c.ref, x: 0, y: 0, rotation: 0 })) },
   definitions,

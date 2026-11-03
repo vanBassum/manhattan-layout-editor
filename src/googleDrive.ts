@@ -201,11 +201,16 @@ export async function fileVersion(id: string): Promise<string> {
   return (await json<{ version: string }>(call(`/drive/v3/files/${id}?fields=version`))).version
 }
 
-/** Writes `text` to file `id` under `name`, or to a new file `name` in folder `parentId`. */
-export async function writeFile(name: string, text: string, target: { id: string } | { parentId: string }): Promise<DriveItem> {
-  // Drive takes the name and the content in one multipart request.
+/** The file's name and current version. */
+export async function fileInfo(id: string): Promise<{ name: string; version: string }> {
+  return json<{ name: string; version: string }>(call(`/drive/v3/files/${id}?fields=name,version`))
+}
+
+/** Writes `text` to file `id`, which keeps its name, or to a new file `name` in folder `parentId`. */
+export async function writeFile(text: string, target: { id: string } | { parentId: string; name: string }): Promise<DriveItem> {
+  // Drive takes the metadata and the content in one multipart request.
   const boundary = `manhattan-${crypto.randomUUID()}`
-  const metadata = 'id' in target ? { name } : { name, parents: [target.parentId] }
+  const metadata = 'id' in target ? {} : { name: target.name, parents: [target.parentId] }
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
     `--${boundary}\r\nContent-Type: application/json\r\n\r\n${text}\r\n--${boundary}--`
