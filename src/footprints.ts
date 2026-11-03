@@ -1,5 +1,5 @@
 // Footprints offered by the "Change footprint" dialog. Each id is a footprint name that the
-// geometry code in layout.ts understands (shape and size are parsed from the name).
+// templates in footprintTemplates.ts understand (shape and size are parsed from the name).
 
 export type FootprintCategory = 'Resistors' | 'Capacitors' | 'Transistors' | 'Diodes' | 'Other'
 

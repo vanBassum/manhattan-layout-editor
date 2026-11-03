@@ -1,4 +1,4 @@
-import { generatedGeometry } from './layout'
+import { generatedGeometry } from './footprintTemplates'
 import type { NetComponent, PinDefinition, Point, SymbolDefinition, SymbolGraphic } from './types'
 
 // Built-in schematic symbols: templates a project copies into its own component definitions.

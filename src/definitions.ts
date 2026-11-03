@@ -1,5 +1,6 @@
 import { errorText } from './errorText'
-import { createLayout, generatedGeometry, withFootprintChoices } from './layout'
+import { generatedGeometry } from './footprintTemplates'
+import { createLayout, withFootprintChoices } from './layout'
 import { parseNetlist } from './netlist'
 import { symbolTemplate } from './schematicSymbols'
 import type { BuiltNetlist, Geometry, BuiltProject, ComponentDefinition, FootprintDefinition, NetComponent, Netlist, Placement, Project, Settings, SymbolDefinition } from './types'
