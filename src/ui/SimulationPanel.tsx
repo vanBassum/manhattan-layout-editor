@@ -93,47 +93,55 @@ export function SimulationPanel({ netlist, definitions, simulation = NO_SIMULATI
 
   return (
     <div className="simulation">
-      <span className="field-label">Sources</span>
-      <div className="source-list">
-        {sources.map((source, k) => (
-          <SourceFields
-            key={k}
-            nets={nets}
-            source={source}
-            onChange={(changed) => changeSources(sources.map((s, i) => (i === k ? changed : s)))}
-            onRemove={() => changeSources(sources.filter((_, i) => i !== k))}
-          />
-        ))}
-        <button disabled={!undrivenNet} onClick={() => undrivenNet && changeSources([...sources, { net: undrivenNet, shape: 'dc', volts: 12 }])}>
-          <Icon name="plus" />Add source
-        </button>
-      </div>
-
-      <Models netlist={netlist} simulation={simulation} onChange={onChange} />
-
-      {'problems' in circuit ? (
-        <ul className="check-list">
-          {circuit.problems.map((problem) => (
-            <li key={problem} className="warn">{problem}</li>
+      <div className="simulation-setup">
+        <span className="field-label">Sources</span>
+        <div className="source-list">
+          {sources.map((source, k) => (
+            <SourceFields
+              key={k}
+              nets={nets}
+              source={source}
+              onChange={(changed) => changeSources(sources.map((s, i) => (i === k ? changed : s)))}
+              onRemove={() => changeSources(sources.filter((_, i) => i !== k))}
+            />
           ))}
-        </ul>
-      ) : (
-        <div className="run-buttons">
-          <button disabled={running} onClick={() => runAnalysis('operating point', circuit.circuit)} title="DC voltages and currents with the circuit at rest">
-            Operating point
-          </button>
-          <button
-            disabled={running || !hasWave}
-            onClick={() => runAnalysis('transient', circuit.circuit)}
-            title={hasWave ? 'The circuit driven by its square and sine sources, over five periods' : 'Give a source a square or sine wave first'}
-          >
-            Transient
+          <button disabled={!undrivenNet} onClick={() => undrivenNet && changeSources([...sources, { net: undrivenNet, shape: 'dc', volts: 12 }])}>
+            <Icon name="plus" />Add source
           </button>
         </div>
-      )}
-      {running && <p className="muted">Running…</p>}
 
-      {run && <RunResult run={run} outdated={'problems' in circuit || netlistFor(run.analysis, circuit.circuit) !== run.netlist} />}
+        <Models netlist={netlist} simulation={simulation} onChange={onChange} />
+
+        {'problems' in circuit ? (
+          <ul className="check-list">
+            {circuit.problems.map((problem) => (
+              <li key={problem} className="warn">{problem}</li>
+            ))}
+          </ul>
+        ) : (
+          <div className="run-buttons">
+            <button disabled={running} onClick={() => runAnalysis('operating point', circuit.circuit)} title="DC voltages and currents with the circuit at rest">
+              Operating point
+            </button>
+            <button
+              disabled={running || !hasWave}
+              onClick={() => runAnalysis('transient', circuit.circuit)}
+              title={hasWave ? 'The circuit driven by its square and sine sources, over five periods' : 'Give a source a square or sine wave first'}
+            >
+              Transient
+            </button>
+          </div>
+        )}
+        {running && <p className="muted">Running…</p>}
+      </div>
+
+      <div className="simulation-results">
+        {run ? (
+          <RunResult run={run} outdated={'problems' in circuit || netlistFor(run.analysis, circuit.circuit) !== run.netlist} />
+        ) : (
+          <p className="muted">Run the operating point or a transient to see the results here.</p>
+        )}
+      </div>
     </div>
   )
 }

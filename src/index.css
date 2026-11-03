@@ -233,6 +233,29 @@ input:focus-visible {
   color: var(--accent);
 }
 
+/* PCB layout / Simulation toggle above the right-hand pane. */
+.pane-switch {
+  background: var(--panel);
+}
+
+.workspace.view-split.simulating {
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.workspace.view-layout.simulating {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.simulation-frame {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
 /* Project tabs */
 
 .project-tabs {
@@ -654,10 +677,24 @@ input:focus-visible {
 }
 
 /* Simulation panel: supplies, models, the run button and the operating point. */
+/* Set-up on the left, results taking the rest; the results wrap below when the pane is narrow. */
 .simulation {
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.simulation-setup {
+  display: flex;
+  flex: 0 0 270px;
   flex-direction: column;
   gap: 6px;
+}
+
+.simulation-results {
+  flex: 1 1 360px;
+  min-width: 0;
 }
 
 .source-list {
@@ -793,7 +830,7 @@ input:focus-visible {
 
 .scope-tick {
   fill: var(--text-muted);
-  font-size: 8px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 

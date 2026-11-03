@@ -58,6 +58,7 @@ import {
 } from './preferences'
 import { SchematicToolRail } from './SchematicToolRail'
 import { SimulationPanel } from './SimulationPanel'
+import { RightPaneSwitch, type RightPane } from './RightPaneSwitch'
 import { useShortcuts } from './shortcuts'
 import { useDocuments } from './useDocuments'
 import { useTabs, type UndoDirection } from './useTabs'
@@ -85,6 +86,7 @@ export function App() {
   /** The pane last clicked in; keyboard shortcuts act on it when both are shown. */
   const [activePane, setActivePane] = useState<Pane>(() => (view === 'schematic' ? 'schematic' : 'layout'))
   const [schematicTool, setSchematicTool] = useState<SchematicTool>('select')
+  const [rightPane, setRightPane] = useState<RightPane>('pcb')
   const showView = (mode: ViewMode) => {
     setView(mode)
     if (mode !== 'split') setActivePane(mode)
@@ -499,7 +501,8 @@ export function App() {
         </div>
       </header>
 
-      <div className={`workspace view-${view}`}>
+      {/* The simulation takes the PCB's place, sidebar included. */}
+      <div className={`workspace view-${view}${view !== 'schematic' && rightPane === 'simulation' ? ' simulating' : ''}`}>
         {view !== 'layout' && (
           <aside className="sidebar">
             {/* The schematic panel has the most room, so the shared list lives here and takes the rest of its height. */}
@@ -526,16 +529,6 @@ export function App() {
                 openPins={schematicOpenPins}
                 pinsNotInPcb={pinsNotInPcb}
                 onUpdatePcb={updatePcb}
-              />
-            </Section>
-            <Section title="Simulation">
-              {/* Keyed by tab: a run belongs to the project it ran. */}
-              <SimulationPanel
-                key={activeId}
-                netlist={schematicNets.netlist}
-                definitions={project.definitions}
-                simulation={project.simulation}
-                onChange={changeSimulation}
               />
             </Section>
           </aside>
@@ -588,8 +581,24 @@ export function App() {
                 </div>
               </section>
             )}
-            {view !== 'schematic' && (
+            {view !== 'schematic' && rightPane === 'simulation' && (
+              <section className="canvas-pane">
+                <RightPaneSwitch pane={rightPane} onChange={setRightPane} />
+                <div className="simulation-frame">
+                  {/* Keyed by tab: a run belongs to the project it ran. */}
+                  <SimulationPanel
+                    key={activeId}
+                    netlist={schematicNets.netlist}
+                    definitions={project.definitions}
+                    simulation={project.simulation}
+                    onChange={changeSimulation}
+                  />
+                </div>
+              </section>
+            )}
+            {view !== 'schematic' && rightPane === 'pcb' && (
               <section className="canvas-pane" onPointerDownCapture={() => setActivePane('layout')}>
+                <RightPaneSwitch pane={rightPane} onChange={setRightPane} />
                 <PcbToolRail
                   tool={tool}
                   onToolChange={setTool}
@@ -629,7 +638,7 @@ export function App() {
           </div>
         </main>
 
-        {view !== 'schematic' && (
+        {view !== 'schematic' && rightPane === 'pcb' && (
           <aside className="sidebar">
             <Section title="Placement">
               <SelectionDetails
