@@ -18,12 +18,10 @@ import {
   type Args,
 } from './agentCommands'
 import { buildNetlist, builtProject, checkedDefinition, withAssignedDefinition } from '../model/definitions'
-import { chooseResistors, keepFootprintChoices } from '../model/layout'
+import { chooseResistors } from '../model/layout'
 import { withValues } from '../model/netlist'
-import { findBuildStyle, findPlacement, optimizedLayout } from '../optimize'
 import {
   agentPlacements,
-  completeSchematic,
   labelsFromAgent,
   pinsWithOtherNet,
   placedParts,
@@ -131,15 +129,6 @@ const COMMANDS: Record<string, (tab: AgentTab, args: Args) => unknown> = {
   set_island: layoutEdit(setIsland),
   move_island: layoutEdit(moveIsland),
   batch: layoutEdit(applyBatch),
-  run_optimizer: layoutEdit((current, args) => {
-    const settings = {
-      ...current.settings,
-      buildStyle: args.buildStyle === undefined ? current.settings.buildStyle : findBuildStyle(stringArg(args, 'buildStyle')).id,
-      placement: args.placement === undefined ? current.settings.placement : findPlacement(stringArg(args, 'placement')).id,
-    }
-    const optimized = optimizedLayout(current.netlist, settings, completeSchematic(current.netlist, current.schematic))
-    return keepFootprintChoices(optimized, current.layout)
-  }),
   set_resistor_footprint: layoutEdit((current, args, imported) => {
     if (args.footprint !== 'through-hole' && args.footprint !== '1206') throw new Error('"footprint" must be "through-hole" or "1206"')
     return chooseResistors(imported, current.layout, args.footprint)

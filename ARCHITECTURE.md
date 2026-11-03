@@ -9,11 +9,10 @@ is being refactored, not all at once.
 
 | Domain | Folder | What it is | May import |
 | --- | --- | --- | --- |
-| model | `src/model/` | The project's data and every pure rule about it: types, geometry, netlist parsing, footprints, definitions, layout, schematic, selection, undo history, and migrations of old stored data. No React, DOM, storage or network. | model |
-| optimize | `src/optimize/` | A complete layout from a netlist, in two independent steps: a placement puts the parts (`PLACEMENTS`; for now only following the schematic), then a build style makes the copper for them (`BUILD_STYLES`: Knife cuts a board into one island per net, Manhattan glues one pad per net on a ground plane). `optimizedLayout` runs both, as the settings choose. | model |
+| model | `src/model/` | The project's data and every pure rule about it: types, geometry, netlist parsing, footprints, definitions, build styles, layout, schematic, selection, undo history, and migrations of old stored data. No React, DOM, storage or network. | model |
 | export | `src/export/` | Pure conversions of a layout to files to cut with (SVG, DXF). Returns text; saving it is up to the caller. | model |
-| documents | `src/documents/` | Where projects live: the project file format, the recovery copies and open tabs in IndexedDB, files on this computer, Google Drive, share links. | model, optimize (only to validate and default the chosen build style and placement) |
-| agent | `src/agent/` | The page side of the MCP bridge: the WebSocket connection and the commands an agent can run on a project. Gets the project and its effects (change, undo, screenshot) passed in. | model, optimize |
+| documents | `src/documents/` | Where projects live: the project file format, the recovery copies and open tabs in IndexedDB, files on this computer, Google Drive, share links. | model |
+| agent | `src/agent/` | The page side of the MCP bridge: the WebSocket connection and the commands an agent can run on a project. Gets the project and its effects (change, undo, screenshot) passed in. | model |
 | ui | `src/ui/` | React components, from `App` down; the only place that renders, reads the DOM or wires the other domains together. Sub-folders per view: `ui/pcb/`, `ui/schematic/`, `ui/dialogs/`. | everything |
 
 Rules that follow from the table:
@@ -30,9 +29,8 @@ Rules that follow from the table:
 
 | File | Domain |
 | --- | --- |
-| `types`, `geometry`, `netlist`, `netlistImport`, `footprints`, `footprintTemplates`, `layout`, `definitions`, `schematicSymbols`, `schematic`, `raster`, `cuts`, `layoutDrag`, `selection`, `undoHistory` | model (in place) |
+| `types`, `geometry`, `netlist`, `netlistImport`, `footprints`, `footprintTemplates`, `buildStyles`, `layout`, `definitions`, `schematicSymbols`, `schematic`, `raster`, `cuts`, `layoutDrag`, `selection`, `undoHistory` | model (in place) |
 | `migrateIslands`, `migrateCutLayout` | model (in place in `model/migrations/`) |
-| `optimize/*` | optimize (already in place) |
 | `exportSvg`, `exportDxf` | export (in place; `downloadText` lives in `ui/download`: it touches the DOM) |
 | `projectStore`, `projectFiles`, `driveDocuments`, `googleDrive`, `googlePicker`, `shareLink` | documents (in place, with the file format split off into `projectFormat` and the examples into `examples`) |
 | `agentBridge`, `agentCommands`, `agentDispatch` | agent (in place) |

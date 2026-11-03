@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { withoutCutLines } from './migrateCutLayout'
 import type { Layout, Project, Settings } from '../types'
 
-const SETTINGS: Settings = { snap: 0.5, isolation: 0.4, buildStyle: 'knife', placement: 'schematic', clearance: 1, maxLead: 10 }
+const SETTINGS: Settings = { snap: 0.5, isolation: 0.4, buildStyle: 'knife' }
 
 /** R1 lies across a board cut at x = 10 and x = 18; its leads end at x = 4.92 and x = 15.08. */
 const cutLineProject = (): Project => ({

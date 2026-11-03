@@ -13,7 +13,7 @@ import { FootprintDialog } from './FootprintDialog'
 import { boundsOf } from '../model/geometry'
 import { changeFootprints, createLayout, findPinIssues, findSpacingViolations, findSplitNets, keepFootprintChoices } from '../model/layout'
 import { withValues } from '../model/netlist'
-import { findBuildStyle, findPlacement, optimizedLayout } from '../optimize'
+import { findBuildStyle } from '../model/buildStyles'
 import { AiHelpDialog, HelpDialog, QuestionDialog, type Question } from './dialogs'
 import { Icon } from './icons'
 import { ComponentList, PartProperties, SchematicCheck, Section, SelectionDetails, Validation } from './panels'
@@ -163,8 +163,8 @@ export function App() {
   const undo = () => stepShownTab('undo')
   const redo = () => stepShownTab('redo')
 
-  /** Tab `id` as agent command `command` works on it. */
-  const agentTab = (id: string, command: string): AgentTab => {
+  /** Tab `id` as an agent command works on it. */
+  const agentTab = (id: string): AgentTab => {
     const shown = id === activeIdRef.current
     const stored = shownProject(id)
     return {
@@ -174,8 +174,6 @@ export function App() {
         commitEdit((current) => ({ ...current, ...changes }))
         // A selection names schematic wires and labels by index; new ones mean other things.
         if (changes.schematic) setSelection(null)
-        // A whole new layout, as with the Optimize button.
-        if (command === 'run_optimizer') refit()
         return shownProject(id)
       },
       step: (direction) => {
@@ -193,7 +191,7 @@ export function App() {
 
   const handleAgentCommand = useRef<(command: string, args: Record<string, unknown>) => unknown>(() => undefined)
   handleAgentCommand.current = (command, args) =>
-    runAgentCommand(command, args, { tabs: tabsRef.current, shownId: activeIdRef.current, tab: (id) => agentTab(id, command) })
+    runAgentCommand(command, args, { tabs: tabsRef.current, shownId: activeIdRef.current, tab: agentTab })
 
   useEffect(
     () => connectAgentBridge((command, args) => handleAgentCommand.current(command, args), setAgentConnected),
@@ -398,23 +396,6 @@ export function App() {
 
   const applyFootprint = (refs: ReadonlySet<string>, footprint: string | undefined) =>
     commitEdit(layoutUpdate((l) => changeFootprints(netlist, l, refs, footprint)))
-
-  const optimize = async () => {
-    const buildStyle = findBuildStyle(settings.buildStyle).label
-    const placement = findPlacement(settings.placement).label
-    const question = `Replace the current layout with a new one? Placement: ${placement}. Build style: ${buildStyle}. This can be undone.`
-    if (!(await confirm('Optimize', question, 'Replace layout'))) return
-    let optimized: Layout
-    try {
-      optimized = optimizedLayout(builtNetlist, settings, fullSchematic)
-    } catch (e) {
-      setError(errorText(e))
-      return
-    }
-    commitEdit(layoutUpdate((l) => keepFootprintChoices(optimized, l)))
-    setSelection(null)
-    refit()
-  }
 
   const exportLayout = () =>
     downloadText(`${tabName(activeId)}-isolation.svg`, exportSvg(layout.islands, settings.isolation), 'image/svg+xml')
@@ -649,7 +630,7 @@ export function App() {
                 onChangeFootprint={openFootprintDialog}
               />
             </Section>
-            <PcbSettings settings={settings} onChange={setSettings} onOptimize={optimize} onResetToGrid={resetToGrid} boardSize={boardSize} />
+            <PcbSettings settings={settings} onChange={setSettings}onResetToGrid={resetToGrid} boardSize={boardSize} />
             <Section title="Design rule check">
               <Validation
                 components={netlist.components.length}

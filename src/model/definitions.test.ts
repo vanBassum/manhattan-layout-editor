@@ -55,7 +55,7 @@ const projectWith = (components: NetComponent[], definitions?: Record<string, Co
   netlist: { components, nets: ['A', 'B'] },
   layout: { islands: [], placements: components.map((c) => ({ ref: c.ref, x: 0, y: 0, rotation: 0 })) },
   definitions,
-  settings: { snap: 0.5, isolation: 0.4, buildStyle: 'knife', placement: 'schematic', clearance: 3, maxLead: 10 },
+  settings: { snap: 0.5, isolation: 0.4, buildStyle: 'knife' },
 })
 
 const build = (project: Project) => buildNetlist(project.netlist, project.layout.placements, project.definitions)

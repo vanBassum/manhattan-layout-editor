@@ -4,28 +4,25 @@
 import { checkedDefinitions, withDefinitions, withoutUnfitDefinitions } from '../model/definitions'
 import { withoutCutLines } from '../model/migrations/migrateCutLayout'
 import type { Project, Settings } from '../model/types'
-import { BUILD_STYLES, findBuildStyle, findPlacement, PLACEMENTS } from '../optimize'
+import { BUILD_STYLES, findBuildStyle } from '../model/buildStyles'
 
-export const DEFAULT_SETTINGS: Settings = {
-  snap: 0.5,
-  isolation: 0.4,
-  buildStyle: BUILD_STYLES[0].id,
-  placement: PLACEMENTS[0].id,
-  clearance: 3,
-  maxLead: 10,
-}
-
-/** Settings as stored before v8: one `strategy` named both how the copper is made and where the parts go. */
-type StoredSettings = Partial<Settings> & { strategy?: string }
+export const DEFAULT_SETTINGS: Settings = { snap: 0.5, isolation: 0.4, buildStyle: BUILD_STYLES[0].id }
 
 /**
- * Stored settings with the missing ones defaulted. Settings from before v8 get their build style
- * from their strategy; placement had no choice then. Throws for an unknown build style or placement.
+ * Settings as stored before v8, with fields the editor no longer has: one `strategy` named both the
+ * build style and the layout optimizer, `clearance` and `maxLead` only steered that optimizer, and
+ * `placement` was written only by recovery copies made while testing an optimizer that never shipped.
+ */
+type StoredSettings = Partial<Settings> & { strategy?: string; clearance?: unknown; maxLead?: unknown; placement?: unknown }
+
+/**
+ * Stored settings with the missing ones defaulted and the optimizer's dropped. Settings from before
+ * v8 get their build style from their strategy. Throws for an unknown build style.
  */
 function checkedSettings(stored: StoredSettings | undefined): Settings {
-  const { strategy, ...current } = stored ?? {}
+  const { strategy, clearance: _clearance, maxLead: _maxLead, placement: _placement, ...current } = stored ?? {}
   const settings = { ...DEFAULT_SETTINGS, ...(strategy === undefined ? {} : { buildStyle: strategy }), ...current }
-  return { ...settings, buildStyle: findBuildStyle(settings.buildStyle).id, placement: findPlacement(settings.placement).id }
+  return { ...settings, buildStyle: findBuildStyle(settings.buildStyle).id }
 }
 
 export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => ({
@@ -38,9 +35,9 @@ export const emptyProject = (settings: Settings = DEFAULT_SETTINGS): Project => 
 /**
  * A project read from storage or a file; projects from before guids get one here, parts without a
  * component definition get one from the built-in templates, and a cut-line layout becomes islands.
- * The name older versions stored is dropped, and an old strategy becomes a build style. Throws
- * without a netlist or layout, for an invalid component definition, naming it, and for an unknown
- * build style or placement.
+ * The name older versions stored is dropped, an old strategy becomes a build style, and the
+ * optimizer's settings are dropped. Throws without a netlist or layout, for an invalid component
+ * definition, naming it, and for an unknown build style.
  */
 export function checkedProject(data: unknown): Project {
   const project = { ...(data as Partial<Project> & { name?: unknown }) }
@@ -62,7 +59,7 @@ export function checkedProject(data: unknown): Project {
 // Bump the version when the stored layout changes meaning, and convert older files in projectFromFile.
 // v6: component definitions (symbol and footprints) are stored in the project.
 // v7: no name inside: a project is called by its file's name.
-// v8: settings hold a build style and a placement instead of one strategy.
+// v8: settings hold a build style instead of a strategy, and no optimizer settings (clearance, maxLead).
 const FILE_FORMAT = 'manhattan-layout-editor'
 const FILE_VERSION = 8
 

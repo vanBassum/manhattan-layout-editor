@@ -4,7 +4,6 @@ import llms from '../../public/llms.txt?raw'
 import { BATCH_COMMANDS } from './agentCommands'
 import { AGENT_COMMANDS, agentTargetId, runAgentCommand, type AgentEditor, type AgentTab } from './agentDispatch'
 import example from '../examples/Astable multivibrator.json?raw'
-import { BUILD_STYLES, PLACEMENTS } from '../optimize'
 import { emptyProject, projectFromFile } from '../documents/projectFormat'
 
 /** An editor with `tab` as its only, shown tab. */
@@ -57,31 +56,9 @@ describe('agent commands', () => {
     expect(result).toHaveProperty('problems.openPins')
   })
 
-  it('offer exactly the build styles and placements the editor has', () => {
-    const offered = (name: string) => new RegExp(`${name}: z\\.enum\\(\\[([^\\]]*)\\]\\)`).exec(server)![1].match(/[a-z-]+/g)
-    expect(offered('buildStyle')).toEqual(BUILD_STYLES.map((s) => s.id))
-    expect(offered('placement')).toEqual(PLACEMENTS.map((p) => p.id))
-  })
-
   it('offer exactly the batch edits the editor applies', () => {
     const offered = /command: z\.enum\(\[([^\]]*)\]\)/.exec(server)![1].match(/[a-z_]+/g)
     expect(offered).toEqual(BATCH_COMMANDS)
-  })
-
-  it('refuse an unknown build style or placement instead of running another one', () => {
-    let project = projectFromFile(example)
-    const tab: AgentTab = { project, change: (changes) => (project = { ...project, ...changes }), step: () => project, screenshot: async () => '' }
-    expect(() => runAgentCommand('run_optimizer', { buildStyle: 'teleport' }, editorWith(tab))).toThrow('Unknown build style "teleport"')
-    expect(() => runAgentCommand('run_optimizer', { placement: 'random' }, editorWith(tab))).toThrow('Unknown placement "random"')
-    expect(() => runAgentCommand('run_optimizer', { buildStyle: 3 }, editorWith(tab))).toThrow('"buildStyle" must be a non-empty string')
-  })
-
-  it('run every build style on the example, and the project\'s own without arguments', () => {
-    for (const args of [{}, ...BUILD_STYLES.map((s) => ({ buildStyle: s.id, placement: 'schematic' }))]) {
-      let project = projectFromFile(example)
-      const tab: AgentTab = { project, change: (changes) => (project = { ...project, ...changes }), step: () => project, screenshot: async () => '' }
-      expect(() => runAgentCommand('run_optimizer', args, editorWith(tab))).not.toThrow()
-    }
   })
 
   it('refuse a definition change that takes away pins a part still uses', () => {

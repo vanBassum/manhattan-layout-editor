@@ -227,16 +227,6 @@ forward(
 forward('move_island', "Shifts a net's whole island by dx, dy (mm).", { net: z.string(), dx: z.number(), dy: z.number() })
 
 forward(
-  'run_optimizer',
-  'Replaces the whole layout: places the parts, then makes the copper for them. ' +
-    'buildStyle is how the copper is made: "knife" (a copper board cut into islands, one per net) or ' +
-    '"manhattan" (pads glued on a ground plane). placement is where the parts go: "schematic" (where ' +
-    'the schematic has them). Each defaults to the project\'s own setting. ' +
-    'Useful as a starting point to refine by hand. Can be undone.',
-  { buildStyle: z.enum(['knife', 'manhattan']).optional(), placement: z.enum(['schematic']).optional() },
-)
-
-forward(
   'batch',
   'Applies several edits in one call, in order, as a single undo step. Each edit is ' +
     '{command, args} where command is move_component, set_lead_end, reset_leads, set_island or move_island ' +

@@ -38,8 +38,8 @@ export interface NetComponent {
 
 /**
  * A part as `buildNetlist` makes it: the footprint chosen in the editor applied, and the footprint
- * geometry and schematic symbol taken from its definition. Never stored. Drawing, checks and
- * optimizers take built parts, so they cannot be handed a part without its definition applied.
+ * geometry and schematic symbol taken from its definition. Never stored. Drawing and checks
+ * take built parts, so they cannot be handed a part without its definition applied.
  */
 export interface BuiltComponent extends NetComponent {
   geometry: Geometry
@@ -154,21 +154,13 @@ export interface Layout {
   placements: Placement[]
 }
 
-/** How the copper is made (optimize/index.ts BUILD_STYLES): islands cut from a board, or pads glued on a ground plane. */
+/** How the copper is made (buildStyles.ts BUILD_STYLES): islands cut from a board, or pads glued on a ground plane. */
 export type BuildStyleId = 'knife' | 'manhattan'
-
-/** Where the optimizer puts the parts (optimize/index.ts PLACEMENTS). */
-export type PlacementId = 'schematic'
 
 export interface Settings {
   snap: number
   isolation: number
   buildStyle: BuildStyleId
-  placement: PlacementId
-  /** Free space the optimizer keeps around each component (body and leads), for soldering access. */
-  clearance: number
-  /** Longest lead the optimizer should bend; beyond this the penalty rises sharply. */
-  maxLead: number
 }
 
 /** Where a component's symbol sits on the schematic, in mm. Rotation is a multiple of 90 degrees. */

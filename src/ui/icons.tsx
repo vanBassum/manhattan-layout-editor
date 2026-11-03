@@ -25,7 +25,6 @@ const ICON_PATHS = {
   select: 'M6 3l13 8-6 1.5L10 19z',
   pan: 'M12 3v18 M3 12h18 M9 6l3-3 3 3 M9 18l3 3 3-3 M6 9l-3 3 3 3 M18 9l3 3-3 3',
   moveBody: 'M9 9h6v6H9z M3 12h2 M19 12h2 M5 10v4 M19 10v4',
-  optimize: 'M13 3L5 14h6l-1 7 8-11h-6z',
   search: 'M10 4a6 6 0 1 1 0 12a6 6 0 1 1 0-12 M15 15l5 5',
   convert: 'M4 8h14l-3-3 M20 16H6l3 3',
   plus: 'M12 5v14 M5 12h14',

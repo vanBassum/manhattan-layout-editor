@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { importedProject, reimportedProject } from './netlistImport'
 import type { Project } from './types'
 
-const SETTINGS = { snap: 1, isolation: 0.5, buildStyle: 'manhattan' as const, placement: 'schematic' as const, clearance: 2, maxLead: 8 }
+const SETTINGS = { snap: 1, isolation: 0.5, buildStyle: 'manhattan' as const }
 
 /** An EasyEDA netlist with one part per entry of `parts`: its value and the net of each pin. */
 const netlistText = (parts: Record<string, { value: string; nets: string[] }>) =>

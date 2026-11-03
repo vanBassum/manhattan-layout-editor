@@ -103,7 +103,7 @@ function resolvedDefinition(component: NetComponent, definitions: Definitions | 
 
 /**
  * The netlist as built: footprint choices applied, and each part's geometry and symbol taken from
- * its definition. This is what drawing, checks and optimizers work on; it is never stored.
+ * its definition. This is what drawing and checks work on; it is never stored.
  */
 export function buildNetlist(netlist: Netlist, placements: Placement[], definitions: Definitions | undefined): BuiltNetlist {
   const chosen = withFootprintChoices(netlist, placements)

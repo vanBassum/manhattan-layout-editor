@@ -598,7 +598,7 @@ export function Canvas(props: Props) {
             )
           })}
 
-        {/* Handles only on the clicked rectangle: optimized islands can consist of hundreds. */}
+        {/* Handles only on the clicked rectangle: an island can consist of hundreds. */}
         {selectedIsland && handleRect && (
           <RectHandles
             rect={handleRect}

@@ -1,4 +1,4 @@
-import { boundsOf, coversSquare, inflate, nearestPointOnRects, rectsOverlap, rotatePoint, snapToGrid, withoutFloatNoise } from './geometry'
+import { boundsOf, coversSquare, rectsOverlap, rotatePoint, snapToGrid, withoutFloatNoise } from './geometry'
 import { footprintPinCount } from './footprints'
 import { isRealNet, pinsByNet } from './netlist'
 import type { BuiltComponent, BuiltNetlist, Geometry, Island, Layout, NetComponent, Netlist, Placement, Point, Rect } from './types'
@@ -7,8 +7,6 @@ const ISLAND_WIDTH = 12
 const ISLAND_HEIGHT = 8
 const ISLAND_SPACING = 4
 const PART_SPACING = 6
-/** Automatic leads end this far inside the copper, so there is room for a solder joint. */
-const SOLDER_INSET = 0.5
 
 export function defaultLeadEnds(geometry: Geometry): Point[] {
   return geometry.anchors.map((a, k) => ({
@@ -31,16 +29,8 @@ export function toLocal(world: Point, placement: Placement): Point {
  * the copper that remains is each island shrunk by isolation/2. A point is on the copper when the
  * whole cut-wide square around it is inside the island.
  */
-export function onCopper(island: Island, p: Point, isolation: number): boolean {
+function onCopper(island: Island, p: Point, isolation: number): boolean {
   return coversSquare(island.rects, p, isolation / 2)
-}
-
-/** Nearest point of the island's copper to `from`, kept a little inside it to leave room for solder. */
-export function solderPoint(island: Island, from: Point, geometry: Geometry, isolation: number): Point {
-  // SMD terminations sit directly on the copper; there is no lead to bend inward.
-  const inset = isolation / 2 + (geometry.shape === 'smd' ? 0 : SOLDER_INSET)
-  const shrunk = island.rects.map((r) => inflate(r, -Math.min(inset, r.w / 2, r.h / 2)))
-  return nearestPointOnRects(shrunk, from)
 }
 
 /** World-space bounding box of the body, and optionally extra local points such as lead ends. */

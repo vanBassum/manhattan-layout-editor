@@ -63,7 +63,7 @@ export function describeProject(project: BuiltProject) {
   return {
     project: { guid: project.guid },
     units: 'mm; x to the right, y down; rotation in degrees clockwise',
-    settings: { isolation: settings.isolation, snap: settings.snap, clearance: settings.clearance, maxLead: settings.maxLead },
+    settings: { isolation: settings.isolation, snap: settings.snap },
     bounds: layoutBounds(project),
     nets: netlist.nets.map((net) => {
       const island = layout.islands.find((i) => i.net === net)
@@ -87,7 +87,7 @@ export function describeProject(project: BuiltProject) {
         y: round(placement.y),
         rotation: placement.rotation,
         bodyCorners: corners.map((p) => roundPoint(toWorld(p, placement))),
-        maxLeadLength: Math.min(geometry.maxLeadLength, settings.maxLead),
+        maxLeadLength: geometry.maxLeadLength,
         pins: component.pins.map((pin, k) => ({
           pin: pin.number,
           net: pin.net,
