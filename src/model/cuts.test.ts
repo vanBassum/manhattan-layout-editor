@@ -1,6 +1,37 @@
 import { describe, expect, it } from 'vitest'
-import { cutNeighbours, followResize, resizeRect } from './cuts'
+import { cutNeighbours, findCuts, followResize, moveCut, resizeRect } from './cuts'
 import type { Island } from './types'
+
+describe('findCuts', () => {
+  // Two pairs of islands side by side, with their cuts on one line at y = 5.
+  const bias: Island = { net: 'BIAS', rects: [{ x: 0, y: 0, w: 10, h: 5 }] }
+  const base: Island = { net: 'Q2_B', rects: [{ x: 0, y: 5, w: 10, h: 5 }] }
+  const collector: Island = { net: 'Q2_C', rects: [{ x: 10, y: 0, w: 10, h: 5 }] }
+  const emitter: Island = { net: 'Q2_E', rects: [{ x: 10, y: 5, w: 10, h: 5 }] }
+  const islands = [bias, base, collector, emitter]
+
+  it('keeps cuts on one line apart when they separate other nets', () => {
+    const horizontal = findCuts(islands).filter((cut) => cut.axis === 'y')
+    expect(horizontal).toEqual([
+      { axis: 'y', at: 5, from: 0, to: 10, nets: ['BIAS', 'Q2_B'] },
+      { axis: 'y', at: 5, from: 10, to: 20, nets: ['Q2_C', 'Q2_E'] },
+    ])
+  })
+
+  it('merges the pieces of one cut between the same two nets', () => {
+    const split: Island = { net: 'Q2_B', rects: [{ x: 0, y: 5, w: 4, h: 5 }, { x: 4, y: 5, w: 6, h: 5 }] }
+    expect(findCuts([bias, split]).filter((cut) => cut.axis === 'y')).toEqual([{ axis: 'y', at: 5, from: 0, to: 10, nets: ['BIAS', 'Q2_B'] }])
+  })
+
+  it('moves only the islands on both sides of the dragged cut', () => {
+    const cut = findCuts(islands).find((c) => c.axis === 'y' && c.nets[0] === 'BIAS')!
+    const moved = moveCut(islands, cut, 7)
+    expect(moved.find((i) => i.net === 'BIAS')!.rects).toEqual([{ x: 0, y: 0, w: 10, h: 7 }])
+    expect(moved.find((i) => i.net === 'Q2_B')!.rects).toEqual([{ x: 0, y: 7, w: 10, h: 3 }])
+    expect(moved.find((i) => i.net === 'Q2_C')).toEqual(collector)
+    expect(moved.find((i) => i.net === 'Q2_E')).toEqual(emitter)
+  })
+})
 
 describe('resizeRect', () => {
   const rect = { x: 0, y: 0, w: 10, h: 5 }

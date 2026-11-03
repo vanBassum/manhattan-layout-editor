@@ -6,14 +6,16 @@ const EPS = 1e-6
 const MIN_RECT_SIZE = 1
 
 /**
- * A straight isolation cut between islands of different nets: a vertical line at x = at
- * (axis 'x') or a horizontal one at y = at (axis 'y'), running from..to along that line.
+ * A straight isolation cut between the islands of two nets: a vertical line at x = at (axis 'x')
+ * or a horizontal one at y = at (axis 'y'), running from..to along that line.
  */
 export interface Cut {
   axis: 'x' | 'y'
   at: number
   from: number
   to: number
+  /** The two nets it separates, in alphabetical order. */
+  nets: [string, string]
 }
 
 // Across the cut: the rectangle's near and far edge. Along the cut: its extent.
@@ -25,7 +27,11 @@ const spanEnd = (r: Rect, axis: Cut['axis']) => (axis === 'x' ? r.y + r.h : r.x 
 const overlapAlong = (r: Rect, axis: Cut['axis'], from: number, to: number) =>
   Math.min(spanEnd(r, axis), to) - Math.max(spanStart(r, axis), from)
 
-/** Edges shared by islands of different nets, merged into straight cuts. A plane has no cuts. */
+/**
+ * Edges shared by islands of different nets, merged into straight cuts. Pieces on one line only
+ * merge when they separate the same two nets: a line that runs past several islands is several
+ * cuts, each moved on its own. A plane has no cuts.
+ */
 export function findCuts(islands: Island[]): Cut[] {
   const rects = islands.filter((island) => !island.plane).flatMap((island) => island.rects.map((rect) => ({ net: island.net, rect })))
   return (['x', 'y'] as const).flatMap((axis) => {
@@ -35,19 +41,22 @@ export function findCuts(islands: Island[]): Cut[] {
         if (a.net === b.net || Math.abs(highEdge(a.rect, axis) - lowEdge(b.rect, axis)) > EPS) continue
         const from = Math.max(spanStart(a.rect, axis), spanStart(b.rect, axis))
         const to = Math.min(spanEnd(a.rect, axis), spanEnd(b.rect, axis))
-        if (to - from > EPS) pieces.push({ axis, at: highEdge(a.rect, axis), from, to })
+        const nets: Cut['nets'] = a.net < b.net ? [a.net, b.net] : [b.net, a.net]
+        if (to - from > EPS) pieces.push({ axis, at: highEdge(a.rect, axis), from, to, nets })
       }
     }
     return mergeCollinear(pieces)
   })
 }
 
+const sameNets = (a: Cut, b: Cut) => a.nets[0] === b.nets[0] && a.nets[1] === b.nets[1]
+
 function mergeCollinear(pieces: Cut[]): Cut[] {
   const sorted = [...pieces].sort((a, b) => a.at - b.at || a.from - b.from)
   const merged: Cut[] = []
   for (const piece of sorted) {
-    const last = merged[merged.length - 1]
-    if (last && Math.abs(last.at - piece.at) < EPS && piece.from <= last.to + EPS) last.to = Math.max(last.to, piece.to)
+    const joins = merged.find((cut) => Math.abs(cut.at - piece.at) < EPS && sameNets(cut, piece) && piece.from <= cut.to + EPS)
+    if (joins) joins.to = Math.max(joins.to, piece.to)
     else merged.push({ ...piece })
   }
   return merged
