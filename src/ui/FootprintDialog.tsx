@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { BodyShape } from '../Canvas'
 import { buildNetlist } from '../definitions'
 import { FOOTPRINT_LIBRARY, type FootprintCategory, type LibraryFootprint } from '../footprints'
 import { boundsOf } from '../geometry'
 import { defaultLeadEnds } from '../layout'
 import type { BuiltComponent, BuiltNetlist, NetComponent, Netlist, Point, Project, Rect } from '../types'
 import { Icon } from './icons'
+import { BodyShape, COPPER_COLOR, LEAD_COLOR } from './pcb/partDrawing'
 
 /** A library footprint, or each part's own footprint from the netlist. */
 type Choice = LibraryFootprint | 'netlist'
@@ -28,8 +28,6 @@ const LIBRARY_PREVIEWS = new Map(
 )
 
 const CATEGORY_TABS: ('All' | FootprintCategory)[] = ['All', 'Resistors', 'Capacitors', 'Transistors', 'Diodes']
-const COPPER = '#d9945a'
-const LEAD_COLOR = '#777777'
 const PAD_HEIGHT = 3
 /** How far the outer pads reach beyond the outermost lead ends. */
 const PAD_OVERHANG = 1.5
@@ -98,7 +96,7 @@ function FootprintDrawing({ component, isolation, frame, className }: FootprintD
       aria-hidden="true"
     >
       {pads.map((r, k) => (
-        <rect key={k} x={r.x} y={r.y} width={r.w} height={r.h} fill={COPPER} />
+        <rect key={k} x={r.x} y={r.y} width={r.w} height={r.h} fill={COPPER_COLOR} />
       ))}
       {geometry.anchors.map((a, k) => (
         <line key={k} x1={a.x} y1={a.y} x2={ends[k].x} y2={ends[k].y} stroke={LEAD_COLOR} strokeWidth={0.35} strokeLinecap="round" />
